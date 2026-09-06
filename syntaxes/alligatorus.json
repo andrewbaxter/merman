@@ -1,0 +1,5338 @@
+{
+  "background": "#2b323a",
+  "foreground": "#bdbdbd",
+  "display_unit": "mm",
+  "font_family": "monospace",
+  "font_size": 6,
+  "pad": {
+    "converse_start": 5,
+    "converse_end": 5,
+    "transverse_start": 5,
+    "transverse_end": 5
+  },
+  "styles": {
+    "keyword": {
+      "color": "#e66ea5"
+    },
+    "identifier": {
+      "color": "#d8c3ff"
+    },
+    "literal": {
+      "color": "#79bf97"
+    },
+    "literal_symbol": {
+      "color": "rgba(121, 191, 151, 0.7)"
+    },
+    "label": {
+      "color": "#557fde"
+    },
+    "symbol": {
+      "color": "#a27878"
+    },
+    "symbol_fade": {
+      "color": "#67556e"
+    }
+  },
+  "groups": [
+    {
+      "id": "expr",
+      "members": [
+        "scope_use_static",
+        "field_static",
+        "scope_use",
+        "field",
+        "bind",
+        "set",
+        "call",
+        "as",
+        "seq",
+        "tuple",
+        "record",
+        "foreach",
+        "if",
+        "match",
+        "labeled",
+        "return",
+        "try",
+        "graft",
+        "lower",
+        "stage",
+        "literal_null",
+        "literal_number",
+        "literal_str",
+        "op_add",
+        "op_sub",
+        "op_mul",
+        "op_div",
+        "op_mod",
+        "op_and",
+        "op_or",
+        "op_xor",
+        "op_shl",
+        "op_shr",
+        "op_ushr",
+        "op_eq",
+        "op_ne",
+        "op_lt",
+        "op_le",
+        "op_gt",
+        "op_ge",
+        "op_neg",
+        "op_bitnot"
+      ]
+    },
+    {
+      "id": "record_entry",
+      "members": [
+        "record_entry_static",
+        "record_entry_dynamic"
+      ]
+    }
+  ],
+  "root": {
+    "back": {
+      "fixed_record": [
+        {
+          "key": "v1",
+          "value": {
+            "fixed_record": [
+              {
+                "key": "expr",
+                "value": {
+                  "atom": {
+                    "id": "expr",
+                    "type": "expr"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "front": [
+      {
+        "atom": {
+          "field": "expr",
+          "forward_alignments": [
+            "indent"
+          ]
+        }
+      }
+    ]
+  },
+  "types": [
+    {
+      "id": "scope_use_static",
+      "depth_score": 1,
+      "name": "Variable",
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "scope_use",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "key",
+                        "value": {
+                          "fixed_record": [
+                            {
+                              "key": "id",
+                              "value": {
+                                "discard": {}
+                              }
+                            },
+                            {
+                              "key": "variant",
+                              "value": {
+                                "fixed_record": [
+                                  {
+                                    "key": "literal",
+                                    "value": {
+                                      "fixed_record": [
+                                        {
+                                          "key": "value",
+                                          "value": {
+                                            "fixed_record": [
+                                              {
+                                                "key": "str",
+                                                "value": {
+                                                  "fixed_record": [
+                                                    {
+                                                      "key": "value",
+                                                      "value": {
+                                                        "string": {
+                                                          "id": "key"
+                                                        }
+                                                      }
+                                                    }
+                                                  ]
+                                                }
+                                              }
+                                            ]
+                                          }
+                                        }
+                                      ]
+                                    }
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "primitive": {
+            "field": "key",
+            "style": "identifier"
+          }
+        }
+      ]
+    },
+    {
+      "id": "field_static",
+      "depth_score": 1,
+      "name": "Field",
+      "precedence": 500,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "field",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "base",
+                        "value": {
+                          "atom": {
+                            "id": "base",
+                            "type": "expr"
+                          }
+                        }
+                      },
+                      {
+                        "key": "key",
+                        "value": {
+                          "fixed_record": [
+                            {
+                              "key": "id",
+                              "value": {
+                                "discard": {}
+                              }
+                            },
+                            {
+                              "key": "variant",
+                              "value": {
+                                "fixed_record": [
+                                  {
+                                    "key": "literal",
+                                    "value": {
+                                      "fixed_record": [
+                                        {
+                                          "key": "value",
+                                          "value": {
+                                            "fixed_record": [
+                                              {
+                                                "key": "str",
+                                                "value": {
+                                                  "fixed_record": [
+                                                    {
+                                                      "key": "value",
+                                                      "value": {
+                                                        "string": {
+                                                          "id": "key"
+                                                        }
+                                                      }
+                                                    }
+                                                  ]
+                                                }
+                                              }
+                                            ]
+                                          }
+                                        }
+                                      ]
+                                    }
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "(",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "base"
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": ".",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "primitive": {
+            "field": "key",
+            "style": "identifier"
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": ")",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "scope_use",
+      "depth_score": 1,
+      "name": "Dynamic variable",
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "scope_use",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "key",
+                        "value": {
+                          "atom": {
+                            "id": "key",
+                            "type": "expr"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "scope",
+              "style": "keyword"
+            }
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": "[",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "key",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": "]",
+              "style": "symbol",
+              "split": "compact",
+              "split_alignment": "base"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "field",
+      "depth_score": 1,
+      "name": "Dynamic field",
+      "precedence": 500,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "field",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "base",
+                        "value": {
+                          "atom": {
+                            "id": "base",
+                            "type": "expr"
+                          }
+                        }
+                      },
+                      {
+                        "key": "key",
+                        "value": {
+                          "atom": {
+                            "id": "key",
+                            "type": "expr"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "(",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "base"
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": "[",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "symbol": {
+            "space": {
+              "split": "compact",
+              "split_alignment": "indent"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "key",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": "]",
+              "style": "symbol",
+              "split": "compact",
+              "split_alignment": "base"
+            }
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": ")",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "bind",
+      "depth_score": 1,
+      "name": "Bind",
+      "precedence": 0,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "bind",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "name",
+                        "value": {
+                          "string": {
+                            "id": "name"
+                          }
+                        }
+                      },
+                      {
+                        "key": "value",
+                        "value": {
+                          "atom": {
+                            "id": "value",
+                            "type": "expr"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "primitive": {
+            "field": "name",
+            "style": "identifier"
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": " := ",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "symbol": {
+            "space": {
+              "split": "compact",
+              "split_alignment": "indent"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "value",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "set",
+      "depth_score": 1,
+      "name": "Set",
+      "precedence": 0,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "set",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "base",
+                        "value": {
+                          "atom": {
+                            "id": "base",
+                            "type": "expr"
+                          }
+                        }
+                      },
+                      {
+                        "key": "value",
+                        "value": {
+                          "atom": {
+                            "id": "value",
+                            "type": "expr"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "(",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "base"
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": " = ",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "symbol": {
+            "space": {
+              "split": "compact",
+              "split_alignment": "indent"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "value",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": ")",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "call",
+      "depth_score": 1,
+      "name": "Call",
+      "precedence": 500,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "call",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "func",
+                        "value": {
+                          "atom": {
+                            "id": "func",
+                            "type": "expr"
+                          }
+                        }
+                      },
+                      {
+                        "key": "arg",
+                        "value": {
+                          "atom": {
+                            "id": "arg",
+                            "type": "expr"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "(",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "func"
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": "(",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "symbol": {
+            "space": {
+              "split": "compact",
+              "split_alignment": "indent"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "arg",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": ")",
+              "style": "symbol",
+              "split": "compact",
+              "split_alignment": "base"
+            }
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": ")",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "as",
+      "depth_score": 1,
+      "name": "As",
+      "precedence": 300,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "as",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "base",
+                        "value": {
+                          "atom": {
+                            "id": "base",
+                            "type": "expr"
+                          }
+                        }
+                      },
+                      {
+                        "key": "target",
+                        "value": {
+                          "atom": {
+                            "id": "target",
+                            "type": "expr"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "(",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "base"
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": " as ",
+              "style": "keyword"
+            }
+          }
+        },
+        {
+          "symbol": {
+            "space": {
+              "split": "compact",
+              "split_alignment": "indent"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "target",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": ")",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "seq",
+      "depth_score": 1,
+      "name": "Sequence",
+      "precedence": 0,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "seq",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "exprs",
+                        "value": {
+                          "array": {
+                            "id": "exprs",
+                            "element": "expr"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "{ ",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "array": {
+            "field": "exprs",
+            "prefix": [
+              {
+                "space": {
+                  "split": "compact",
+                  "split_alignment": "indent"
+                }
+              }
+            ],
+            "suffix": [
+              {
+                "text": {
+                  "text": "; ",
+                  "style": "symbol"
+                }
+              }
+            ],
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": "}",
+              "style": "symbol",
+              "split": "compact",
+              "split_alignment": "base"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "tuple",
+      "depth_score": 1,
+      "name": "Tuple",
+      "precedence": 0,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "tuple",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "exprs",
+                        "value": {
+                          "array": {
+                            "id": "exprs",
+                            "element": "expr"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "(",
+              "style": "literal_symbol"
+            }
+          }
+        },
+        {
+          "array": {
+            "field": "exprs",
+            "prefix": [
+              {
+                "space": {
+                  "split": "compact",
+                  "split_alignment": "indent"
+                }
+              }
+            ],
+            "separator": [
+              {
+                "text": {
+                  "text": ", ",
+                  "style": "symbol"
+                }
+              }
+            ],
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": ")",
+              "style": "literal_symbol",
+              "split": "compact",
+              "split_alignment": "base"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "record",
+      "depth_score": 1,
+      "name": "Record",
+      "precedence": 0,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "record",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "entries",
+                        "value": {
+                          "array": {
+                            "id": "entries",
+                            "element": "record_entry"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "rec",
+              "style": "keyword"
+            }
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": "(",
+              "style": "literal_symbol"
+            }
+          }
+        },
+        {
+          "array": {
+            "field": "entries",
+            "prefix": [
+              {
+                "space": {
+                  "split": "compact",
+                  "split_alignment": "indent"
+                }
+              }
+            ],
+            "separator": [
+              {
+                "text": {
+                  "text": ", ",
+                  "style": "symbol"
+                }
+              }
+            ],
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": ")",
+              "style": "literal_symbol",
+              "split": "compact",
+              "split_alignment": "base"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "foreach",
+      "depth_score": 1,
+      "name": "For each",
+      "precedence": 0,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "foreach",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "base",
+                        "value": {
+                          "atom": {
+                            "id": "base",
+                            "type": "expr"
+                          }
+                        }
+                      },
+                      {
+                        "key": "element_key",
+                        "value": {
+                          "atom": {
+                            "id": "element_key",
+                            "type": "expr"
+                          }
+                        }
+                      },
+                      {
+                        "key": "body",
+                        "value": {
+                          "atom": {
+                            "id": "body",
+                            "type": "expr"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "for ",
+              "style": "keyword"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "element_key",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": " in ",
+              "style": "keyword"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "base",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": " ",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "symbol": {
+            "space": {
+              "split": "compact",
+              "split_alignment": "indent"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "body",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "if",
+      "depth_score": 1,
+      "name": "If",
+      "precedence": 0,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "if",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "conditions",
+                        "value": {
+                          "array": {
+                            "id": "conditions",
+                            "element": "if_branch"
+                          }
+                        }
+                      },
+                      {
+                        "key": "fallback",
+                        "value": {
+                          "optional": {
+                            "id": "fallback",
+                            "element": "expr",
+                            "some_key": "some",
+                            "none_key": "none"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "if ",
+              "style": "keyword"
+            }
+          }
+        },
+        {
+          "array": {
+            "field": "conditions",
+            "separator": [
+              {
+                "text": {
+                  "text": " elif ",
+                  "style": "keyword"
+                }
+              }
+            ],
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "array": {
+            "field": "fallback",
+            "prefix": [
+              {
+                "text": {
+                  "text": " else ",
+                  "style": "keyword"
+                }
+              }
+            ],
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "match",
+      "depth_score": 1,
+      "name": "Match",
+      "precedence": 0,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "match",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "base",
+                        "value": {
+                          "atom": {
+                            "id": "base",
+                            "type": "expr"
+                          }
+                        }
+                      },
+                      {
+                        "key": "element_key",
+                        "value": {
+                          "atom": {
+                            "id": "element_key",
+                            "type": "expr"
+                          }
+                        }
+                      },
+                      {
+                        "key": "cases",
+                        "value": {
+                          "array": {
+                            "id": "cases",
+                            "element": "match_branch"
+                          }
+                        }
+                      },
+                      {
+                        "key": "fallback",
+                        "value": {
+                          "optional": {
+                            "id": "fallback",
+                            "element": "expr",
+                            "some_key": "some",
+                            "none_key": "none"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "match ",
+              "style": "keyword"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "base",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": " as ",
+              "style": "keyword"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "element_key",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": " { ",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "array": {
+            "field": "cases",
+            "prefix": [
+              {
+                "space": {
+                  "split": "compact",
+                  "split_alignment": "indent"
+                }
+              }
+            ],
+            "suffix": [
+              {
+                "text": {
+                  "text": "; ",
+                  "style": "symbol"
+                }
+              }
+            ],
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "array": {
+            "field": "fallback",
+            "prefix": [
+              {
+                "space": {
+                  "split": "compact",
+                  "split_alignment": "indent"
+                }
+              },
+              {
+                "text": {
+                  "text": "else ",
+                  "style": "keyword"
+                }
+              }
+            ],
+            "suffix": [
+              {
+                "text": {
+                  "text": "; ",
+                  "style": "symbol"
+                }
+              }
+            ],
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": "}",
+              "style": "symbol",
+              "split": "compact",
+              "split_alignment": "base"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "labeled",
+      "depth_score": 1,
+      "name": "Label",
+      "precedence": 0,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "labeled",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "label",
+                        "value": {
+                          "string": {
+                            "id": "label"
+                          }
+                        }
+                      },
+                      {
+                        "key": "inner",
+                        "value": {
+                          "atom": {
+                            "id": "inner",
+                            "type": "expr"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "#",
+              "style": "label"
+            }
+          }
+        },
+        {
+          "primitive": {
+            "field": "label",
+            "style": "label"
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": " ",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "inner",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "return",
+      "depth_score": 1,
+      "name": "Return",
+      "precedence": 0,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "return",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "label",
+                        "value": {
+                          "optional": {
+                            "id": "label",
+                            "element": "label_text",
+                            "some_key": "some",
+                            "none_key": "none"
+                          }
+                        }
+                      },
+                      {
+                        "key": "value",
+                        "value": {
+                          "optional": {
+                            "id": "value",
+                            "element": "expr",
+                            "some_key": "some",
+                            "none_key": "none"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "return",
+              "style": "keyword"
+            }
+          }
+        },
+        {
+          "array": {
+            "field": "label",
+            "prefix": [
+              {
+                "text": {
+                  "text": " #",
+                  "style": "label"
+                }
+              }
+            ],
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "array": {
+            "field": "value",
+            "prefix": [
+              {
+                "text": {
+                  "text": " ",
+                  "style": "symbol"
+                }
+              },
+              {
+                "space": {
+                  "split": "compact",
+                  "split_alignment": "indent"
+                }
+              }
+            ],
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "try",
+      "depth_score": 1,
+      "name": "Try",
+      "precedence": 0,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "try",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "body",
+                        "value": {
+                          "atom": {
+                            "id": "body",
+                            "type": "expr"
+                          }
+                        }
+                      },
+                      {
+                        "key": "catch_clause",
+                        "value": {
+                          "optional": {
+                            "id": "catch_clause",
+                            "element": "try_catch",
+                            "some_key": "some",
+                            "none_key": "none"
+                          }
+                        }
+                      },
+                      {
+                        "key": "finally_block",
+                        "value": {
+                          "optional": {
+                            "id": "finally_block",
+                            "element": "expr",
+                            "some_key": "some",
+                            "none_key": "none"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "try ",
+              "style": "keyword"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "body",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "array": {
+            "field": "catch_clause",
+            "prefix": [
+              {
+                "text": {
+                  "text": " catch ",
+                  "style": "keyword"
+                }
+              }
+            ],
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "array": {
+            "field": "finally_block",
+            "prefix": [
+              {
+                "text": {
+                  "text": " finally ",
+                  "style": "keyword"
+                }
+              }
+            ],
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "graft",
+      "depth_score": 1,
+      "name": "Graft",
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "graft",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "expr",
+                        "value": {
+                          "atom": {
+                            "id": "expr",
+                            "type": "expr"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "graft ",
+              "style": "keyword"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "expr",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "lower",
+      "depth_score": 1,
+      "name": "Lower",
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "lower",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "expr",
+                        "value": {
+                          "atom": {
+                            "id": "expr",
+                            "type": "expr"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "$",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "expr",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "stage",
+      "depth_score": 1,
+      "name": "Stage",
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "stage",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "expr",
+                        "value": {
+                          "atom": {
+                            "id": "expr",
+                            "type": "expr"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "`",
+              "style": "literal_symbol"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "expr",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "literal_null",
+      "depth_score": 1,
+      "name": "Null",
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "literal",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "value",
+                        "value": {
+                          "fixed_record": [
+                            {
+                              "key": "null",
+                              "value": {
+                                "fixed_record": []
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "null",
+              "style": "literal"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "literal_number",
+      "depth_score": 1,
+      "name": "Number",
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "literal",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "value",
+                        "value": {
+                          "fixed_record": [
+                            {
+                              "key": "number",
+                              "value": {
+                                "fixed_record": [
+                                  {
+                                    "key": "value",
+                                    "value": {
+                                      "number": {
+                                        "id": "value"
+                                      }
+                                    }
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "primitive": {
+            "field": "value",
+            "style": "literal"
+          }
+        }
+      ]
+    },
+    {
+      "id": "literal_str",
+      "depth_score": 1,
+      "name": "String",
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "literal",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "value",
+                        "value": {
+                          "fixed_record": [
+                            {
+                              "key": "str",
+                              "value": {
+                                "fixed_record": [
+                                  {
+                                    "key": "value",
+                                    "value": {
+                                      "string": {
+                                        "id": "value"
+                                      }
+                                    }
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "\"",
+              "style": "literal_symbol"
+            }
+          }
+        },
+        {
+          "primitive": {
+            "field": "value",
+            "style": "literal",
+            "soft_split_alignment": "indent"
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": "\"",
+              "style": "literal_symbol"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "op_add",
+      "depth_score": 1,
+      "name": "Operator +",
+      "precedence": 500,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "operator_binary",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "op",
+                        "value": {
+                          "fixed_string": "add"
+                        }
+                      },
+                      {
+                        "key": "base",
+                        "value": {
+                          "atom": {
+                            "id": "base",
+                            "type": "expr"
+                          }
+                        }
+                      },
+                      {
+                        "key": "reference",
+                        "value": {
+                          "atom": {
+                            "id": "reference",
+                            "type": "expr"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "(",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "base"
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": " + ",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "symbol": {
+            "space": {
+              "split": "compact",
+              "split_alignment": "indent"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "reference",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": ")",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "op_sub",
+      "depth_score": 1,
+      "name": "Operator -",
+      "precedence": 500,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "operator_binary",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "op",
+                        "value": {
+                          "fixed_string": "sub"
+                        }
+                      },
+                      {
+                        "key": "base",
+                        "value": {
+                          "atom": {
+                            "id": "base",
+                            "type": "expr"
+                          }
+                        }
+                      },
+                      {
+                        "key": "reference",
+                        "value": {
+                          "atom": {
+                            "id": "reference",
+                            "type": "expr"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "(",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "base"
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": " - ",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "symbol": {
+            "space": {
+              "split": "compact",
+              "split_alignment": "indent"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "reference",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": ")",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "op_mul",
+      "depth_score": 1,
+      "name": "Operator *",
+      "precedence": 600,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "operator_binary",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "op",
+                        "value": {
+                          "fixed_string": "mul"
+                        }
+                      },
+                      {
+                        "key": "base",
+                        "value": {
+                          "atom": {
+                            "id": "base",
+                            "type": "expr"
+                          }
+                        }
+                      },
+                      {
+                        "key": "reference",
+                        "value": {
+                          "atom": {
+                            "id": "reference",
+                            "type": "expr"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "(",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "base"
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": " * ",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "symbol": {
+            "space": {
+              "split": "compact",
+              "split_alignment": "indent"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "reference",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": ")",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "op_div",
+      "depth_score": 1,
+      "name": "Operator /",
+      "precedence": 600,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "operator_binary",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "op",
+                        "value": {
+                          "fixed_string": "div"
+                        }
+                      },
+                      {
+                        "key": "base",
+                        "value": {
+                          "atom": {
+                            "id": "base",
+                            "type": "expr"
+                          }
+                        }
+                      },
+                      {
+                        "key": "reference",
+                        "value": {
+                          "atom": {
+                            "id": "reference",
+                            "type": "expr"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "(",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "base"
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": " / ",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "symbol": {
+            "space": {
+              "split": "compact",
+              "split_alignment": "indent"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "reference",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": ")",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "op_mod",
+      "depth_score": 1,
+      "name": "Operator %",
+      "precedence": 600,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "operator_binary",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "op",
+                        "value": {
+                          "fixed_string": "mod"
+                        }
+                      },
+                      {
+                        "key": "base",
+                        "value": {
+                          "atom": {
+                            "id": "base",
+                            "type": "expr"
+                          }
+                        }
+                      },
+                      {
+                        "key": "reference",
+                        "value": {
+                          "atom": {
+                            "id": "reference",
+                            "type": "expr"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "(",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "base"
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": " % ",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "symbol": {
+            "space": {
+              "split": "compact",
+              "split_alignment": "indent"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "reference",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": ")",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "op_and",
+      "depth_score": 1,
+      "name": "Operator &",
+      "precedence": 700,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "operator_binary",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "op",
+                        "value": {
+                          "fixed_string": "and"
+                        }
+                      },
+                      {
+                        "key": "base",
+                        "value": {
+                          "atom": {
+                            "id": "base",
+                            "type": "expr"
+                          }
+                        }
+                      },
+                      {
+                        "key": "reference",
+                        "value": {
+                          "atom": {
+                            "id": "reference",
+                            "type": "expr"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "(",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "base"
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": " & ",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "symbol": {
+            "space": {
+              "split": "compact",
+              "split_alignment": "indent"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "reference",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": ")",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "op_or",
+      "depth_score": 1,
+      "name": "Operator |",
+      "precedence": 700,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "operator_binary",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "op",
+                        "value": {
+                          "fixed_string": "or"
+                        }
+                      },
+                      {
+                        "key": "base",
+                        "value": {
+                          "atom": {
+                            "id": "base",
+                            "type": "expr"
+                          }
+                        }
+                      },
+                      {
+                        "key": "reference",
+                        "value": {
+                          "atom": {
+                            "id": "reference",
+                            "type": "expr"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "(",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "base"
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": " | ",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "symbol": {
+            "space": {
+              "split": "compact",
+              "split_alignment": "indent"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "reference",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": ")",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "op_xor",
+      "depth_score": 1,
+      "name": "Operator ^",
+      "precedence": 700,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "operator_binary",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "op",
+                        "value": {
+                          "fixed_string": "xor"
+                        }
+                      },
+                      {
+                        "key": "base",
+                        "value": {
+                          "atom": {
+                            "id": "base",
+                            "type": "expr"
+                          }
+                        }
+                      },
+                      {
+                        "key": "reference",
+                        "value": {
+                          "atom": {
+                            "id": "reference",
+                            "type": "expr"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "(",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "base"
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": " ^ ",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "symbol": {
+            "space": {
+              "split": "compact",
+              "split_alignment": "indent"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "reference",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": ")",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "op_shl",
+      "depth_score": 1,
+      "name": "Operator <<",
+      "precedence": 750,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "operator_binary",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "op",
+                        "value": {
+                          "fixed_string": "shl"
+                        }
+                      },
+                      {
+                        "key": "base",
+                        "value": {
+                          "atom": {
+                            "id": "base",
+                            "type": "expr"
+                          }
+                        }
+                      },
+                      {
+                        "key": "reference",
+                        "value": {
+                          "atom": {
+                            "id": "reference",
+                            "type": "expr"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "(",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "base"
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": " << ",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "symbol": {
+            "space": {
+              "split": "compact",
+              "split_alignment": "indent"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "reference",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": ")",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "op_shr",
+      "depth_score": 1,
+      "name": "Operator >>",
+      "precedence": 750,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "operator_binary",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "op",
+                        "value": {
+                          "fixed_string": "shr"
+                        }
+                      },
+                      {
+                        "key": "base",
+                        "value": {
+                          "atom": {
+                            "id": "base",
+                            "type": "expr"
+                          }
+                        }
+                      },
+                      {
+                        "key": "reference",
+                        "value": {
+                          "atom": {
+                            "id": "reference",
+                            "type": "expr"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "(",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "base"
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": " >> ",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "symbol": {
+            "space": {
+              "split": "compact",
+              "split_alignment": "indent"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "reference",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": ")",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "op_ushr",
+      "depth_score": 1,
+      "name": "Operator >>>",
+      "precedence": 750,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "operator_binary",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "op",
+                        "value": {
+                          "fixed_string": "ushr"
+                        }
+                      },
+                      {
+                        "key": "base",
+                        "value": {
+                          "atom": {
+                            "id": "base",
+                            "type": "expr"
+                          }
+                        }
+                      },
+                      {
+                        "key": "reference",
+                        "value": {
+                          "atom": {
+                            "id": "reference",
+                            "type": "expr"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "(",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "base"
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": " >>> ",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "symbol": {
+            "space": {
+              "split": "compact",
+              "split_alignment": "indent"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "reference",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": ")",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "op_eq",
+      "depth_score": 1,
+      "name": "Operator ==",
+      "precedence": 100,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "operator_binary",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "op",
+                        "value": {
+                          "fixed_string": "eq"
+                        }
+                      },
+                      {
+                        "key": "base",
+                        "value": {
+                          "atom": {
+                            "id": "base",
+                            "type": "expr"
+                          }
+                        }
+                      },
+                      {
+                        "key": "reference",
+                        "value": {
+                          "atom": {
+                            "id": "reference",
+                            "type": "expr"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "(",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "base"
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": " == ",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "symbol": {
+            "space": {
+              "split": "compact",
+              "split_alignment": "indent"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "reference",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": ")",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "op_ne",
+      "depth_score": 1,
+      "name": "Operator !=",
+      "precedence": 100,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "operator_binary",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "op",
+                        "value": {
+                          "fixed_string": "ne"
+                        }
+                      },
+                      {
+                        "key": "base",
+                        "value": {
+                          "atom": {
+                            "id": "base",
+                            "type": "expr"
+                          }
+                        }
+                      },
+                      {
+                        "key": "reference",
+                        "value": {
+                          "atom": {
+                            "id": "reference",
+                            "type": "expr"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "(",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "base"
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": " != ",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "symbol": {
+            "space": {
+              "split": "compact",
+              "split_alignment": "indent"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "reference",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": ")",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "op_lt",
+      "depth_score": 1,
+      "name": "Operator <",
+      "precedence": 100,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "operator_binary",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "op",
+                        "value": {
+                          "fixed_string": "lt"
+                        }
+                      },
+                      {
+                        "key": "base",
+                        "value": {
+                          "atom": {
+                            "id": "base",
+                            "type": "expr"
+                          }
+                        }
+                      },
+                      {
+                        "key": "reference",
+                        "value": {
+                          "atom": {
+                            "id": "reference",
+                            "type": "expr"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "(",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "base"
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": " < ",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "symbol": {
+            "space": {
+              "split": "compact",
+              "split_alignment": "indent"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "reference",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": ")",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "op_le",
+      "depth_score": 1,
+      "name": "Operator <=",
+      "precedence": 100,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "operator_binary",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "op",
+                        "value": {
+                          "fixed_string": "le"
+                        }
+                      },
+                      {
+                        "key": "base",
+                        "value": {
+                          "atom": {
+                            "id": "base",
+                            "type": "expr"
+                          }
+                        }
+                      },
+                      {
+                        "key": "reference",
+                        "value": {
+                          "atom": {
+                            "id": "reference",
+                            "type": "expr"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "(",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "base"
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": " <= ",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "symbol": {
+            "space": {
+              "split": "compact",
+              "split_alignment": "indent"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "reference",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": ")",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "op_gt",
+      "depth_score": 1,
+      "name": "Operator >",
+      "precedence": 100,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "operator_binary",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "op",
+                        "value": {
+                          "fixed_string": "gt"
+                        }
+                      },
+                      {
+                        "key": "base",
+                        "value": {
+                          "atom": {
+                            "id": "base",
+                            "type": "expr"
+                          }
+                        }
+                      },
+                      {
+                        "key": "reference",
+                        "value": {
+                          "atom": {
+                            "id": "reference",
+                            "type": "expr"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "(",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "base"
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": " > ",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "symbol": {
+            "space": {
+              "split": "compact",
+              "split_alignment": "indent"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "reference",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": ")",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "op_ge",
+      "depth_score": 1,
+      "name": "Operator >=",
+      "precedence": 100,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "operator_binary",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "op",
+                        "value": {
+                          "fixed_string": "ge"
+                        }
+                      },
+                      {
+                        "key": "base",
+                        "value": {
+                          "atom": {
+                            "id": "base",
+                            "type": "expr"
+                          }
+                        }
+                      },
+                      {
+                        "key": "reference",
+                        "value": {
+                          "atom": {
+                            "id": "reference",
+                            "type": "expr"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "(",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "base"
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": " >= ",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "symbol": {
+            "space": {
+              "split": "compact",
+              "split_alignment": "indent"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "reference",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": ")",
+              "style": "symbol_fade",
+              "condition": {
+                "precedent": {
+                  "invert": true
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "op_neg",
+      "depth_score": 1,
+      "name": "Operator -",
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "operator_unary",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "op",
+                        "value": {
+                          "fixed_string": "neg"
+                        }
+                      },
+                      {
+                        "key": "base",
+                        "value": {
+                          "atom": {
+                            "id": "base",
+                            "type": "expr"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "-",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "base",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "op_bitnot",
+      "depth_score": 1,
+      "name": "Operator ~",
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "discard": {}
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "operator_unary",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "op",
+                        "value": {
+                          "fixed_string": "bitnot"
+                        }
+                      },
+                      {
+                        "key": "base",
+                        "value": {
+                          "atom": {
+                            "id": "base",
+                            "type": "expr"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "~",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "base",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "if_branch",
+      "depth_score": 1,
+      "name": "If branch",
+      "precedence": 0,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "condition",
+            "value": {
+              "atom": {
+                "id": "condition",
+                "type": "expr"
+              }
+            }
+          },
+          {
+            "key": "body",
+            "value": {
+              "atom": {
+                "id": "body",
+                "type": "expr"
+              }
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "atom": {
+            "field": "condition",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": " ",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "symbol": {
+            "space": {
+              "split": "compact",
+              "split_alignment": "indent"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "body",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "match_branch",
+      "depth_score": 1,
+      "name": "Match branch",
+      "precedence": 0,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "condition",
+            "value": {
+              "atom": {
+                "id": "condition",
+                "type": "expr"
+              }
+            }
+          },
+          {
+            "key": "body",
+            "value": {
+              "atom": {
+                "id": "body",
+                "type": "expr"
+              }
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "atom": {
+            "field": "condition",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": " -> ",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "symbol": {
+            "space": {
+              "split": "compact",
+              "split_alignment": "indent"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "body",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "record_entry_static",
+      "depth_score": 1,
+      "name": "Record entry",
+      "precedence": 0,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "key",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "id",
+                  "value": {
+                    "discard": {}
+                  }
+                },
+                {
+                  "key": "variant",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "literal",
+                        "value": {
+                          "fixed_record": [
+                            {
+                              "key": "value",
+                              "value": {
+                                "fixed_record": [
+                                  {
+                                    "key": "str",
+                                    "value": {
+                                      "fixed_record": [
+                                        {
+                                          "key": "value",
+                                          "value": {
+                                            "string": {
+                                              "id": "key"
+                                            }
+                                          }
+                                        }
+                                      ]
+                                    }
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "key": "value",
+            "value": {
+              "atom": {
+                "id": "value",
+                "type": "expr"
+              }
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "primitive": {
+            "field": "key",
+            "style": "identifier"
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": ": ",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "symbol": {
+            "space": {
+              "split": "compact",
+              "split_alignment": "indent"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "value",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "record_entry_dynamic",
+      "depth_score": 1,
+      "name": "Dynamic record entry",
+      "precedence": 0,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "key",
+            "value": {
+              "atom": {
+                "id": "key",
+                "type": "expr"
+              }
+            }
+          },
+          {
+            "key": "value",
+            "value": {
+              "atom": {
+                "id": "value",
+                "type": "expr"
+              }
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "[",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "key",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": "]: ",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "symbol": {
+            "space": {
+              "split": "compact",
+              "split_alignment": "indent"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "value",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "try_catch",
+      "depth_score": 1,
+      "name": "Catch",
+      "precedence": 0,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "binding_name",
+            "value": {
+              "atom": {
+                "id": "binding_name",
+                "type": "expr"
+              }
+            }
+          },
+          {
+            "key": "exception_type",
+            "value": {
+              "atom": {
+                "id": "exception_type",
+                "type": "expr"
+              }
+            }
+          },
+          {
+            "key": "body",
+            "value": {
+              "atom": {
+                "id": "body",
+                "type": "expr"
+              }
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "atom": {
+            "field": "binding_name",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": ": ",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "exception_type",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": " ",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "symbol": {
+            "space": {
+              "split": "compact",
+              "split_alignment": "indent"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "body",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "label_text",
+      "depth_score": 1,
+      "name": "Label",
+      "back": {
+        "string": {
+          "id": "text"
+        }
+      },
+      "front": [
+        {
+          "primitive": {
+            "field": "text",
+            "style": "label"
+          }
+        }
+      ]
+    }
+  ]
+}

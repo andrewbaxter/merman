@@ -1,0 +1,33 @@
+[package]
+name = "merman3_web"
+edition.workspace = true
+version.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+merman3_core = { path = "../core" }
+serde_json = { version = "1", features = ["preserve_order"] }
+wasm-bindgen = "=0.2.121"
+js-sys = "0.3"
+rooting = "0.2"
+lunk = "0.3"
+gloo-utils = "0.2"
+gloo-events = "0.2"
+gloo-render = "0.2"
+console_error_panic_hook = "0.1"
+web-sys = { version = "0.3", features = [
+    "Window",
+    "Document",
+    "Element",
+    "HtmlElement",
+    "HtmlCanvasElement",
+    "CanvasRenderingContext2d",
+    "TextMetrics",
+    "DomRect",
+    "CssStyleDeclaration",
+    "Node",
+    "Event",
+    "EventTarget",
+] }
