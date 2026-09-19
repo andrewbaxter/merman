@@ -1,52 +1,31 @@
 //! Smoke test: the alligatorus example syntax lays out a real module.
-use merman3_core::layout::{Layout, LayoutConfig};
-use merman3_core::matcher::match_document;
-use merman3_core::measure::MeasureFixed;
-use merman3_core::spec::SpecSyntax;
-use merman3_core::syntax::Syntax;
-use merman3_core::visual::Visual;
-use std::rc::Rc;
+mod common;
+
+use common::{build, load_document, load_syntax, render_text, settle, Clock};
 
 #[test]
 fn lays_out_synth_module() {
-    let spec: SpecSyntax =
-        serde_json::from_str(include_str!("../../syntaxes/alligatorus.json")).expect("syntax json");
-    let syntax = Rc::new(Syntax::syntax_resolve(spec).unwrap_or_else(|e| panic!("{}", e.join("\n"))));
-    let value: serde_json::Value =
-        serde_json::from_str(include_str!("../../../../ecosystem/synth-midi-sine.at")).unwrap();
-    let doc = match_document(&syntax, &value).unwrap_or_else(|e| panic!("{}", e.mismatch_format()));
-    let mut measure = MeasureFixed;
-    let visual = Rc::new(Visual::visual_build(&syntax, &doc, &mut measure));
+    let syntax = load_syntax(include_str!("../../syntaxes/alligatorus.json"));
+    let doc = load_document(&syntax, include_str!("../../../../ecosystem/synth-midi-sine.at"));
     let unit = syntax.syntax_style(0).font.size * 0.6;
     let edge_chars = 100.;
-    let layout = Layout::layout_build(
-        syntax.clone(),
-        visual,
-        LayoutConfig::default(),
-        edge_chars * unit,
-        &mut measure,
-    );
-    let rows = layout.layout_rows();
+    let pad = syntax.spec_root.pad.converse_start + syntax.spec_root.pad.converse_end;
+    let mut ctx = build(syntax, doc, edge_chars * unit + pad, 800.);
+    let mut clock = Clock(0.);
+    settle(&mut ctx, &mut clock);
+    let rows = render_text(&ctx.render_snapshot(), unit);
     let mut over = 0;
-    for (i, row) in rows.rows.iter().enumerate() {
-        let mut line = String::new();
-        for b in &row.bricks {
-            let col = (b.converse / unit).round() as usize;
-            while line.chars().count() < col {
-                line.push(' ');
-            }
-            line.push_str(&b.text);
-        }
+    for (i, line) in rows.iter().enumerate() {
         // Wrapped lines may hang half a character over (nearest-index split).
         if line.trim_end().chars().count() as f64 > edge_chars + 1. {
             over += 1;
         }
-        if i < 60 {
+        if i < 40 {
             println!("{}", line);
         }
     }
-    println!("rows: {}, over edge: {}", rows.rows.len(), over);
-    assert!(rows.rows.len() > 100);
+    println!("rows: {}, over edge: {}", rows.len(), over);
+    assert!(rows.len() > 100);
     assert_eq!(over, 0, "{} rows exceed the edge", over);
 }
 
@@ -70,18 +49,14 @@ fn sub(id: u64, base: &str, reference: &str) -> String {
 }
 
 fn render_module(expr: &str) -> String {
-    let spec: SpecSyntax =
-        serde_json::from_str(include_str!("../../syntaxes/alligatorus.json")).expect("syntax json");
-    let syntax = Rc::new(Syntax::syntax_resolve(spec).unwrap_or_else(|e| panic!("{}", e.join("\n"))));
-    let value: serde_json::Value =
-        serde_json::from_str(&format!(r#"{{"v1":{{"expr":{}}}}}"#, expr)).unwrap();
-    let doc = match_document(&syntax, &value).unwrap_or_else(|e| panic!("{}", e.mismatch_format()));
-    let mut measure = MeasureFixed;
-    let visual = Rc::new(Visual::visual_build(&syntax, &doc, &mut measure));
-    let layout = Layout::layout_build(syntax, visual, LayoutConfig::default(), 1000., &mut measure);
-    let rows = layout.layout_rows();
-    assert_eq!(rows.rows.len(), 1);
-    return rows.rows[0].bricks.iter().map(|b| b.text.as_str()).collect::<Vec<_>>().concat();
+    let syntax = load_syntax(include_str!("../../syntaxes/alligatorus.json"));
+    let doc = load_document(&syntax, &format!(r#"{{"v1":{{"expr":{}}}}}"#, expr));
+    let mut ctx = build(syntax, doc, 2000., 800.);
+    let mut clock = Clock(0.);
+    settle(&mut ctx, &mut clock);
+    let snapshot = ctx.render_snapshot();
+    assert_eq!(snapshot.rows.len(), 1);
+    return snapshot.rows[0].bricks.iter().map(|b| b.text.as_str()).collect::<Vec<_>>().concat();
 }
 
 #[test]

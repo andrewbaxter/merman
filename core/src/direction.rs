@@ -46,6 +46,32 @@ impl DirectionConvert {
         }
     }
 
+    /// Layout coordinates of a page point (merman `convert` with a zero size box).
+    pub fn direction_convert_point(&self, x: f64, y: f64) -> (f64, f64) {
+        use SpecDirection::*;
+        match (self.converse, self.transverse) {
+            (Up, Left) => return (-y, -x),
+            (Up, Right) => return (-y, x),
+            (Down, Left) => return (y, -x),
+            (Down, Right) => return (y, x),
+            (Left, Up) => return (-x, -y),
+            (Left, Down) => return (-x, y),
+            (Right, Up) => return (x, -y),
+            (Right, Down) => return (x, y),
+            _ => panic!("directions are not perpendicular; syntax validation should have caught this"),
+        }
+    }
+
+    /// Transverse start of a box of `span` whose page start along the
+    /// transverse axis is `amount` (inverse of `direction_unconvert_transverse`).
+    pub fn direction_convert_transverse(&self, amount: f64, span: f64) -> f64 {
+        use SpecDirection::*;
+        match self.transverse {
+            Left | Up => return -amount - span,
+            Right | Down => return amount,
+        }
+    }
+
     /// Page coordinate of the transverse start of a box of the given size.
     pub fn direction_unconvert_transverse(&self, transverse: f64, x_span: f64, y_span: f64) -> UnconvertAxis {
         use SpecDirection::*;

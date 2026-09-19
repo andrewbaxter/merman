@@ -1,0 +1,1118 @@
+//! Selection (merman's cursors), hover (merman's hoverables), the primitive
+//! range attachment they share, syntax paths and copying.
+use crate::context::{
+    BorderId, BrickId, CaretId, Context, CursorId, HoverableId, TextBorderId, VisualId,
+};
+use crate::document::{AtomId, Field};
+use crate::serialize::{serialize_atom, serialize_pair};
+use crate::spec::{SpecBack, SpecObbox};
+use crate::syntax::FieldKind;
+use crate::visual::VisualKind;
+use serde_json::{Map, Value};
+
+/// Merman `VisualFieldPrimitive.RangeAttachment`: a caret or text box over a
+/// character range of a primitive.
+pub struct RangeState {
+    pub for_selection: bool,
+    pub visual: VisualId,
+    pub begin_offset: usize,
+    pub end_offset: usize,
+    pub begin_line: Option<usize>,
+    pub end_line: Option<usize>,
+    pub lead_first: bool,
+    pub caret: Option<CaretId>,
+    pub border: Option<TextBorderId>,
+    pub style: SpecObbox,
+}
+
+impl RangeState {
+    pub fn range_lead_index(&self) -> usize {
+        if self.lead_first {
+            return self.begin_offset;
+        }
+        return self.end_offset;
+    }
+}
+
+pub struct CursorAtom {
+    pub visual: VisualId,
+    /// Selectable index.
+    pub index: usize,
+    pub border: BorderId,
+}
+
+pub struct CursorArray {
+    pub visual: VisualId,
+    pub begin_index: usize,
+    pub end_index: usize,
+    pub lead_first: bool,
+    pub border: BorderId,
+}
+
+pub struct CursorPrimitive {
+    pub visual: VisualId,
+    pub range: RangeState,
+}
+
+pub enum Cursor {
+    Atom(CursorAtom),
+    Array(CursorArray),
+    Primitive(CursorPrimitive),
+}
+
+pub struct HoverablePrimitive {
+    pub visual: VisualId,
+    pub range: RangeState,
+}
+
+pub enum Hoverable {
+    Atom {
+        visual: VisualId,
+        index: usize,
+        border: BorderId,
+    },
+    Array {
+        visual: VisualId,
+        index: usize,
+        border: BorderId,
+    },
+    ArrayPlaceholder {
+        visual: VisualId,
+        border: BorderId,
+    },
+    Primitive(HoverablePrimitive),
+}
+
+/// Drag-selection in progress (from the viewer's mouse handling).
+pub struct DragSelect {
+    pub start: Vec<String>,
+    pub end: Option<Vec<String>>,
+}
+
+#[derive(Clone, Copy)]
+pub enum RangeLoc {
+    Cursor(CursorId),
+    Hoverable(HoverableId),
+}
+
+/// Something a syntax path points at.
+pub enum Located {
+    Atom(AtomId),
+    Field(AtomId, String),
+}
+
+impl Context {
+    // ---- Cursor lifecycle --------------------------------------------------
+
+    pub fn cursor_get(&self, id: CursorId) -> &Cursor {
+        return self.cursors[id].as_ref().expect("cursor destroyed");
+    }
+
+    fn cursor_get_mut(&mut self, id: CursorId) -> &mut Cursor {
+        return self.cursors[id].as_mut().expect("cursor destroyed");
+    }
+
+    /// Merman `Context.setCursor`.
+    fn set_cursor(&mut self, cursor: Cursor) -> CursorId {
+        self.select_token += 1;
+        let token = self.select_token;
+        let old = self.cursor;
+        let id = self.cursors.len();
+        self.cursors.push(Some(cursor));
+        self.cursor = Some(id);
+        if let Some(o) = old {
+            self.cursor_destroy(o);
+        }
+        if token != self.select_token {
+            return id;
+        }
+        self.trigger_idle_lay_bricks_outward();
+        return id;
+    }
+
+    pub fn clear_cursor(&mut self) {
+        let Some(c) = self.cursor.take() else {
+            return;
+        };
+        self.cursor_destroy(c);
+    }
+
+    fn cursor_destroy(&mut self, id: CursorId) {
+        let Some(cursor) = self.cursors[id].take() else {
+            return;
+        };
+        match cursor {
+            Cursor::Atom(c) => self.border_destroy(c.border),
+            Cursor::Array(c) => self.border_destroy(c.border),
+            Cursor::Primitive(mut c) => self.range_destroy_state(&mut c.range),
+        }
+    }
+
+    pub fn cursor_syntax_path(&self, id: CursorId) -> Vec<String> {
+        match self.cursor_get(id) {
+            Cursor::Atom(c) => {
+                let va = self.visual_atom(c.visual);
+                let field = va.selectable[c.index].0.clone();
+                return self.field_syntax_path(va.atom, &field);
+            }
+            Cursor::Array(c) => {
+                let (atom, field) = self.array_field(c.visual);
+                let mut p = self.field_syntax_path(atom, &field);
+                p.push(c.begin_index.to_string());
+                return p;
+            }
+            Cursor::Primitive(c) => {
+                let (atom, field) = self.primitive_field(c.visual);
+                let mut p = self.field_syntax_path(atom, &field);
+                p.push(c.range.range_lead_index().to_string());
+                return p;
+            }
+        }
+    }
+
+    fn array_field(&self, v: VisualId) -> (AtomId, String) {
+        let a = self.visual_field_array(v);
+        return (a.atom, self.front_array_spec(a.type_, a.front).field.clone());
+    }
+
+    fn primitive_field(&self, v: VisualId) -> (AtomId, String) {
+        let p = self.visual_primitive(v);
+        return (p.atom, self.front_primitive_spec(p.type_, p.front).field.clone());
+    }
+
+    // ---- Atom cursor -------------------------------------------------------
+
+    /// Merman `VisualAtom.select`.
+    pub fn atom_select(&mut self, visual: VisualId, index: usize) {
+        if let Some(h) = self.hover {
+            if let Some(Hoverable::Atom {
+                visual: hv,
+                index: hi,
+                ..
+            }) = &self.hoverables[h]
+            {
+                if *hv == visual && *hi == index {
+                    self.clear_hover();
+                }
+            }
+        }
+        if let Some(c) = self.cursor {
+            if let Cursor::Atom(ca) = self.cursor_get(c) {
+                if ca.visual == visual {
+                    self.cursor_atom_set_index(c, index);
+                    return;
+                }
+            }
+        }
+        let border = self.border_new(self.syntax.spec_root.cursor.clone());
+        let id = self.set_cursor(Cursor::Atom(CursorAtom {
+            visual,
+            index,
+            border,
+        }));
+        self.cursor_atom_reset_cornerstone(id);
+    }
+
+    pub fn atom_select_by_id(&mut self, visual: VisualId, field: &str) {
+        let index = self
+            .visual_atom(visual)
+            .selectable
+            .iter()
+            .position(|(f, _)| f == field)
+            .unwrap_or_else(|| panic!("field `{}` is not selectable", field));
+        self.atom_select(visual, index);
+    }
+
+    fn cursor_atom_set_index(&mut self, id: CursorId, index: usize) {
+        if let Cursor::Atom(c) = self.cursor_get_mut(id) {
+            c.index = index;
+        }
+        self.cursor_atom_reset_cornerstone(id);
+    }
+
+    fn cursor_atom_reset_cornerstone(&mut self, id: CursorId) {
+        let (visual, index, border) = match self.cursor_get(id) {
+            Cursor::Atom(c) => (c.visual, c.index, c.border),
+            _ => unreachable!(),
+        };
+        let field_visual = self.visual_atom(visual).selectable[index].1;
+        let visual_index = self.visuals[field_visual].parent.unwrap().index;
+        let children = self.visual_atom(visual).children.clone();
+        let cornerstone = self.visual_create_or_get_cornerstone_candidate(field_visual);
+        match cornerstone {
+            Some(cornerstone) => {
+                let (mut find_previous, mut find_next) = (None, None);
+                if self.bricks[cornerstone].course.is_none() {
+                    for at in (0..visual_index).rev() {
+                        if let Some(b) = self.visual_get_last_brick(children[at]) {
+                            find_previous = Some(b);
+                            break;
+                        }
+                    }
+                    if find_previous.is_none() {
+                        find_previous = self.parent_get_previous_brick(visual);
+                    }
+                    for at in visual_index + 1..children.len() {
+                        if let Some(b) = self.visual_get_first_brick(children[at]) {
+                            find_next = Some(b);
+                            break;
+                        }
+                    }
+                    if find_next.is_none() {
+                        find_next = self.parent_get_next_brick(visual);
+                    }
+                }
+                self.wall_set_cornerstone(cornerstone, find_previous, find_next);
+            }
+            None => {
+                self.wall.cornerstone = None;
+                self.wall.cornerstone_course = None;
+            }
+        }
+        let first = self.visual_get_first_brick(field_visual);
+        let last = self.visual_get_last_brick(field_visual);
+        self.border_set_first(border, first);
+        self.border_set_last(border, last);
+    }
+
+    // ---- Array cursor ------------------------------------------------------
+
+    /// Merman `VisualFieldArray.select`.
+    pub fn array_select(&mut self, visual: VisualId, lead_first: bool, start: usize, end: usize) {
+        if let Some(h) = self.hover {
+            let clear = match &self.hoverables[h] {
+                Some(Hoverable::Array {
+                    visual: hv, index, ..
+                }) => *hv == visual && *index >= start && *index <= end,
+                Some(Hoverable::ArrayPlaceholder { visual: hv, .. }) => *hv == visual,
+                _ => false,
+            };
+            if clear {
+                self.clear_hover();
+            }
+        }
+        if let Some(c) = self.cursor {
+            if let Cursor::Array(ca) = self.cursor_get(c) {
+                if ca.visual == visual {
+                    self.cursor_array_set_range(c, start, end);
+                    return;
+                }
+            }
+        }
+        let border = self.border_new(self.syntax.spec_root.cursor.clone());
+        let id = self.set_cursor(Cursor::Array(CursorArray {
+            visual,
+            begin_index: start,
+            end_index: end,
+            lead_first,
+            border,
+        }));
+        self.cursor_array_set_range(id, start, end);
+    }
+
+    /// Merman `FieldArray.selectInto`: false if there is nothing to select.
+    pub fn field_array_select_into(&mut self, visual: VisualId, lead_first: bool, start: usize, end: usize) -> bool {
+        if self.array_elements(visual).is_empty() {
+            return false;
+        }
+        self.array_select(visual, lead_first, start, end);
+        return true;
+    }
+
+    fn cursor_array_set_range(&mut self, id: CursorId, begin: usize, end: usize) {
+        let (visual, lead_first, border) = match self.cursor_get(id) {
+            Cursor::Array(c) => (c.visual, c.lead_first, c.border),
+            _ => unreachable!(),
+        };
+        if let Cursor::Array(c) = self.cursor_get_mut(id) {
+            c.begin_index = begin;
+            c.end_index = end;
+        }
+        if lead_first {
+            self.cursor_array_set_cornerstone(visual, begin);
+        } else {
+            self.cursor_array_set_cornerstone(visual, end);
+        }
+        let first = self.visual_get_first_brick(self.array_element_visual(visual, begin));
+        let last = self.visual_get_last_brick(self.array_element_visual(visual, end));
+        self.border_set_first(border, first);
+        self.border_set_last(border, last);
+    }
+
+    pub fn cursor_array_set_begin(&mut self, id: CursorId, index: usize) {
+        let (visual, border) = match self.cursor_get_mut(id) {
+            Cursor::Array(c) => {
+                c.lead_first = true;
+                c.begin_index = index;
+                (c.visual, c.border)
+            }
+            _ => unreachable!(),
+        };
+        self.cursor_array_set_cornerstone(visual, index);
+        let first = self.visual_get_first_brick(self.array_element_visual(visual, index));
+        self.border_set_first(border, first);
+    }
+
+    pub fn cursor_array_set_end(&mut self, id: CursorId, index: usize) {
+        let (visual, border) = match self.cursor_get_mut(id) {
+            Cursor::Array(c) => {
+                c.lead_first = false;
+                c.end_index = index;
+                (c.visual, c.border)
+            }
+            _ => unreachable!(),
+        };
+        self.cursor_array_set_cornerstone(visual, index);
+        let last = self.visual_get_last_brick(self.array_element_visual(visual, index));
+        self.border_set_last(border, last);
+    }
+
+    fn cursor_array_set_cornerstone(&mut self, visual: VisualId, index: usize) {
+        let element = self.array_element_visual(visual, index);
+        let Some(cornerstone) = self.visual_create_or_get_cornerstone_candidate(element) else {
+            self.wall.cornerstone = None;
+            self.wall.cornerstone_course = None;
+            return;
+        };
+        let (mut find_previous, mut find_next) = (None, None);
+        if self.bricks[cornerstone].course.is_none() {
+            let children = self.visual_field_array(visual).children.clone();
+            let vi = self.array_visual_index(visual, index);
+            for at in (0..vi).rev() {
+                if let Some(b) = self.visual_get_last_brick(children[at]) {
+                    find_previous = Some(b);
+                    break;
+                }
+            }
+            if find_previous.is_none() {
+                find_previous = self.parent_get_previous_brick(visual);
+            }
+            for at in vi + 1..children.len() {
+                if let Some(b) = self.visual_get_first_brick(children[at]) {
+                    find_next = Some(b);
+                    break;
+                }
+            }
+            if find_next.is_none() {
+                find_next = self.parent_get_next_brick(visual);
+            }
+        }
+        self.wall_set_cornerstone(cornerstone, find_previous, find_next);
+    }
+
+    // ---- Primitive cursor and ranges ---------------------------------------
+
+    /// Merman `VisualFieldPrimitive.select`.
+    pub fn primitive_select(&mut self, visual: VisualId, lead_first: bool, begin: usize, end: usize) {
+        if let Some(c) = self.cursor {
+            if let Cursor::Primitive(cp) = self.cursor_get(c) {
+                if cp.visual == visual {
+                    if let Cursor::Primitive(cp) = self.cursor_get_mut(c) {
+                        cp.range.lead_first = lead_first;
+                    }
+                    self.range_set_offsets(RangeLoc::Cursor(c), begin, end);
+                    return;
+                }
+            }
+        }
+        let range = RangeState {
+            for_selection: true,
+            visual,
+            begin_offset: 0,
+            end_offset: 0,
+            begin_line: None,
+            end_line: None,
+            lead_first,
+            caret: None,
+            border: None,
+            style: self.syntax.spec_root.cursor.clone(),
+        };
+        let id = self.set_cursor(Cursor::Primitive(CursorPrimitive { visual, range }));
+        self.range_set_offsets(RangeLoc::Cursor(id), begin, end);
+    }
+
+    fn range(&self, loc: RangeLoc) -> &RangeState {
+        match loc {
+            RangeLoc::Cursor(c) => match self.cursor_get(c) {
+                Cursor::Primitive(p) => return &p.range,
+                _ => panic!("range on non-primitive cursor"),
+            },
+            RangeLoc::Hoverable(h) => match self.hoverables[h].as_ref().expect("hoverable destroyed") {
+                Hoverable::Primitive(p) => return &p.range,
+                _ => panic!("range on non-primitive hoverable"),
+            },
+        }
+    }
+
+    fn range_mut(&mut self, loc: RangeLoc) -> &mut RangeState {
+        match loc {
+            RangeLoc::Cursor(c) => match self.cursor_get_mut(c) {
+                Cursor::Primitive(p) => return &mut p.range,
+                _ => panic!("range on non-primitive cursor"),
+            },
+            RangeLoc::Hoverable(h) => match self.hoverables[h].as_mut().expect("hoverable destroyed") {
+                Hoverable::Primitive(p) => return &mut p.range,
+                _ => panic!("range on non-primitive hoverable"),
+            },
+        }
+    }
+
+    pub fn range_set_offset(&mut self, loc: RangeLoc, offset: usize) {
+        self.range_set_offsets(loc, offset, offset);
+    }
+
+    pub fn range_set_begin_offset(&mut self, loc: RangeLoc, offset: usize) {
+        let end = self.range(loc).end_offset;
+        if offset >= end {
+            self.range_mut(loc).lead_first = false;
+            self.range_set_offsets(loc, end, offset);
+        } else {
+            self.range_mut(loc).lead_first = true;
+            self.range_set_offsets(loc, offset, end);
+        }
+    }
+
+    pub fn range_set_end_offset(&mut self, loc: RangeLoc, offset: usize) {
+        let begin = self.range(loc).begin_offset;
+        if offset <= begin {
+            self.range_mut(loc).lead_first = true;
+            self.range_set_offsets(loc, offset, begin);
+        } else {
+            self.range_mut(loc).lead_first = false;
+            self.range_set_offsets(loc, begin, offset);
+        }
+    }
+
+    pub fn range_nudge(&mut self, loc: RangeLoc) {
+        let (b, e) = {
+            let r = self.range(loc);
+            (r.begin_offset, r.end_offset)
+        };
+        self.range_set_offsets(loc, b, e);
+    }
+
+    pub fn cursor_primitive_range_nudge(&mut self, id: CursorId) {
+        self.range_nudge(RangeLoc::Cursor(id));
+    }
+
+    pub fn hoverable_primitive_range_nudge(&mut self, id: HoverableId) {
+        self.range_nudge(RangeLoc::Hoverable(id));
+    }
+
+    /// Merman `RangeAttachment.setOffsetsInternal`.
+    pub fn range_set_offsets(&mut self, loc: RangeLoc, begin_offset: usize, end_offset: usize) {
+        let visual = self.range(loc).visual;
+        let length = self.visual_primitive(visual).value.len();
+        let was_point = {
+            let r = self.range(loc);
+            r.begin_offset == r.end_offset
+        };
+        let begin = begin_offset.min(length);
+        let end = end_offset.min(length).max(begin);
+        {
+            let r = self.range_mut(loc);
+            r.begin_offset = begin;
+            r.end_offset = end;
+        }
+        if begin == end {
+            if let Some(b) = self.range_mut(loc).border.take() {
+                self.text_border_destroy(b);
+            }
+            if self.range(loc).caret.is_none() {
+                let style = self.range(loc).style.clone();
+                let caret = self.caret_new(style);
+                self.range_mut(loc).caret = Some(caret);
+            }
+            let index = self.primitive_find_containing(visual, begin);
+            {
+                let r = self.range_mut(loc);
+                r.begin_line = Some(index);
+                r.end_line = Some(index);
+            }
+            self.range_set_cornerstone(loc, index);
+            let brick = self.visual_primitive(visual).lines[index].brick;
+            let line_offset = self.visual_primitive(visual).lines[index].offset;
+            let caret = self.range(loc).caret.unwrap();
+            self.caret_set_position(caret, brick, begin - line_offset);
+        } else {
+            if was_point {
+                let r = self.range_mut(loc);
+                r.begin_line = None;
+                r.end_line = None;
+            }
+            if let Some(c) = self.range(loc).caret {
+                self.caret_destroy(c);
+                self.range_mut(loc).caret = None;
+            }
+            let begin_index = self.primitive_find_containing(visual, begin);
+            self.range_mut(loc).begin_line = Some(begin_index);
+            let new_first_brick = self.visual_primitive(visual).lines[begin_index].brick;
+            let new_first_index = begin - self.visual_primitive(visual).lines[begin_index].offset;
+            let end_index = self.primitive_find_containing(visual, end);
+            self.range_mut(loc).end_line = Some(end_index);
+            let new_last_brick = self.visual_primitive(visual).lines[end_index].brick;
+            let new_last_index = end - self.visual_primitive(visual).lines[end_index].offset;
+            if self.range(loc).border.is_none() {
+                let style = self.range(loc).style.clone();
+                let border = self.text_border_new(style);
+                self.range_mut(loc).border = Some(border);
+            }
+            if self.range(loc).lead_first {
+                if new_first_brick.is_some() {
+                    self.range_set_cornerstone(loc, begin_index);
+                }
+            } else if new_last_brick.is_some() {
+                self.range_set_cornerstone(loc, end_index);
+            }
+            let border = self.range(loc).border.unwrap();
+            self.text_border_set_both(border, new_first_brick, new_first_index, new_last_brick, new_last_index);
+        }
+    }
+
+    fn range_set_cornerstone(&mut self, loc: RangeLoc, index: usize) {
+        if !self.range(loc).for_selection {
+            return;
+        }
+        let visual = self.range(loc).visual;
+        let cornerstone = self.line_create_or_get_brick(visual, index);
+        let (mut find_previous, mut find_next) = (None, None);
+        if self.bricks[cornerstone].course.is_none() {
+            let lines = self.visual_primitive(visual).lines.len();
+            for at in (0..index).rev() {
+                if let Some(b) = self.visual_primitive(visual).lines[at].brick {
+                    find_previous = Some(b);
+                    break;
+                }
+            }
+            if find_previous.is_none() {
+                find_previous = self.parent_find_previous_brick(visual);
+            }
+            for at in index + 1..lines {
+                if let Some(b) = self.visual_primitive(visual).lines[at].brick {
+                    find_next = Some(b);
+                    break;
+                }
+            }
+            if find_next.is_none() {
+                find_next = self.parent_find_next_brick(visual);
+            }
+        }
+        self.wall_set_cornerstone(cornerstone, find_previous, find_next);
+    }
+
+    fn range_destroy_state(&mut self, range: &mut RangeState) {
+        if let Some(b) = range.border.take() {
+            self.text_border_destroy(b);
+        }
+        if let Some(c) = range.caret.take() {
+            self.caret_destroy(c);
+        }
+    }
+
+    // ---- Selection entry points --------------------------------------------
+
+    /// Merman `Visual.selectIntoAnyChild`.
+    pub fn visual_select_into_any_child(&mut self, v: VisualId) -> bool {
+        match &self.visuals[v].kind {
+            VisualKind::Atom(a) => {
+                if a.selectable.is_empty() {
+                    return false;
+                }
+                if a.need_intermediate_cursor {
+                    let index = a.default_selection;
+                    self.atom_select(v, index);
+                } else {
+                    let first = a.selectable[0].1;
+                    self.visual_select_into_any_child(first);
+                }
+                return true;
+            }
+            VisualKind::Group(g) => {
+                for child in g.children.clone() {
+                    if self.visual_select_into_any_child(child) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+            VisualKind::Symbol(_) => return false,
+            VisualKind::Primitive(p) => {
+                let len = p.value.len();
+                self.primitive_select(v, true, len, len);
+                return true;
+            }
+            VisualKind::FieldAtom(fa) => {
+                let (atom, type_, front) = (fa.atom, fa.type_, fa.front);
+                let crate::syntax::Front::Atom(f) = &self.syntax.syntax_type(type_).front[front] else {
+                    unreachable!();
+                };
+                let field = f.field.clone();
+                let atom_visual = self.atom_visual[atom].unwrap();
+                self.atom_select_by_id(atom_visual, &field);
+                return true;
+            }
+            VisualKind::FieldArray(_) => {
+                self.field_array_select_into(v, true, 0, 0);
+                return true;
+            }
+        }
+    }
+
+    /// Merman `Atom.fieldParentRef.selectField`: select this atom within its
+    /// parent's field.
+    pub fn atom_parent_select_field(&mut self, atom: AtomId) -> bool {
+        let Some(parent_ref) = &self.document.document_atom(atom).parent else {
+            return false;
+        };
+        let (parent_atom, field, index) = (parent_ref.atom, parent_ref.field.clone(), parent_ref.index);
+        let parent_visual = self.atom_visual[parent_atom].unwrap();
+        let kind = *self
+            .syntax
+            .syntax_type(self.document.document_atom(parent_atom).type_)
+            .fields
+            .get(&field)
+            .unwrap();
+        match kind {
+            FieldKind::Array => {
+                let field_visual = self
+                    .visual_atom(parent_visual)
+                    .selectable
+                    .iter()
+                    .find(|(f, _)| *f == field)
+                    .unwrap()
+                    .1;
+                return self.field_array_select_into(field_visual, true, index, index);
+            }
+            FieldKind::Atom => {
+                self.atom_select_by_id(parent_visual, &field);
+                return true;
+            }
+            FieldKind::Primitive => unreachable!(),
+        }
+    }
+
+    /// Merman `Atom.Parent.selectParent` for a named field: select the field
+    /// within its atom, or the atom within its parent.
+    pub fn field_parent_select_parent(&mut self, atom: AtomId, field: &str) -> bool {
+        let visual = self.atom_visual[atom].unwrap();
+        if self.visual_atom(visual).need_intermediate_cursor {
+            self.atom_select_by_id(visual, field);
+            return true;
+        }
+        if self.document.document_atom(atom).parent.is_none() {
+            return false;
+        }
+        return self.atom_parent_select_field(atom);
+    }
+
+    // ---- Hoverables --------------------------------------------------------
+
+    pub fn clear_hover(&mut self) {
+        if let Some(h) = self.hover.take() {
+            self.hoverable_clear(h);
+        }
+        if let Some(t) = self.hover_idle {
+            self.task_destroy(t);
+        }
+        self.hover_brick = None;
+    }
+
+    pub fn hoverable_clear(&mut self, id: HoverableId) {
+        let Some(h) = self.hoverables[id].take() else {
+            return;
+        };
+        match h {
+            Hoverable::Atom { border, .. }
+            | Hoverable::Array { border, .. }
+            | Hoverable::ArrayPlaceholder { border, .. } => self.border_destroy(border),
+            Hoverable::Primitive(mut p) => self.range_destroy_state(&mut p.range),
+        }
+    }
+
+    fn hoverable_push(&mut self, h: Hoverable) -> HoverableId {
+        let id = self.hoverables.len();
+        self.hoverables.push(Some(h));
+        return id;
+    }
+
+    /// Merman `SelectableChildParent.hover`'s `AtomHoverable` handling.
+    pub fn atom_hover_selectable(&mut self, atom: VisualId, index: usize) -> (HoverableId, bool) {
+        if let Some(h) = self.hover {
+            if let Some(Hoverable::Atom { visual, index: i, .. }) = &self.hoverables[h] {
+                if *visual == atom {
+                    let changed = *i != index;
+                    if changed {
+                        self.atom_hoverable_set_index(h, index);
+                    }
+                    return (h, changed);
+                }
+            }
+        }
+        let border = self.border_new(self.syntax.spec_root.hover.clone());
+        let id = self.hoverable_push(Hoverable::Atom {
+            visual: atom,
+            index,
+            border,
+        });
+        self.atom_hoverable_set_index(id, index);
+        return (id, true);
+    }
+
+    fn atom_hoverable_set_index(&mut self, id: HoverableId, index: usize) {
+        let (visual, border) = match self.hoverables[id].as_mut().unwrap() {
+            Hoverable::Atom { visual, index: i, border } => {
+                *i = index;
+                (*visual, *border)
+            }
+            _ => unreachable!(),
+        };
+        let field_visual = self.visual_atom(visual).selectable[index].1;
+        let first = self.visual_get_first_brick(field_visual);
+        let last = self.visual_get_last_brick(field_visual);
+        self.border_set_first(border, first);
+        self.border_set_last(border, last);
+    }
+
+    /// Merman `FrontArrayParent.hover` for an element.
+    pub fn array_hover_element(&mut self, array: VisualId, index: usize) -> Option<(HoverableId, bool)> {
+        if let Some(c) = self.cursor {
+            if let Cursor::Array(ca) = self.cursor_get(c) {
+                if ca.visual == array && ca.begin_index == ca.end_index && ca.begin_index == index {
+                    return None;
+                }
+            }
+        }
+        let mut changed = false;
+        let id = match self.hover {
+            Some(h) if matches!(&self.hoverables[h], Some(Hoverable::Array { visual, .. }) if *visual == array) => h,
+            _ => {
+                changed = true;
+                let border = self.border_new(self.syntax.spec_root.hover.clone());
+                self.hoverable_push(Hoverable::Array {
+                    visual: array,
+                    index,
+                    border,
+                })
+            }
+        };
+        let (old_index, border) = match self.hoverables[id].as_mut().unwrap() {
+            Hoverable::Array { index: i, border, .. } => {
+                let old = *i;
+                *i = index;
+                (old, *border)
+            }
+            _ => unreachable!(),
+        };
+        if old_index != index {
+            changed = true;
+        }
+        let element = self.array_element_visual(array, index);
+        let first = self.visual_get_first_brick(element);
+        let last = self.visual_get_last_brick(element);
+        self.border_set_first(border, first);
+        self.border_set_last(border, last);
+        return Some((id, changed));
+    }
+
+    pub fn array_hover_placeholder(&mut self, array: VisualId, brick: BrickId) -> (HoverableId, bool) {
+        let border = self.border_new(self.syntax.spec_root.hover.clone());
+        let id = self.hoverable_push(Hoverable::ArrayPlaceholder { visual: array, border });
+        self.border_set_first(border, Some(brick));
+        self.border_set_last(border, Some(brick));
+        return (id, true);
+    }
+
+    /// Merman `Line.hover`'s `PrimitiveHoverable` handling.
+    pub fn primitive_hover_position(&mut self, visual: VisualId, offset: usize) -> (HoverableId, bool) {
+        let mut changed = false;
+        let id = match self.hover {
+            Some(h) if matches!(&self.hoverables[h], Some(Hoverable::Primitive(p)) if p.visual == visual) => h,
+            _ => {
+                changed = true;
+                let range = RangeState {
+                    for_selection: false,
+                    visual,
+                    begin_offset: 0,
+                    end_offset: 0,
+                    begin_line: None,
+                    end_line: None,
+                    lead_first: true,
+                    caret: None,
+                    border: None,
+                    style: self.syntax.spec_root.hover.clone(),
+                };
+                self.hoverable_push(Hoverable::Primitive(HoverablePrimitive { visual, range }))
+            }
+        };
+        if self.range(RangeLoc::Hoverable(id)).range_lead_index() != offset {
+            changed = true;
+        }
+        self.range_set_offset(RangeLoc::Hoverable(id), offset);
+        return (id, changed);
+    }
+
+    /// Merman `Hoverable.select`.
+    pub fn hoverable_select(&mut self, id: HoverableId) {
+        match self.hoverables[id].as_ref().expect("hoverable destroyed") {
+            Hoverable::Atom { visual, index, .. } => {
+                let (v, i) = (*visual, *index);
+                self.atom_select(v, i);
+            }
+            Hoverable::Array { visual, index, .. } => {
+                let (v, i) = (*visual, *index);
+                self.array_select(v, true, i, i);
+            }
+            Hoverable::ArrayPlaceholder { visual, .. } => {
+                let v = *visual;
+                self.array_select(v, true, 0, 0);
+            }
+            Hoverable::Primitive(p) => {
+                let (v, b, e) = (p.visual, p.range.begin_offset, p.range.end_offset);
+                self.primitive_select(v, true, b, e);
+            }
+        }
+    }
+
+    pub fn hoverable_syntax_path(&self, id: HoverableId) -> Vec<String> {
+        match self.hoverables[id].as_ref().expect("hoverable destroyed") {
+            Hoverable::Atom { visual, index, .. } => {
+                let mut p = self.atom_syntax_path(self.visual_atom(*visual).atom);
+                p.push(index.to_string());
+                return p;
+            }
+            Hoverable::Array { visual, index, .. } => {
+                let (atom, field) = self.array_field(*visual);
+                let mut p = self.field_syntax_path(atom, &field);
+                p.push(index.to_string());
+                return p;
+            }
+            Hoverable::ArrayPlaceholder { visual, .. } => {
+                let (atom, field) = self.array_field(*visual);
+                let mut p = self.field_syntax_path(atom, &field);
+                p.push("0".to_string());
+                return p;
+            }
+            Hoverable::Primitive(hp) => {
+                let (atom, field) = self.primitive_field(hp.visual);
+                let mut p = self.field_syntax_path(atom, &field);
+                p.push(hp.range.range_lead_index().to_string());
+                return p;
+            }
+        }
+    }
+
+    // ---- Brick creation notifications for borders --------------------------
+
+    pub fn atom_selectable_brick_created(&mut self, atom: VisualId, sel: usize, brick: BrickId, first: bool) {
+        let mut borders = vec![];
+        if let Some(c) = self.cursor {
+            if let Cursor::Atom(ca) = self.cursor_get(c) {
+                if ca.visual == atom && ca.index == sel {
+                    borders.push(ca.border);
+                }
+            }
+        }
+        if let Some(h) = self.hover {
+            if let Some(Hoverable::Atom { visual, index, border }) = &self.hoverables[h] {
+                if *visual == atom && *index == sel {
+                    borders.push(*border);
+                }
+            }
+        }
+        for b in borders {
+            if first {
+                self.border_set_first(b, Some(brick));
+            } else {
+                self.border_set_last(b, Some(brick));
+            }
+        }
+    }
+
+    pub fn array_element_brick_created(&mut self, array: VisualId, index: usize, brick: BrickId, first: bool) {
+        let mut borders = vec![];
+        if let Some(c) = self.cursor {
+            if let Cursor::Array(ca) = self.cursor_get(c) {
+                if ca.visual == array && (if first { ca.begin_index } else { ca.end_index }) == index {
+                    borders.push(ca.border);
+                }
+            }
+        }
+        if let Some(h) = self.hover {
+            if let Some(Hoverable::Array { visual, index: i, border }) = &self.hoverables[h] {
+                if *visual == array && *i == index {
+                    borders.push(*border);
+                }
+            }
+        }
+        for b in borders {
+            if first {
+                self.border_set_first(b, Some(brick));
+            } else {
+                self.border_set_last(b, Some(brick));
+            }
+        }
+    }
+
+    // ---- Syntax paths ------------------------------------------------------
+
+    /// Merman `Atom.getSyntaxPath`.
+    pub fn atom_syntax_path(&self, atom: AtomId) -> Vec<String> {
+        let Some(parent_ref) = &self.document.document_atom(atom).parent else {
+            return vec![];
+        };
+        let mut path = self.field_syntax_path(parent_ref.atom, &parent_ref.field);
+        let kind = self
+            .syntax
+            .syntax_type(self.document.document_atom(parent_ref.atom).type_)
+            .fields[&parent_ref.field];
+        if kind == FieldKind::Array {
+            path.push(parent_ref.index.to_string());
+        }
+        return path;
+    }
+
+    /// Merman `Field.getSyntaxPath` for a named field.
+    pub fn field_syntax_path(&self, atom: AtomId, field: &str) -> Vec<String> {
+        let mut path = self.atom_syntax_path(atom);
+        path.push("named".to_string());
+        path.push(field.to_string());
+        return path;
+    }
+
+    /// Merman `Context.syntaxLocate`.
+    pub fn syntax_locate(&self, path: &[String]) -> Option<Located> {
+        let mut at = Located::Atom(self.document.root);
+        let mut i = 0;
+        while i < path.len() {
+            match at {
+                Located::Atom(a) => {
+                    if path[i] != "named" || i + 1 >= path.len() {
+                        return None;
+                    }
+                    let field = path[i + 1].clone();
+                    if !self.document.document_atom(a).fields.contains_key(&field) {
+                        return None;
+                    }
+                    i += 2;
+                    at = Located::Field(a, field);
+                }
+                Located::Field(a, ref field) => match self.document.document_atom(a).fields.get(field).unwrap() {
+                    Field::Array(elements) => {
+                        let Ok(index) = path[i].parse::<usize>() else {
+                            return None;
+                        };
+                        if index >= elements.len() {
+                            return None;
+                        }
+                        i += 1;
+                        at = Located::Atom(elements[index]);
+                    }
+                    Field::Atom(child) => {
+                        at = Located::Atom(*child);
+                    }
+                    Field::Primitive(_) => {
+                        return Some(at);
+                    }
+                },
+            }
+        }
+        return Some(at);
+    }
+
+    // ---- Copy --------------------------------------------------------------
+
+    /// Merman's cursor `actionCopy`.
+    pub fn cursor_copy(&mut self) {
+        let Some(c) = self.cursor else {
+            return;
+        };
+        match self.cursor_get(c) {
+            Cursor::Atom(ca) => {
+                let field_visual = self.visual_atom(ca.visual).selectable[ca.index].1;
+                match &self.visuals[field_visual].kind {
+                    VisualKind::FieldAtom(fa) => {
+                        let body = self.visual_atom(fa.body).atom;
+                        self.copy_atoms(&[body], false);
+                    }
+                    VisualKind::FieldArray(_) => {
+                        let elements = self.array_elements(field_visual);
+                        if elements.is_empty() {
+                            self.copy_array(field_visual, &[]);
+                        } else {
+                            let n = elements.len();
+                            self.copy_array(field_visual, &elements[0..n]);
+                        }
+                    }
+                    VisualKind::Primitive(p) => {
+                        let text = p.value.clone();
+                        self.clipboard = Some(text);
+                    }
+                    _ => panic!("unexpected selectable visual"),
+                }
+            }
+            Cursor::Array(ca) => {
+                let elements = self.array_elements(ca.visual);
+                let (v, b, e) = (ca.visual, ca.begin_index, ca.end_index);
+                self.copy_array(v, &elements[b..=e]);
+            }
+            Cursor::Primitive(cp) => {
+                let text = self.visual_primitive(cp.visual).value.clone();
+                let (b, e) = (cp.range.begin_offset, cp.range.end_offset);
+                self.clipboard = Some(text[b.min(text.len())..e.min(text.len())].to_string());
+            }
+        }
+    }
+
+    /// Copy array elements in their container's format: an object for record
+    /// backs, else an array.
+    fn copy_array(&mut self, array: VisualId, atoms: &[AtomId]) {
+        let a = self.visual_field_array(array);
+        let field = self.front_array_spec(a.type_, a.front).field.clone();
+        let record = matches!(
+            back_of_field(&self.syntax.syntax_type(a.type_).back, &field),
+            Some(SpecBack::Record(_))
+        );
+        self.copy_atoms(atoms, record);
+    }
+
+    /// Merman `Context.copy` with `CopyContext.ARRAY`/`RECORD`: the atoms as
+    /// pretty JSON in a wrapping array or object.
+    pub fn copy_atoms(&mut self, atoms: &[AtomId], record: bool) {
+        let value = if record {
+            let mut out = Map::new();
+            for a in atoms {
+                let (k, v) = serialize_pair(&self.syntax, &self.document, *a);
+                out.insert(k, v);
+            }
+            Value::Object(out)
+        } else {
+            Value::Array(
+                atoms
+                    .iter()
+                    .map(|a| serialize_atom(&self.syntax, &self.document, *a))
+                    .collect(),
+            )
+        };
+        self.clipboard = Some(serde_json::to_string_pretty(&value).unwrap());
+    }
+}
+
+/// The back spec capturing a field.
+fn back_of_field<'a>(back: &'a SpecBack, field: &str) -> Option<&'a SpecBack> {
+    match back {
+        SpecBack::String(f) | SpecBack::Number(f) | SpecBack::Literal(f) => {
+            return if f.id == field { Some(back) } else { None };
+        }
+        SpecBack::Atom(a) => return if a.id == field { Some(back) } else { None },
+        SpecBack::Array(a) | SpecBack::Record(a) => return if a.id == field { Some(back) } else { None },
+        SpecBack::Optional(a) => return if a.id == field { Some(back) } else { None },
+        SpecBack::Pair(p) => {
+            return back_of_field(&p.key, field).or_else(|| back_of_field(&p.value, field));
+        }
+        SpecBack::FixedArray(elems) => return elems.iter().find_map(|e| back_of_field(e, field)),
+        SpecBack::FixedRecord(entries) => {
+            return entries.iter().find_map(|e| back_of_field(&e.value, field));
+        }
+        SpecBack::FixedString(_) | SpecBack::FixedLiteral(_) | SpecBack::Discard(_) => return None,
+    }
+}

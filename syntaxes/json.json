@@ -5,6 +5,8 @@
   "font_family": "monospace",
   "font_size": 16,
   "pad": {"converse_start": 12, "converse_end": 12, "transverse_start": 12, "transverse_end": 12},
+  "cursor": {"padding": {"converse_start": 1, "converse_end": 1, "transverse_start": 1, "transverse_end": 1}, "round_start": true, "round_end": true, "line_thickness": 1, "round_radius": 3, "line_color": "#ffffff"},
+  "hover": {"padding": {"converse_start": 1, "converse_end": 1, "transverse_start": 1, "transverse_end": 1}, "round_start": true, "round_end": true, "line_thickness": 1, "round_radius": 3, "line_color": "#888888"},
   "styles": {
     "string": {"color": "#f79578"},
     "number": {"color": "#95fa94"},

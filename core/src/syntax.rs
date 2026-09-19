@@ -4,8 +4,8 @@ use crate::direction::DirectionConvert;
 use crate::measure::FontSpec;
 use crate::spec::{
     SpecAlignment, SpecBack, SpecCondition, SpecDirection, SpecDisplayUnit, SpecFront,
-    SpecFrontArray, SpecFrontAtom, SpecFrontPrimitive, SpecPadding, SpecSplit, SpecSymbol,
-    SpecSyntax, SpecType, SpecTypeRoot,
+    SpecFrontArray, SpecFrontAtom, SpecFrontPrimitive, SpecObbox, SpecPadding, SpecSplit,
+    SpecSymbol, SpecSyntax, SpecType, SpecTypeRoot,
 };
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -35,6 +35,17 @@ pub struct SpecSyntaxSettings {
     pub pad: SpecPadding,
     pub course_transverse_stride: f64,
     pub unprintable: String,
+    pub cursor: SpecObbox,
+    pub hover: SpecObbox,
+}
+
+fn scale_obbox(o: &SpecObbox, to_pixels: f64) -> SpecObbox {
+    return SpecObbox {
+        padding: scale_padding(&o.padding, to_pixels),
+        round_radius: o.round_radius * to_pixels,
+        line_thickness: o.line_thickness * to_pixels,
+        ..o.clone()
+    };
 }
 
 /// Lengths in px.
@@ -359,6 +370,8 @@ impl Syntax {
                 pad: scale_padding(&spec.pad, to_pixels),
                 course_transverse_stride: spec.course_transverse_stride * to_pixels,
                 unprintable: spec.unprintable,
+                cursor: scale_obbox(&spec.cursor, to_pixels),
+                hover: scale_obbox(&spec.hover, to_pixels),
             },
             types,
             groups,

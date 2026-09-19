@@ -1,62 +1,34 @@
-use merman3_core::document::Document;
-use merman3_core::layout::{Layout, LayoutConfig, Rows};
+mod common;
+
+use common::{build, load_document, load_syntax, render_text, settle, Clock};
+use merman3_core::context::{Context, Vector};
 use merman3_core::matcher::match_document;
-use merman3_core::measure::MeasureFixed;
 use merman3_core::spec::SpecSyntax;
 use merman3_core::syntax::Syntax;
-use merman3_core::visual::Visual;
-use std::rc::Rc;
 
 /// The json syntax uses a 16px font, which merman treats as 16pt = 12px; the fixed
 /// measurer makes every grapheme 0.6em, so 7.2px, and the 28.8px indent is 4 characters.
 const UNIT: f64 = 12. * 0.6;
 
-fn json_syntax() -> Syntax {
-    let spec: SpecSyntax =
-        serde_json::from_str(include_str!("../../syntaxes/json.json")).expect("syntax json");
-    return Syntax::syntax_resolve(spec).unwrap_or_else(|e| panic!("{}", e.join("\n")));
-}
-
-fn parse(syntax: &Syntax, text: &str) -> Document {
-    let value: serde_json::Value = serde_json::from_str(text).unwrap();
-    return match_document(syntax, &value).unwrap_or_else(|e| panic!("{}", e.mismatch_format()));
-}
-
-fn render(rows: &Rows) -> Vec<String> {
-    let unit = UNIT;
-    let mut out = vec![];
-    for row in &rows.rows {
-        let mut line = String::new();
-        for b in &row.bricks {
-            let col = (b.converse / unit).round() as usize;
-            while line.chars().count() < col {
-                line.push(' ');
-            }
-            line.push_str(&b.text);
-        }
-        out.push(line);
-    }
-    return out;
-}
-
-fn build(text: &str, edge_chars: f64) -> (Layout, MeasureFixed) {
-    let syntax = Rc::new(json_syntax());
-    let doc = parse(&syntax, text);
-    let mut measure = MeasureFixed;
-    let visual = Rc::new(Visual::visual_build(&syntax, &doc, &mut measure));
-    let layout = Layout::layout_build(
-        syntax,
-        visual,
-        LayoutConfig::default(),
-        edge_chars * UNIT,
-        &mut measure,
-    );
-    return (layout, measure);
+fn json_context(text: &str, edge_chars: f64) -> (Context, Clock) {
+    let syntax = load_syntax(include_str!("../../syntaxes/json.json"));
+    let doc = load_document(&syntax, text);
+    let pad = syntax.spec_root.pad.converse_start + syntax.spec_root.pad.converse_end;
+    let mut ctx = build(syntax, doc, edge_chars * UNIT + pad, 600.);
+    let mut clock = Clock(0.);
+    settle(&mut ctx, &mut clock);
+    return (ctx, clock);
 }
 
 fn layout_text(text: &str, edge_chars: f64) -> Vec<String> {
-    let (layout, _) = build(text, edge_chars);
-    return render(&layout.layout_rows());
+    let (ctx, _) = json_context(text, edge_chars);
+    return render_text(&ctx.render_snapshot(), UNIT);
+}
+
+fn resize(ctx: &mut Context, clock: &mut Clock, edge_chars: f64) {
+    let pad = ctx.syntax.spec_root.pad.converse_start + ctx.syntax.spec_root.pad.converse_end;
+    ctx.context_resize(edge_chars * UNIT + pad, 600.);
+    settle(ctx, clock);
 }
 
 #[test]
@@ -82,16 +54,16 @@ fn compacts_outer_first() {
 
 #[test]
 fn expands_when_edge_grows_and_recompacts() {
-    let (mut layout, mut measure) = build(r#"{"a": 1, "b": [true, null]}"#, 19.);
-    assert_eq!(render(&layout.layout_rows()).len(), 4);
-    layout.layout_set_edge(100. * UNIT, &mut measure);
+    let (mut ctx, mut clock) = json_context(r#"{"a": 1, "b": [true, null]}"#, 19.);
+    assert_eq!(render_text(&ctx.render_snapshot(), UNIT).len(), 4);
+    resize(&mut ctx, &mut clock, 100.);
     assert_eq!(
-        render(&layout.layout_rows()),
+        render_text(&ctx.render_snapshot(), UNIT),
         vec!["{a: 1, b: [true, null]}".to_string()]
     );
-    layout.layout_set_edge(12. * UNIT, &mut measure);
+    resize(&mut ctx, &mut clock, 12.);
     assert_eq!(
-        render(&layout.layout_rows()),
+        render_text(&ctx.render_snapshot(), UNIT),
         vec![
             "{".to_string(),
             "    a: 1, ".to_string(),
@@ -104,11 +76,11 @@ fn expands_when_edge_grows_and_recompacts() {
     );
     // Growing a little (under the retry factor) changes nothing; growing past it
     // expands only what fits.
-    layout.layout_set_edge(13. * UNIT, &mut measure);
-    assert_eq!(render(&layout.layout_rows()).len(), 7);
-    layout.layout_set_edge(20. * UNIT, &mut measure);
+    resize(&mut ctx, &mut clock, 13.);
+    assert_eq!(render_text(&ctx.render_snapshot(), UNIT).len(), 7);
+    resize(&mut ctx, &mut clock, 20.);
     assert_eq!(
-        render(&layout.layout_rows()),
+        render_text(&ctx.render_snapshot(), UNIT),
         vec![
             "{".to_string(),
             "    a: 1, ".to_string(),
@@ -157,14 +129,60 @@ fn soft_wraps_long_string() {
 }
 
 #[test]
+fn unwraps_string_when_edge_grows() {
+    let (mut ctx, mut clock) = json_context(r#"["the quick brown fox jumps over the lazy dog"]"#, 20.);
+    assert_eq!(render_text(&ctx.render_snapshot(), UNIT).len(), 5);
+    resize(&mut ctx, &mut clock, 100.);
+    assert_eq!(
+        render_text(&ctx.render_snapshot(), UNIT),
+        vec!["[\"the quick brown fox jumps over the lazy dog\"]".to_string()]
+    );
+    resize(&mut ctx, &mut clock, 30.);
+    assert_eq!(
+        render_text(&ctx.render_snapshot(), UNIT),
+        vec![
+            "[".to_string(),
+            "    \"the quick brown fox jumps ".to_string(),
+            "    over the lazy dog\"".to_string(),
+            "]".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn hover_click_and_copy() {
+    let (mut ctx, mut clock) = json_context(r#"{"a": 1, "b": [true, null]}"#, 100.);
+    let snapshot = ctx.render_snapshot();
+    let row = &snapshot.rows[0];
+    // Hover over "true" (the 5th text brick: "{", "a", ": ", "1", ", ", "b", ": ", "[", "true")
+    let true_brick = row.bricks.iter().find(|b| b.text == "true").unwrap();
+    let point = Vector::new(true_brick.converse + 1., row.transverse + 1.);
+    ctx.mouse_moved(point);
+    settle(&mut ctx, &mut clock);
+    assert!(ctx.hover.is_some(), "hovering a brick should produce a hoverable");
+    assert_eq!(ctx.render_snapshot().drawings.len(), 1, "hover draws one border");
+    // Click selects the hovered array element, and drawing the cursor replaces the hover box
+    assert!(ctx.mouse_button(true, &mut || clock.now()));
+    ctx.mouse_button(false, &mut || clock.now());
+    settle(&mut ctx, &mut clock);
+    assert!(ctx.cursor.is_some());
+    assert_eq!(ctx.cursor_syntax_path(ctx.cursor.unwrap()), vec!["named", "value", "named", "entries", "1", "named", "value", "named", "elements", "0"]);
+    ctx.key_copy(&mut || clock.now());
+    assert_eq!(ctx.clipboard.take().unwrap(), "[\n  true\n]");
+    // Hovering the opening brace hovers the root's value (the whole record), whose box
+    // starts before converse 0. The laid extent must not move because of it (the display
+    // lets drawings overflow instead).
+    let brace = row.bricks.iter().find(|b| b.text == "{").unwrap();
+    ctx.mouse_moved(Vector::new(brace.converse + 1., row.transverse + 1.));
+    settle(&mut ctx, &mut clock);
+    let snapshot = ctx.render_snapshot();
+    assert_eq!(snapshot.transverse.0, 0.);
+    // The selection box and the hover box
+    assert_eq!(snapshot.drawings.len(), 2);
+}
+
+#[test]
 fn mismatch_reports_alternatives() {
-    let syntax = json_syntax();
-    let value: serde_json::Value = serde_json::from_str(r#"{"a": 1}"#).unwrap();
-    // Rewrap so the syntax's fixed structure fails: a record inside an array is fine, so
-    // instead feed a syntax-invalid document: a top level value of an unmatched kind is
-    // impossible for json, so check the message for a record entry of a bad kind.
-    let doc = match_document(&syntax, &value);
-    assert!(doc.is_ok());
     let spec: SpecSyntax = serde_json::from_str(
         r##"{
           "background": "#000",

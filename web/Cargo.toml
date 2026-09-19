@@ -16,6 +16,7 @@ lunk = "0.3"
 gloo-utils = "0.2"
 gloo-events = "0.2"
 gloo-render = "0.2"
+gloo-timers = "0.3"
 console_error_panic_hook = "0.1"
 web-sys = { version = "0.3", features = [
     "Window",
@@ -30,4 +31,8 @@ web-sys = { version = "0.3", features = [
     "Node",
     "Event",
     "EventTarget",
+    "MouseEvent",
+    "KeyboardEvent",
+    "Navigator",
+    "Clipboard",
 ] }

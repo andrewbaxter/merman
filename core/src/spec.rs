@@ -83,6 +83,12 @@ pub struct SpecSyntax {
     pub unprintable: String,
     #[serde(default)]
     pub styles: BTreeMap<String, SpecStyle>,
+    /// Box drawn around the selection.
+    #[serde(default)]
+    pub cursor: SpecObbox,
+    /// Box drawn around what the mouse is over.
+    #[serde(default)]
+    pub hover: SpecObbox,
     /// Groups are ordered: when matching, members are tried first to last.
     #[serde(default)]
     pub groups: Vec<SpecGroup>,
@@ -115,6 +121,71 @@ pub struct SpecPadding {
     pub transverse_start: f64,
     #[serde(default)]
     pub transverse_end: f64,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_one() -> f64 {
+    1.
+}
+
+fn default_black() -> String {
+    "#000000".to_string()
+}
+
+fn default_white() -> String {
+    "#ffffff".to_string()
+}
+
+/// Style of a box drawn around a range of bricks (merman's `ObboxStyle`).
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct SpecObbox {
+    #[serde(default)]
+    pub padding: SpecPadding,
+    #[serde(default)]
+    pub round_start: bool,
+    #[serde(default)]
+    pub round_end: bool,
+    #[serde(default)]
+    pub round_outer_corners: bool,
+    #[serde(default)]
+    pub round_inner_corners: bool,
+    #[serde(default)]
+    pub round_concave: bool,
+    #[serde(default)]
+    pub round_radius: f64,
+    #[serde(default = "default_true")]
+    pub line: bool,
+    #[serde(default = "default_black")]
+    pub line_color: String,
+    #[serde(default = "default_one")]
+    pub line_thickness: f64,
+    #[serde(default)]
+    pub fill: bool,
+    #[serde(default = "default_white")]
+    pub fill_color: String,
+}
+
+impl Default for SpecObbox {
+    fn default() -> Self {
+        return SpecObbox {
+            padding: SpecPadding::default(),
+            round_start: false,
+            round_end: false,
+            round_outer_corners: false,
+            round_inner_corners: false,
+            round_concave: false,
+            round_radius: 0.,
+            line: true,
+            line_color: default_black(),
+            line_thickness: 1.,
+            fill: false,
+            fill_color: default_white(),
+        };
+    }
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
