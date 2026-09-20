@@ -1,6 +1,6 @@
-//! Conversion between layout coordinates (converse along a line, transverse
-//! across lines) and page coordinates, for every direction pair (ported from
-//! merman's `Display`).
+//! Conversion between layout coordinates (converse along a line, transverse across
+//! lines) and page coordinates, for every direction pair (ported from merman's
+//! `Display`).
 use crate::spec::SpecDirection;
 
 #[derive(Debug, Clone, Copy)]
@@ -20,8 +20,8 @@ pub struct UnconvertAxis {
 impl DirectionConvert {
     pub fn new(converse: SpecDirection, transverse: SpecDirection) -> DirectionConvert {
         return DirectionConvert {
-            converse,
-            transverse,
+            converse: converse,
+            transverse: transverse,
         };
     }
 
@@ -29,10 +29,11 @@ impl DirectionConvert {
         return matches!(self.converse, SpecDirection::Up | SpecDirection::Down);
     }
 
-    /// Page top-left of a box at (converse, transverse) whose page size is
-    /// (x_span, y_span).
+    /// Page top-left of a box at (converse, transverse) whose page size is (x_span,
+    /// y_span).
     pub fn direction_unconvert(&self, converse: f64, transverse: f64, x_span: f64, y_span: f64) -> (f64, f64) {
         use SpecDirection::*;
+
         match (self.converse, self.transverse) {
             (Up, Left) => return (-transverse - x_span, -converse - y_span),
             (Up, Right) => return (transverse, -converse - y_span),
@@ -46,9 +47,9 @@ impl DirectionConvert {
         }
     }
 
-    /// Layout coordinates of a page point (merman `convert` with a zero size box).
     pub fn direction_convert_point(&self, x: f64, y: f64) -> (f64, f64) {
         use SpecDirection::*;
+
         match (self.converse, self.transverse) {
             (Up, Left) => return (-y, -x),
             (Up, Right) => return (-y, x),
@@ -62,10 +63,9 @@ impl DirectionConvert {
         }
     }
 
-    /// Transverse start of a box of `span` whose page start along the
-    /// transverse axis is `amount` (inverse of `direction_unconvert_transverse`).
     pub fn direction_convert_transverse(&self, amount: f64, span: f64) -> f64 {
         use SpecDirection::*;
+
         match self.transverse {
             Left | Up => return -amount - span,
             Right | Down => return amount,
@@ -75,11 +75,24 @@ impl DirectionConvert {
     /// Page coordinate of the transverse start of a box of the given size.
     pub fn direction_unconvert_transverse(&self, transverse: f64, x_span: f64, y_span: f64) -> UnconvertAxis {
         use SpecDirection::*;
+
         match self.transverse {
-            Left => return UnconvertAxis { x: true, amount: -transverse - x_span },
-            Right => return UnconvertAxis { x: true, amount: transverse },
-            Up => return UnconvertAxis { x: false, amount: -transverse - y_span },
-            Down => return UnconvertAxis { x: false, amount: transverse },
+            Left => return UnconvertAxis {
+                x: true,
+                amount: -transverse - x_span,
+            },
+            Right => return UnconvertAxis {
+                x: true,
+                amount: transverse,
+            },
+            Up => return UnconvertAxis {
+                x: false,
+                amount: -transverse - y_span,
+            },
+            Down => return UnconvertAxis {
+                x: false,
+                amount: transverse,
+            },
         }
     }
 

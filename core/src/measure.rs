@@ -1,5 +1,5 @@
-//! Text measurement abstraction. The web display implements this with a
-//! canvas; tests use a fixed-width fake.
+//! Text measurement abstraction. The web display implements this with a canvas;
+//! tests use a fixed-width fake.
 use unicode_segmentation::UnicodeSegmentation;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -26,15 +26,7 @@ pub trait Measure {
     fn measure_metrics(&mut self, font: &FontSpec) -> FontMetrics;
 }
 
-/// Byte index of the grapheme boundary nearest to `converse` from the start
-/// of the text (halfway through the first grapheme is 0, halfway through the
-/// last is the end).
-pub fn measure_index_at_converse(
-    measure: &mut dyn Measure,
-    font: &FontSpec,
-    text: &str,
-    converse: f64,
-) -> usize {
+pub fn measure_index_at_converse(measure: &mut dyn Measure, font: &FontSpec, text: &str, converse: f64) -> usize {
     let mut previous_width = 0.;
     let mut previous_index = 0;
     for (i, g) in text.grapheme_indices(true) {
@@ -49,10 +41,10 @@ pub fn measure_index_at_converse(
     return previous_index;
 }
 
-/// Line break position for a split near `offset`: the last word boundary at
-/// or before it, extended over any following whitespace so the next line
-/// starts at text (merman's line walker: a line keeps as much trailing
-/// whitespace as possible; hanging whitespace is invisible).
+/// Line break position for a split near `offset`: the last word boundary at or
+/// before it, extended over any following whitespace so the next line starts at
+/// text (merman's line walker: a line keeps as much trailing whitespace as
+/// possible; hanging whitespace is invisible).
 pub fn measure_line_before_or_at(text: &str, offset: usize) -> usize {
     let mut out = 0;
     for (i, _) in text.split_word_bound_indices() {

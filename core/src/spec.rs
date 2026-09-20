@@ -1,22 +1,23 @@
-//! Serde model of the syntax JSON file. Every enum is externally tagged with
-//! snake_case names, e.g. `{"fixed_record": [...]}`.
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 use std::collections::BTreeMap;
 
 fn default_font_family() -> String {
-    "monospace".to_string()
+    return "monospace".to_string();
 }
 
 fn default_font_size() -> f64 {
-    6.
+    return 6.;
 }
 
 fn default_converse_direction() -> SpecDirection {
-    SpecDirection::Right
+    return SpecDirection::Right;
 }
 
 fn default_transverse_direction() -> SpecDirection {
-    SpecDirection::Down
+    return SpecDirection::Down;
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -37,15 +38,15 @@ pub enum SpecDirection {
 }
 
 fn default_foreground() -> String {
-    "#000000".to_string()
+    return "#000000".to_string();
 }
 
 fn default_unprintable() -> String {
-    "▢".to_string()
+    return "▢".to_string();
 }
 
 fn default_precedence() -> i64 {
-    i64::MAX
+    return i64::MAX;
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -58,8 +59,8 @@ pub struct SpecSyntax {
     pub foreground: String,
     #[serde(default = "default_font_family")]
     pub font_family: String,
-    /// In display units; like merman, the font's pixel size is the point size
-    /// of this length (mm * 72 / 25.4).
+    /// In display units; like merman, the font's pixel size is the point size of this
+    /// length (mm * 72 / 25.4).
     #[serde(default = "default_font_size")]
     pub font_size: f64,
     /// Unit of all lengths in the syntax (font sizes, padding, alignment offsets).
@@ -74,8 +75,8 @@ pub struct SpecSyntax {
     /// Space around the document.
     #[serde(default)]
     pub pad: SpecPadding,
-    /// Fixed distance between line starts; 0 means each line takes its own
-    /// ascent + descent.
+    /// Fixed distance between line starts; 0 means each line takes its own ascent +
+    /// descent.
     #[serde(default)]
     pub course_transverse_stride: f64,
     /// Replacement for control characters in primitives.
@@ -83,10 +84,8 @@ pub struct SpecSyntax {
     pub unprintable: String,
     #[serde(default)]
     pub styles: BTreeMap<String, SpecStyle>,
-    /// Box drawn around the selection.
     #[serde(default)]
     pub cursor: SpecObbox,
-    /// Box drawn around what the mouse is over.
     #[serde(default)]
     pub hover: SpecObbox,
     /// Groups are ordered: when matching, members are tried first to last.
@@ -124,22 +123,21 @@ pub struct SpecPadding {
 }
 
 fn default_true() -> bool {
-    true
+    return true;
 }
 
 fn default_one() -> f64 {
-    1.
+    return 1.;
 }
 
 fn default_black() -> String {
-    "#000000".to_string()
+    return "#000000".to_string();
 }
 
 fn default_white() -> String {
-    "#ffffff".to_string()
+    return "#ffffff".to_string();
 }
 
-/// Style of a box drawn around a range of bricks (merman's `ObboxStyle`).
 #[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct SpecObbox {
@@ -230,8 +228,8 @@ pub struct SpecType {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum SpecAlignment {
-    /// Positioned relative to the nearest alignment named `base` in an ancestor
-    /// atom (an alignment may be based on one with the same name).
+    /// Positioned relative to the nearest alignment named `base` in an ancestor atom
+    /// (an alignment may be based on one with the same name).
     Relative(SpecAlignmentRelative),
     /// Positioned at the largest natural position of all the lines using it.
     Concensus(SpecAlignmentConcensus),
@@ -268,18 +266,16 @@ pub enum SpecBack {
     Literal(SpecBackField),
     /// A nested atom of type or group `type`, captured as atom field `id`.
     Atom(SpecBackAtom),
-    /// A JSON array of atoms of type or group `element`, captured as array field
-    /// `id`.
+    /// A JSON array of atoms of type or group `element`, captured as array field `id`.
     Array(SpecBackArray),
-    /// A single-key JSON object: `{some_key: X}` yields a one element array
-    /// field, `{none_key: null}` an empty array field.
+    /// A single-key JSON object: `{some_key: X}` yields a one element array field,
+    /// `{none_key: null}` an empty array field.
     Optional(SpecBackOptional),
-    /// A JSON object with arbitrary keys, each entry matched by an atom of
-    /// type or group `element` whose back is a `pair`. Captured as array field
-    /// `id`.
+    /// A JSON object with arbitrary keys, each entry matched by an atom of type or
+    /// group `element` whose back is a `pair`. Captured as array field `id`.
     Record(SpecBackArray),
-    /// Only valid as the back of a `record` element type: `key` matches the
-    /// entry key (as a JSON string), `value` the entry value.
+    /// Only valid as the back of a `record` element type: `key` matches the entry key
+    /// (as a JSON string), `value` the entry value.
     Pair(SpecBackPair),
     /// A JSON array with exactly these elements.
     FixedArray(Vec<SpecBack>),

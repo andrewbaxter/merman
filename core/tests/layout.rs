@@ -1,13 +1,24 @@
 mod common;
 
-use common::{build, load_document, load_syntax, render_text, settle, Clock};
-use merman3_core::context::{Context, Vector};
+use common::{
+    build,
+    load_document,
+    load_syntax,
+    render_text,
+    settle,
+    Clock,
+};
+use merman3_core::context::{
+    Context,
+    Vector,
+};
 use merman3_core::matcher::match_document;
 use merman3_core::spec::SpecSyntax;
 use merman3_core::syntax::Syntax;
 
 /// The json syntax uses a 16px font, which merman treats as 16pt = 12px; the fixed
-/// measurer makes every grapheme 0.6em, so 7.2px, and the 28.8px indent is 4 characters.
+/// measurer makes every grapheme 0.6em, so 7.2px, and the 28.8px indent is 4
+/// characters.
 const UNIT: f64 = 12. * 0.6;
 
 fn json_context(text: &str, edge_chars: f64) -> (Context, Clock) {
@@ -40,15 +51,9 @@ fn single_line_fits() {
 #[test]
 fn compacts_outer_first() {
     let rows = layout_text(r#"{"a": 1, "b": [true, null]}"#, 19.);
-    // The record (lowest depth) breaks; the array still fits on its line.
     assert_eq!(
         rows,
-        vec![
-            "{".to_string(),
-            "    a: 1, ".to_string(),
-            "    b: [true, null]".to_string(),
-            "}".to_string(),
-        ]
+        vec!["{".to_string(), "    a: 1, ".to_string(), "    b: [true, null]".to_string(), "}".to_string(),]
     );
 }
 
@@ -57,10 +62,7 @@ fn expands_when_edge_grows_and_recompacts() {
     let (mut ctx, mut clock) = json_context(r#"{"a": 1, "b": [true, null]}"#, 19.);
     assert_eq!(render_text(&ctx.render_snapshot(), UNIT).len(), 4);
     resize(&mut ctx, &mut clock, 100.);
-    assert_eq!(
-        render_text(&ctx.render_snapshot(), UNIT),
-        vec!["{a: 1, b: [true, null]}".to_string()]
-    );
+    assert_eq!(render_text(&ctx.render_snapshot(), UNIT), vec!["{a: 1, b: [true, null]}".to_string()]);
     resize(&mut ctx, &mut clock, 12.);
     assert_eq!(
         render_text(&ctx.render_snapshot(), UNIT),
@@ -74,19 +76,12 @@ fn expands_when_edge_grows_and_recompacts() {
             "}".to_string(),
         ]
     );
-    // Growing a little (under the retry factor) changes nothing; growing past it
-    // expands only what fits.
     resize(&mut ctx, &mut clock, 13.);
     assert_eq!(render_text(&ctx.render_snapshot(), UNIT).len(), 7);
     resize(&mut ctx, &mut clock, 20.);
     assert_eq!(
         render_text(&ctx.render_snapshot(), UNIT),
-        vec![
-            "{".to_string(),
-            "    a: 1, ".to_string(),
-            "    b: [true, null]".to_string(),
-            "}".to_string(),
-        ]
+        vec!["{".to_string(), "    a: 1, ".to_string(), "    b: [true, null]".to_string(), "}".to_string(),]
     );
 }
 
@@ -115,7 +110,8 @@ fn nested_indent_chains() {
 #[test]
 fn soft_wraps_long_string() {
     let rows = layout_text(r#"["the quick brown fox jumps over the lazy dog"]"#, 20.);
-    // Nearest-index split, so a line may hang half a character over the edge.
+
+    // The record (lowest depth) breaks; the array still fits on its line.
     assert_eq!(
         rows,
         vec![
@@ -154,44 +150,38 @@ fn hover_click_and_copy() {
     let (mut ctx, mut clock) = json_context(r#"{"a": 1, "b": [true, null]}"#, 100.);
     let snapshot = ctx.render_snapshot();
     let row = &snapshot.rows[0];
-    // Hover over "true" (the 5th text brick: "{", "a", ": ", "1", ", ", "b", ": ", "[", "true")
     let true_brick = row.bricks.iter().find(|b| b.text == "true").unwrap();
     let point = Vector::new(true_brick.converse + 1., row.transverse + 1.);
     ctx.mouse_moved(point);
     settle(&mut ctx, &mut clock);
     assert!(ctx.hover.is_some(), "hovering a brick should produce a hoverable");
     assert_eq!(ctx.render_snapshot().drawings.len(), 1, "hover draws one border");
-    // Click selects the hovered array element, and drawing the cursor replaces the hover box
     assert!(ctx.mouse_button(true, &mut || clock.now()));
     ctx.mouse_button(false, &mut || clock.now());
     settle(&mut ctx, &mut clock);
     assert!(ctx.cursor.is_some());
-    assert_eq!(ctx.cursor_syntax_path(ctx.cursor.unwrap()), vec!["named", "value", "named", "entries", "1", "named", "value", "named", "elements", "0"]);
+    assert_eq!(
+        ctx.cursor_syntax_path(ctx.cursor.unwrap()),
+        vec!["named", "value", "named", "entries", "1", "named", "value", "named", "elements", "0"]
+    );
     ctx.key_copy(&mut || clock.now());
     assert_eq!(ctx.clipboard.take().unwrap(), "[\n  true\n]");
-    // Hovering the opening brace hovers the root's value (the whole record), whose box
-    // starts before converse 0. The laid extent must not move because of it (the display
-    // lets drawings overflow instead).
     let brace = row.bricks.iter().find(|b| b.text == "{").unwrap();
     ctx.mouse_moved(Vector::new(brace.converse + 1., row.transverse + 1.));
     settle(&mut ctx, &mut clock);
     let snapshot = ctx.render_snapshot();
     assert_eq!(snapshot.transverse.0, 0.);
-    // The selection box and the hover box
     assert_eq!(snapshot.drawings.len(), 2);
 }
 
 #[test]
 fn mismatch_reports_alternatives() {
-    let spec: SpecSyntax = serde_json::from_str(
-        r##"{
+    let spec: SpecSyntax = serde_json::from_str(r##"{
           "background": "#000",
           "display_unit": "px",
           "root": {"back": {"fixed_record": [{"key": "v1", "value": {"fixed_literal": "true"}}]}, "front": []},
           "types": []
-        }"##,
-    )
-    .unwrap();
+        }"##).unwrap();
     let syntax = Syntax::syntax_resolve(spec).unwrap_or_else(|e| panic!("{}", e.join("\n")));
     let value: serde_json::Value = serde_json::from_str(r#"{"v1": false}"#).unwrap();
     let err = match_document(&syntax, &value).err().expect("should mismatch");
@@ -200,15 +190,12 @@ fn mismatch_reports_alternatives() {
 
 #[test]
 fn syntax_validation_reports_unused_field() {
-    let spec: SpecSyntax = serde_json::from_str(
-        r##"{
+    let spec: SpecSyntax = serde_json::from_str(r##"{
           "background": "#000",
           "display_unit": "px",
           "root": {"back": {"string": {"id": "x"}}, "front": []},
           "types": []
-        }"##,
-    )
-    .unwrap();
+        }"##).unwrap();
     let errors = Syntax::syntax_resolve(spec).err().expect("should fail");
     assert_eq!(errors.len(), 1);
     assert!(errors[0].contains("field `x` is captured"), "{}", errors[0]);

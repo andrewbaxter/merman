@@ -1,12 +1,15 @@
-//! Snapshot of what the display should show: laid bricks by course, and the
-//! border/caret drawings.
-use crate::attachment::{DrawingKind, DrawingLayer};
-use crate::context::{Context, Vector};
+use crate::attachment::{
+    DrawingKind,
+    DrawingLayer,
+};
+use crate::context::{
+    Context,
+    Vector,
+};
 use crate::syntax::StyleId;
 use crate::wall::BrickKind;
 
 pub struct RowBrick {
-    /// Start of the brick (text starts `pad_before` further along).
     pub converse: f64,
     pub converse_span: f64,
     pub pad_before: f64,
@@ -26,8 +29,11 @@ pub struct Row {
 pub enum PathCommand {
     MoveTo(Vector),
     LineTo(Vector),
-    /// Canvas `arcTo` semantics: round the corner at `corner` toward `to`.
-    ArcTo { corner: Vector, to: Vector, radius: f64 },
+    ArcTo {
+        corner: Vector,
+        to: Vector,
+        radius: f64,
+    },
 }
 
 pub enum RenderDrawing {
@@ -53,11 +59,7 @@ pub enum RenderDrawing {
 pub struct Snapshot {
     pub rows: Vec<Row>,
     pub drawings: Vec<RenderDrawing>,
-    /// Converse extent of the laid bricks. Drawings may extend beyond the
-    /// extents; the display must not clip or resize to them (merman's
-    /// `wallUsageListener` only reported courses).
     pub width: f64,
-    /// Transverse extent of the laid courses: (min, max).
     pub transverse: (f64, f64),
 }
 
@@ -69,45 +71,6 @@ fn simple_norm(v: f64) -> f64 {
         return -1.;
     }
     return 1.;
-}
-
-/// Merman `Obbox.drawRounded`.
-fn draw_rounded(points: &[(Vector, bool)], base_radius: f64) -> Vec<PathCommand> {
-    let mut out = vec![];
-    let n = points.len();
-    for i in 0..n {
-        let (mid, round) = points[i];
-        if round {
-            let (pre, _) = points[(i + n - 1) % n];
-            let (post, _) = points[(i + 1) % n];
-            let to_pre = Vector::new(pre.converse - mid.converse, pre.transverse - mid.transverse);
-            let to_post = Vector::new(post.converse - mid.converse, post.transverse - mid.transverse);
-            let mut radius = base_radius;
-            // Math.max on converse/transverse assumes non-angled segments to select one (provides
-            // distance)
-            radius = radius.min(f64::max(to_pre.converse.abs(), to_pre.transverse.abs()) / 2.);
-            radius = radius.min(f64::max(to_post.converse.abs(), to_post.transverse.abs()) / 2.);
-            if i == 0 {
-                out.push(PathCommand::MoveTo(Vector::new(
-                    mid.converse + simple_norm(to_pre.converse) * radius,
-                    mid.transverse + simple_norm(to_pre.transverse) * radius,
-                )));
-            }
-            out.push(PathCommand::ArcTo {
-                corner: mid,
-                to: Vector::new(
-                    mid.converse + simple_norm(to_post.converse) * radius,
-                    mid.transverse + simple_norm(to_post.transverse) * radius,
-                ),
-                radius,
-            });
-        } else if i == 0 {
-            out.push(PathCommand::MoveTo(mid));
-        } else {
-            out.push(PathCommand::LineTo(mid));
-        }
-    }
-    return out;
 }
 
 impl Context {
@@ -140,7 +103,7 @@ impl Context {
                 transverse: course.transverse_start,
                 ascent: course.ascent,
                 descent: course.descent,
-                bricks,
+                bricks: bricks,
             });
         }
         if rows.is_empty() {
@@ -150,40 +113,77 @@ impl Context {
         let mut drawings = vec![];
         for d in self.drawings.iter().flatten() {
             match &d.kind {
-                None => {}
+                None => { },
                 Some(DrawingKind::Obbox { points, style }) => {
                     drawings.push(RenderDrawing::Obbox {
                         layer: d.layer,
-                        path: draw_rounded(points, style.round_radius),
+                        path: {
+                            let base_radius = style.round_radius;
+                            let mut out = vec![];
+                            let n = points.len();
+                            for i in 0 .. n {
+                                let (mid, round) = points[i];
+                                if round {
+                                    let (pre, _) = points[(i + n - 1) % n];
+                                    let (post, _) = points[(i + 1) % n];
+                                    let to_pre =
+                                        Vector::new(pre.converse - mid.converse, pre.transverse - mid.transverse);
+                                    let to_post =
+                                        Vector::new(post.converse - mid.converse, post.transverse - mid.transverse);
+                                    let mut radius = base_radius;
+                                    radius =
+                                        radius.min(f64::max(to_pre.converse.abs(), to_pre.transverse.abs()) / 2.);
+                                    radius =
+                                        radius.min(f64::max(to_post.converse.abs(), to_post.transverse.abs()) / 2.);
+                                    if i == 0 {
+                                        out.push(
+                                            PathCommand::MoveTo(
+                                                Vector::new(
+                                                    mid.converse + simple_norm(to_pre.converse) * radius,
+                                                    mid.transverse + simple_norm(to_pre.transverse) * radius,
+                                                ),
+                                            ),
+                                        );
+                                    }
+                                    out.push(PathCommand::ArcTo {
+                                        corner: mid,
+                                        to: Vector::new(
+                                            mid.converse + simple_norm(to_post.converse) * radius,
+                                            mid.transverse + simple_norm(to_post.transverse) * radius,
+                                        ),
+                                        radius: radius,
+                                    });
+                                } else if i == 0 {
+                                    out.push(PathCommand::MoveTo(mid));
+                                } else {
+                                    out.push(PathCommand::LineTo(mid));
+                                }
+                            }
+                            out
+                        },
                         line: style.line,
                         line_color: style.line_color.clone(),
                         line_thickness: style.line_thickness,
                         fill: style.fill,
                         fill_color: style.fill_color.clone(),
                     });
-                }
-                Some(DrawingKind::Line {
-                    from,
-                    to,
-                    thickness,
-                    color,
-                    round_cap,
-                }) => {
+                },
+                Some(DrawingKind::Line { from, to, thickness, color, round_cap }) => {
                     drawings.push(RenderDrawing::Line {
-                    layer: d.layer,
-                    from: *from,
-                    to: *to,
-                    thickness: *thickness,
-                    color: color.clone(),
-                    round_cap: *round_cap,
+                        layer: d.layer,
+                        from: *from,
+                        to: *to,
+                        thickness: *thickness,
+                        color: color.clone(),
+                        round_cap: *round_cap,
                     })
-                }
+                },
             }
         }
         return Snapshot {
-            rows,
-            drawings,
-            width,
+            rows: rows,
+            drawings: drawings,
+            width: width,
             transverse: (t_min, t_max),
         };
     }

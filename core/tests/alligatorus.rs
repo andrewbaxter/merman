@@ -1,7 +1,13 @@
-//! Smoke test: the alligatorus example syntax lays out a real module.
 mod common;
 
-use common::{build, load_document, load_syntax, render_text, settle, Clock};
+use common::{
+    build,
+    load_document,
+    load_syntax,
+    render_text,
+    settle,
+    Clock,
+};
 
 #[test]
 fn lays_out_synth_module() {
@@ -30,10 +36,7 @@ fn lays_out_synth_module() {
 }
 
 fn expr(id: u64, variant: &str, body: &str) -> String {
-    return format!(
-        r#"{{"id":{{"value":{}}},"variant":{{"{}":{}}}}}"#,
-        id, variant, body
-    );
+    return format!(r#"{{"id":{{"value":{}}},"variant":{{"{}":{}}}}}"#, id, variant, body);
 }
 
 fn number(id: u64, n: f64) -> String {
@@ -41,11 +44,7 @@ fn number(id: u64, n: f64) -> String {
 }
 
 fn sub(id: u64, base: &str, reference: &str) -> String {
-    return expr(
-        id,
-        "operator_binary",
-        &format!(r#"{{"op":"sub","base":{},"reference":{}}}"#, base, reference),
-    );
+    return expr(id, "operator_binary", &format!(r#"{{"op":"sub","base":{},"reference":{}}}"#, base, reference));
 }
 
 fn render_module(expr: &str) -> String {

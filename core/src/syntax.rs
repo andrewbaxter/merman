@@ -1,13 +1,29 @@
-//! Validated syntax: the spec with names resolved to indices and all
-//! cross references checked.
+//! Validated syntax: the spec with names resolved to indices and all cross
+//! references checked.
 use crate::direction::DirectionConvert;
 use crate::measure::FontSpec;
 use crate::spec::{
-    SpecAlignment, SpecBack, SpecCondition, SpecDirection, SpecDisplayUnit, SpecFront,
-    SpecFrontArray, SpecFrontAtom, SpecFrontPrimitive, SpecObbox, SpecPadding, SpecSplit,
-    SpecSymbol, SpecSyntax, SpecType, SpecTypeRoot,
+    SpecAlignment,
+    SpecBack,
+    SpecCondition,
+    SpecDirection,
+    SpecDisplayUnit,
+    SpecFront,
+    SpecFrontArray,
+    SpecFrontAtom,
+    SpecFrontPrimitive,
+    SpecObbox,
+    SpecPadding,
+    SpecSplit,
+    SpecSymbol,
+    SpecSyntax,
+    SpecType,
+    SpecTypeRoot,
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::{
+    HashMap,
+    HashSet,
+};
 use std::rc::Rc;
 
 pub type TypeId = usize;
@@ -65,8 +81,8 @@ pub fn syntax_to_pixels(unit: SpecDisplayUnit) -> f64 {
     }
 }
 
-/// Font px for a size in display units: the size converted to points, used as
-/// px (as merman's displays do).
+/// Font px for a size in display units: the size converted to points, used as px
+/// (as merman's displays do).
 fn font_pixels(unit: SpecDisplayUnit, size: f64) -> f64 {
     let mm_per_unit = syntax_to_pixels(unit) / syntax_to_pixels(SpecDisplayUnit::Mm);
     return size * mm_per_unit * 72. / 25.4;
@@ -143,13 +159,20 @@ pub struct Symbol {
 }
 
 pub enum SymbolKind {
-    Text { text: String, style: StyleId },
-    Space { width: f64, ascent: f64, descent: f64 },
+    Text {
+        text: String,
+        style: StyleId,
+    },
+    Space {
+        width: f64,
+        ascent: f64,
+        descent: f64,
+    },
 }
 
 impl Symbol {
-    /// Whether this symbol visibly separates its neighbors; used for the
-    /// `precedent` condition.
+    /// Whether this symbol visibly separates its neighbors; used for the `precedent`
+    /// condition.
     pub fn symbol_delimits(&self) -> bool {
         match &self.kind {
             SymbolKind::Space { .. } => return false,
@@ -157,7 +180,7 @@ impl Symbol {
                 if text.trim().is_empty() {
                     return false;
                 }
-            }
+            },
         }
         if self.condition.is_some() {
             return false;
@@ -187,7 +210,7 @@ impl StyleTable {
                 None => {
                     errors.add(path, format!("unknown style `{}`", n));
                     return 0;
-                }
+                },
             },
         }
     }
@@ -205,7 +228,8 @@ impl Syntax {
                 "transverse_direction",
                 format!(
                     "{:?} is not perpendicular to converse direction {:?}",
-                    spec.transverse_direction, spec.converse_direction
+                    spec.transverse_direction,
+                    spec.converse_direction
                 ),
             );
         }
@@ -241,26 +265,17 @@ impl Syntax {
         let mut types = vec![];
         let mut type_ids: HashMap<String, TypeId> = HashMap::new();
         {
-            let SpecTypeRoot {
-                back,
-                front,
-                alignments,
-            } = spec.root;
-            types.push(build_type(
-                &mut errors,
-                &style_table,
-                "root",
-                SpecType {
-                    id: "__root".to_string(),
-                    name: Some("root".to_string()),
-                    precedence: i64::MIN,
-                    associate_forward: false,
-                    depth_score: 0,
-                    alignments,
-                    back,
-                    front,
-                },
-            ));
+            let SpecTypeRoot { back, front, alignments } = spec.root;
+            types.push(build_type(&mut errors, &style_table, "root", SpecType {
+                id: "__root".to_string(),
+                name: Some("root".to_string()),
+                precedence: i64::MIN,
+                associate_forward: false,
+                depth_score: 0,
+                alignments: alignments,
+                back: back,
+                front: front,
+            }));
         }
         for (i, t) in spec.types.into_iter().enumerate() {
             let path = format!("types[{}]({})", i, t.id);
@@ -294,6 +309,7 @@ impl Syntax {
                 let mut out = vec![];
                 let mut seen = HashSet::new();
                 let mut stack: Vec<String> = vec![g.id.clone()];
+
                 fn walk(
                     errors: &mut Errors,
                     path: &str,
@@ -312,10 +328,7 @@ impl Syntax {
                     }
                     if let Some(members) = spec_groups.get(&member.to_string()) {
                         if stack.iter().any(|s| s == member) {
-                            errors.add(
-                                path,
-                                format!("group reference cycle: {} -> {}", stack.join(" -> "), member),
-                            );
+                            errors.add(path, format!("group reference cycle: {} -> {}", stack.join(" -> "), member));
                             return;
                         }
                         stack.push(member.to_string());
@@ -327,17 +340,9 @@ impl Syntax {
                     }
                     errors.add(path, format!("member `{}` is neither a type nor a group", member));
                 }
+
                 for m in &g.members {
-                    walk(
-                        &mut errors,
-                        &path,
-                        &spec_groups,
-                        &type_ids,
-                        &mut stack,
-                        &mut seen,
-                        &mut out,
-                        m,
-                    );
+                    walk(&mut errors, &path, &spec_groups, &type_ids, &mut stack, &mut seen, &mut out, m);
                 }
                 if out.is_empty() {
                     errors.add(&path, "group covers no types");
@@ -358,14 +363,13 @@ impl Syntax {
             }
             check_back_refs(&mut errors, &format!("{}.back", path), &groups, &types, &t.back);
         }
-
         if !errors.0.is_empty() {
             return Err(errors.0);
         }
         return Ok(Syntax {
             spec_root: SpecSyntaxSettings {
                 background: spec.background,
-                to_pixels,
+                to_pixels: to_pixels,
                 convert: DirectionConvert::new(spec.converse_direction, spec.transverse_direction),
                 pad: scale_padding(&spec.pad, to_pixels),
                 course_transverse_stride: spec.course_transverse_stride * to_pixels,
@@ -373,9 +377,9 @@ impl Syntax {
                 cursor: scale_obbox(&spec.cursor, to_pixels),
                 hover: scale_obbox(&spec.hover, to_pixels),
             },
-            types,
-            groups,
-            styles,
+            types: types,
+            groups: groups,
+            styles: styles,
         });
     }
 
@@ -403,32 +407,25 @@ fn check_back_refs(
         for m in members {
             if types[*m].is_pair != want_pair {
                 if want_pair {
-                    errors.add(
-                        path,
-                        format!(
-                            "record element type `{}` must have a `pair` back",
-                            types[*m].id
-                        ),
-                    );
+                    errors.add(path, format!("record element type `{}` must have a `pair` back", types[*m].id));
                 } else {
                     errors.add(
                         path,
-                        format!(
-                            "type `{}` has a `pair` back and can only be used as a record element",
-                            types[*m].id
-                        ),
+                        format!("type `{}` has a `pair` back and can only be used as a record element", types[*m].id),
                     );
                 }
             }
         }
     };
     match back {
-        SpecBack::FixedString(_)
-        | SpecBack::FixedLiteral(_)
-        | SpecBack::String(_)
-        | SpecBack::Number(_)
-        | SpecBack::Literal(_)
-        | SpecBack::Discard(_) => {}
+        SpecBack::FixedString(_) |
+        SpecBack::FixedLiteral(_) |
+        SpecBack::String(_) |
+        SpecBack::Number(_) |
+        SpecBack::Literal(_) |
+        SpecBack::Discard(_) => {
+
+        },
         SpecBack::Atom(a) => check_group(errors, path, &a.type_, false),
         SpecBack::Array(a) => check_group(errors, path, &a.element, false),
         SpecBack::Optional(a) => check_group(errors, path, &a.element, false),
@@ -436,17 +433,17 @@ fn check_back_refs(
         SpecBack::Pair(p) => {
             check_back_refs(errors, &format!("{}.key", path), groups, types, &p.key);
             check_back_refs(errors, &format!("{}.value", path), groups, types, &p.value);
-        }
+        },
         SpecBack::FixedArray(elems) => {
             for (i, e) in elems.iter().enumerate() {
                 check_back_refs(errors, &format!("{}[{}]", path, i), groups, types, e);
             }
-        }
+        },
         SpecBack::FixedRecord(entries) => {
             for e in entries {
                 check_back_refs(errors, &format!("{}.{}", path, e.key), groups, types, &e.value);
             }
-        }
+        },
     }
 }
 
@@ -463,10 +460,10 @@ fn collect_fields(
         }
     };
     match back {
-        SpecBack::FixedString(_) | SpecBack::FixedLiteral(_) | SpecBack::Discard(_) => {}
+        SpecBack::FixedString(_) | SpecBack::FixedLiteral(_) | SpecBack::Discard(_) => { },
         SpecBack::String(f) | SpecBack::Number(f) | SpecBack::Literal(f) => {
             put(errors, &f.id, FieldKind::Primitive)
-        }
+        },
         SpecBack::Atom(a) => put(errors, &a.id, FieldKind::Atom),
         SpecBack::Array(a) | SpecBack::Record(a) => put(errors, &a.id, FieldKind::Array),
         SpecBack::Optional(a) => put(errors, &a.id, FieldKind::Array),
@@ -475,17 +472,17 @@ fn collect_fields(
                 errors.add(path, "`pair` is only valid as the whole back of a type");
             }
             match &*p.key {
-                SpecBack::FixedString(_) | SpecBack::String(_) => {}
+                SpecBack::FixedString(_) | SpecBack::String(_) => { },
                 _ => errors.add(path, "a pair key must be `fixed_string` or `string`"),
             }
             collect_fields(errors, &format!("{}.key", path), &p.key, false, fields);
             collect_fields(errors, &format!("{}.value", path), &p.value, false, fields);
-        }
+        },
         SpecBack::FixedArray(elems) => {
             for (i, e) in elems.iter().enumerate() {
                 collect_fields(errors, &format!("{}[{}]", path, i), e, false, fields);
             }
-        }
+        },
         SpecBack::FixedRecord(entries) => {
             let mut keys = HashSet::new();
             for e in entries {
@@ -494,7 +491,7 @@ fn collect_fields(
                 }
                 collect_fields(errors, &format!("{}.{}", path, e.key), &e.value, false, fields);
             }
-        }
+        },
     }
 }
 
@@ -506,31 +503,19 @@ fn build_symbol(
     s: &SpecSymbol,
 ) -> Symbol {
     let (kind, split, alignment, split_alignment, condition) = match s {
-        SpecSymbol::Text(t) => (
-            SymbolKind::Text {
-                text: t.text.clone(),
-                style: styles.lookup(errors, path, &t.style),
-            },
-            t.split,
-            t.alignment.clone(),
-            t.split_alignment.clone(),
-            t.condition.clone(),
-        ),
-        SpecSymbol::Space(t) => (
-            SymbolKind::Space {
-                width: t.width,
-                ascent: t.ascent,
-                descent: t.descent,
-            },
-            t.split,
-            t.alignment.clone(),
-            t.split_alignment.clone(),
-            t.condition.clone(),
-        ),
+        SpecSymbol::Text(t) => (SymbolKind::Text {
+            text: t.text.clone(),
+            style: styles.lookup(errors, path, &t.style),
+        }, t.split, t.alignment.clone(), t.split_alignment.clone(), t.condition.clone()),
+        SpecSymbol::Space(t) => (SymbolKind::Space {
+            width: t.width,
+            ascent: t.ascent,
+            descent: t.descent,
+        }, t.split, t.alignment.clone(), t.split_alignment.clone(), t.condition.clone()),
     };
     if let Some(SpecCondition::Empty(c)) = &condition {
         match fields.get(&c.field) {
-            Some(FieldKind::Primitive) | Some(FieldKind::Array) => {}
+            Some(FieldKind::Primitive) | Some(FieldKind::Array) => { },
             Some(FieldKind::Atom) => errors.add(
                 path,
                 format!("condition field `{}` must be a primitive or array", c.field),
@@ -539,11 +524,11 @@ fn build_symbol(
         }
     }
     return Symbol {
-        kind,
-        split,
-        alignment,
-        split_alignment,
-        condition,
+        kind: kind,
+        split: split,
+        alignment: alignment,
+        split_alignment: split_alignment,
+        condition: condition,
     };
 }
 
@@ -555,11 +540,8 @@ fn build_type(errors: &mut Errors, styles: &StyleTable, path: &str, t: SpecType)
     let mut check_field = |errors: &mut Errors, path: &str, field: &str, want: FieldKind| {
         used.insert(field.to_string());
         match fields.get(field) {
-            Some(k) if *k == want => {}
-            Some(k) => errors.add(
-                path,
-                format!("field `{}` is {:?} but the front expects {:?}", field, k, want),
-            ),
+            Some(k) if *k == want => { },
+            Some(k) => errors.add(path, format!("field `{}` is {:?} but the front expects {:?}", field, k, want)),
             None => errors.add(path, format!("unknown field `{}`", field)),
         }
     };
@@ -569,16 +551,18 @@ fn build_type(errors: &mut Errors, styles: &StyleTable, path: &str, t: SpecType)
         match f {
             SpecFront::Symbol(s) => {
                 front.push(Front::Symbol(build_symbol(errors, styles, &fpath, &fields, s)))
-            }
-            SpecFront::Primitive(SpecFrontPrimitive {
-                field,
-                style,
-                split,
-                first_alignment,
-                first_split_alignment,
-                hard_split_alignment,
-                soft_split_alignment,
-            }) => {
+            },
+            SpecFront::Primitive(
+                SpecFrontPrimitive {
+                    field,
+                    style,
+                    split,
+                    first_alignment,
+                    first_split_alignment,
+                    hard_split_alignment,
+                    soft_split_alignment,
+                },
+            ) => {
                 check_field(errors, &fpath, field, FieldKind::Primitive);
                 front.push(Front::Primitive(FrontPrimitive {
                     field: field.clone(),
@@ -589,33 +573,20 @@ fn build_type(errors: &mut Errors, styles: &StyleTable, path: &str, t: SpecType)
                     hard_split_alignment: hard_split_alignment.clone(),
                     soft_split_alignment: soft_split_alignment.clone(),
                 }));
-            }
-            SpecFront::Atom(SpecFrontAtom {
-                field,
-                forward_alignments,
-            }) => {
+            },
+            SpecFront::Atom(SpecFrontAtom { field, forward_alignments }) => {
                 check_field(errors, &fpath, field, FieldKind::Atom);
                 front.push(Front::Atom(FrontAtom {
                     field: field.clone(),
                     forward_alignments: Rc::new(forward_alignments.iter().cloned().collect()),
                 }));
-            }
-            SpecFront::Array(SpecFrontArray {
-                field,
-                prefix,
-                suffix,
-                separator,
-                empty,
-                forward_alignments,
-            }) => {
+            },
+            SpecFront::Array(SpecFrontArray { field, prefix, suffix, separator, empty, forward_alignments }) => {
                 check_field(errors, &fpath, field, FieldKind::Array);
                 let build = |errors: &mut Errors, name: &str, syms: &Vec<SpecSymbol>| {
-                    syms.iter()
-                        .enumerate()
-                        .map(|(j, s)| {
-                            build_symbol(errors, styles, &format!("{}.{}[{}]", fpath, name, j), &fields, s)
-                        })
-                        .collect::<Vec<_>>()
+                    syms.iter().enumerate().map(|(j, s)| {
+                        build_symbol(errors, styles, &format!("{}.{}[{}]", fpath, name, j), &fields, s)
+                    }).collect::<Vec<_>>()
                 };
                 front.push(Front::Array(FrontArray {
                     field: field.clone(),
@@ -627,14 +598,17 @@ fn build_type(errors: &mut Errors, styles: &StyleTable, path: &str, t: SpecType)
                         .map(|s| build_symbol(errors, styles, &format!("{}.empty", fpath), &fields, s)),
                     forward_alignments: Rc::new(forward_alignments.iter().cloned().collect()),
                 }));
-            }
+            },
         }
     }
     for (id, _) in &fields {
         if !used.contains(id) {
             errors.add(
                 path,
-                format!("field `{}` is captured by the back but not shown by the front (use `discard` in the back to drop it)", id),
+                format!(
+                    "field `{}` is captured by the back but not shown by the front (use `discard` in the back to drop it)",
+                    id
+                ),
             );
         }
     }
@@ -653,8 +627,8 @@ fn build_type(errors: &mut Errors, styles: &StyleTable, path: &str, t: SpecType)
         depth_score: t.depth_score,
         alignments: t.alignments.into_iter().collect(),
         back: t.back,
-        front,
-        fields,
-        is_pair,
+        front: front,
+        fields: fields,
+        is_pair: is_pair,
     };
 }

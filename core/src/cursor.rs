@@ -1,17 +1,32 @@
-//! Selection (merman's cursors), hover (merman's hoverables), the primitive
-//! range attachment they share, syntax paths and copying.
 use crate::context::{
-    BorderId, BrickId, CaretId, Context, CursorId, HoverableId, TextBorderId, VisualId,
+    BorderId,
+    BrickId,
+    CaretId,
+    Context,
+    CursorId,
+    HoverableId,
+    TextBorderId,
+    VisualId,
 };
-use crate::document::{AtomId, Field};
-use crate::serialize::{serialize_atom, serialize_pair};
-use crate::spec::{SpecBack, SpecObbox};
+use crate::document::{
+    AtomId,
+    Field,
+};
+use crate::serialize::{
+    serialize_atom,
+    serialize_pair,
+};
+use crate::spec::{
+    SpecBack,
+    SpecObbox,
+};
 use crate::syntax::FieldKind;
 use crate::visual::VisualKind;
-use serde_json::{Map, Value};
+use serde_json::{
+    Map,
+    Value,
+};
 
-/// Merman `VisualFieldPrimitive.RangeAttachment`: a caret or text box over a
-/// character range of a primitive.
 pub struct RangeState {
     pub for_selection: bool,
     pub visual: VisualId,
@@ -36,7 +51,6 @@ impl RangeState {
 
 pub struct CursorAtom {
     pub visual: VisualId,
-    /// Selectable index.
     pub index: usize,
     pub border: BorderId,
 }
@@ -83,7 +97,6 @@ pub enum Hoverable {
     Primitive(HoverablePrimitive),
 }
 
-/// Drag-selection in progress (from the viewer's mouse handling).
 pub struct DragSelect {
     pub start: Vec<String>,
     pub end: Option<Vec<String>>,
@@ -95,15 +108,12 @@ pub enum RangeLoc {
     Hoverable(HoverableId),
 }
 
-/// Something a syntax path points at.
 pub enum Located {
     Atom(AtomId),
     Field(AtomId, String),
 }
 
 impl Context {
-    // ---- Cursor lifecycle --------------------------------------------------
-
     pub fn cursor_get(&self, id: CursorId) -> &Cursor {
         return self.cursors[id].as_ref().expect("cursor destroyed");
     }
@@ -112,7 +122,6 @@ impl Context {
         return self.cursors[id].as_mut().expect("cursor destroyed");
     }
 
-    /// Merman `Context.setCursor`.
     fn set_cursor(&mut self, cursor: Cursor) -> CursorId {
         self.select_token += 1;
         let token = self.select_token;
@@ -154,19 +163,19 @@ impl Context {
                 let va = self.visual_atom(c.visual);
                 let field = va.selectable[c.index].0.clone();
                 return self.field_syntax_path(va.atom, &field);
-            }
+            },
             Cursor::Array(c) => {
                 let (atom, field) = self.array_field(c.visual);
                 let mut p = self.field_syntax_path(atom, &field);
                 p.push(c.begin_index.to_string());
                 return p;
-            }
+            },
             Cursor::Primitive(c) => {
                 let (atom, field) = self.primitive_field(c.visual);
                 let mut p = self.field_syntax_path(atom, &field);
                 p.push(c.range.range_lead_index().to_string());
                 return p;
-            }
+            },
         }
     }
 
@@ -180,17 +189,9 @@ impl Context {
         return (p.atom, self.front_primitive_spec(p.type_, p.front).field.clone());
     }
 
-    // ---- Atom cursor -------------------------------------------------------
-
-    /// Merman `VisualAtom.select`.
     pub fn atom_select(&mut self, visual: VisualId, index: usize) {
         if let Some(h) = self.hover {
-            if let Some(Hoverable::Atom {
-                visual: hv,
-                index: hi,
-                ..
-            }) = &self.hoverables[h]
-            {
+            if let Some(Hoverable::Atom { visual: hv, index: hi, .. }) = &self.hoverables[h] {
                 if *hv == visual && *hi == index {
                     self.clear_hover();
                 }
@@ -199,35 +200,32 @@ impl Context {
         if let Some(c) = self.cursor {
             if let Cursor::Atom(ca) = self.cursor_get(c) {
                 if ca.visual == visual {
-                    self.cursor_atom_set_index(c, index);
+                    if let Cursor::Atom(ca) = self.cursor_get_mut(c) {
+                        ca.index = index;
+                    }
+                    self.cursor_atom_reset_cornerstone(c);
                     return;
                 }
             }
         }
         let border = self.border_new(self.syntax.spec_root.cursor.clone());
         let id = self.set_cursor(Cursor::Atom(CursorAtom {
-            visual,
-            index,
-            border,
+            visual: visual,
+            index: index,
+            border: border,
         }));
         self.cursor_atom_reset_cornerstone(id);
     }
 
     pub fn atom_select_by_id(&mut self, visual: VisualId, field: &str) {
-        let index = self
-            .visual_atom(visual)
-            .selectable
-            .iter()
-            .position(|(f, _)| f == field)
-            .unwrap_or_else(|| panic!("field `{}` is not selectable", field));
+        let index =
+            self
+                .visual_atom(visual)
+                .selectable
+                .iter()
+                .position(|(f, _)| f == field)
+                .unwrap_or_else(|| panic!("field `{}` is not selectable", field));
         self.atom_select(visual, index);
-    }
-
-    fn cursor_atom_set_index(&mut self, id: CursorId, index: usize) {
-        if let Cursor::Atom(c) = self.cursor_get_mut(id) {
-            c.index = index;
-        }
-        self.cursor_atom_reset_cornerstone(id);
     }
 
     fn cursor_atom_reset_cornerstone(&mut self, id: CursorId) {
@@ -243,7 +241,7 @@ impl Context {
             Some(cornerstone) => {
                 let (mut find_previous, mut find_next) = (None, None);
                 if self.bricks[cornerstone].course.is_none() {
-                    for at in (0..visual_index).rev() {
+                    for at in (0 .. visual_index).rev() {
                         if let Some(b) = self.visual_get_last_brick(children[at]) {
                             find_previous = Some(b);
                             break;
@@ -252,7 +250,7 @@ impl Context {
                     if find_previous.is_none() {
                         find_previous = self.parent_get_previous_brick(visual);
                     }
-                    for at in visual_index + 1..children.len() {
+                    for at in visual_index + 1 .. children.len() {
                         if let Some(b) = self.visual_get_first_brick(children[at]) {
                             find_next = Some(b);
                             break;
@@ -263,11 +261,11 @@ impl Context {
                     }
                 }
                 self.wall_set_cornerstone(cornerstone, find_previous, find_next);
-            }
+            },
             None => {
                 self.wall.cornerstone = None;
                 self.wall.cornerstone_course = None;
-            }
+            },
         }
         let first = self.visual_get_first_brick(field_visual);
         let last = self.visual_get_last_brick(field_visual);
@@ -275,15 +273,10 @@ impl Context {
         self.border_set_last(border, last);
     }
 
-    // ---- Array cursor ------------------------------------------------------
-
-    /// Merman `VisualFieldArray.select`.
     pub fn array_select(&mut self, visual: VisualId, lead_first: bool, start: usize, end: usize) {
         if let Some(h) = self.hover {
             let clear = match &self.hoverables[h] {
-                Some(Hoverable::Array {
-                    visual: hv, index, ..
-                }) => *hv == visual && *index >= start && *index <= end,
+                Some(Hoverable::Array { visual: hv, index, .. }) => *hv == visual && *index >= start && *index <= end,
                 Some(Hoverable::ArrayPlaceholder { visual: hv, .. }) => *hv == visual,
                 _ => false,
             };
@@ -301,16 +294,15 @@ impl Context {
         }
         let border = self.border_new(self.syntax.spec_root.cursor.clone());
         let id = self.set_cursor(Cursor::Array(CursorArray {
-            visual,
+            visual: visual,
             begin_index: start,
             end_index: end,
-            lead_first,
-            border,
+            lead_first: lead_first,
+            border: border,
         }));
         self.cursor_array_set_range(id, start, end);
     }
 
-    /// Merman `FieldArray.selectInto`: false if there is nothing to select.
     pub fn field_array_select_into(&mut self, visual: VisualId, lead_first: bool, start: usize, end: usize) -> bool {
         if self.array_elements(visual).is_empty() {
             return false;
@@ -345,7 +337,7 @@ impl Context {
                 c.lead_first = true;
                 c.begin_index = index;
                 (c.visual, c.border)
-            }
+            },
             _ => unreachable!(),
         };
         self.cursor_array_set_cornerstone(visual, index);
@@ -359,7 +351,7 @@ impl Context {
                 c.lead_first = false;
                 c.end_index = index;
                 (c.visual, c.border)
-            }
+            },
             _ => unreachable!(),
         };
         self.cursor_array_set_cornerstone(visual, index);
@@ -378,7 +370,7 @@ impl Context {
         if self.bricks[cornerstone].course.is_none() {
             let children = self.visual_field_array(visual).children.clone();
             let vi = self.array_visual_index(visual, index);
-            for at in (0..vi).rev() {
+            for at in (0 .. vi).rev() {
                 if let Some(b) = self.visual_get_last_brick(children[at]) {
                     find_previous = Some(b);
                     break;
@@ -387,7 +379,7 @@ impl Context {
             if find_previous.is_none() {
                 find_previous = self.parent_get_previous_brick(visual);
             }
-            for at in vi + 1..children.len() {
+            for at in vi + 1 .. children.len() {
                 if let Some(b) = self.visual_get_first_brick(children[at]) {
                     find_next = Some(b);
                     break;
@@ -400,9 +392,6 @@ impl Context {
         self.wall_set_cornerstone(cornerstone, find_previous, find_next);
     }
 
-    // ---- Primitive cursor and ranges ---------------------------------------
-
-    /// Merman `VisualFieldPrimitive.select`.
     pub fn primitive_select(&mut self, visual: VisualId, lead_first: bool, begin: usize, end: usize) {
         if let Some(c) = self.cursor {
             if let Cursor::Primitive(cp) = self.cursor_get(c) {
@@ -417,17 +406,20 @@ impl Context {
         }
         let range = RangeState {
             for_selection: true,
-            visual,
+            visual: visual,
             begin_offset: 0,
             end_offset: 0,
             begin_line: None,
             end_line: None,
-            lead_first,
+            lead_first: lead_first,
             caret: None,
             border: None,
             style: self.syntax.spec_root.cursor.clone(),
         };
-        let id = self.set_cursor(Cursor::Primitive(CursorPrimitive { visual, range }));
+        let id = self.set_cursor(Cursor::Primitive(CursorPrimitive {
+            visual: visual,
+            range: range,
+        }));
         self.range_set_offsets(RangeLoc::Cursor(id), begin, end);
     }
 
@@ -499,7 +491,6 @@ impl Context {
         self.range_nudge(RangeLoc::Hoverable(id));
     }
 
-    /// Merman `RangeAttachment.setOffsetsInternal`.
     pub fn range_set_offsets(&mut self, loc: RangeLoc, begin_offset: usize, end_offset: usize) {
         let visual = self.range(loc).visual;
         let length = self.visual_primitive(visual).value.len();
@@ -578,7 +569,7 @@ impl Context {
         let (mut find_previous, mut find_next) = (None, None);
         if self.bricks[cornerstone].course.is_none() {
             let lines = self.visual_primitive(visual).lines.len();
-            for at in (0..index).rev() {
+            for at in (0 .. index).rev() {
                 if let Some(b) = self.visual_primitive(visual).lines[at].brick {
                     find_previous = Some(b);
                     break;
@@ -587,7 +578,7 @@ impl Context {
             if find_previous.is_none() {
                 find_previous = self.parent_find_previous_brick(visual);
             }
-            for at in index + 1..lines {
+            for at in index + 1 .. lines {
                 if let Some(b) = self.visual_primitive(visual).lines[at].brick {
                     find_next = Some(b);
                     break;
@@ -609,9 +600,6 @@ impl Context {
         }
     }
 
-    // ---- Selection entry points --------------------------------------------
-
-    /// Merman `Visual.selectIntoAnyChild`.
     pub fn visual_select_into_any_child(&mut self, v: VisualId) -> bool {
         match &self.visuals[v].kind {
             VisualKind::Atom(a) => {
@@ -626,7 +614,7 @@ impl Context {
                     self.visual_select_into_any_child(first);
                 }
                 return true;
-            }
+            },
             VisualKind::Group(g) => {
                 for child in g.children.clone() {
                     if self.visual_select_into_any_child(child) {
@@ -634,13 +622,13 @@ impl Context {
                     }
                 }
                 return false;
-            }
+            },
             VisualKind::Symbol(_) => return false,
             VisualKind::Primitive(p) => {
                 let len = p.value.len();
                 self.primitive_select(v, true, len, len);
                 return true;
-            }
+            },
             VisualKind::FieldAtom(fa) => {
                 let (atom, type_, front) = (fa.atom, fa.type_, fa.front);
                 let crate::syntax::Front::Atom(f) = &self.syntax.syntax_type(type_).front[front] else {
@@ -650,49 +638,36 @@ impl Context {
                 let atom_visual = self.atom_visual[atom].unwrap();
                 self.atom_select_by_id(atom_visual, &field);
                 return true;
-            }
+            },
             VisualKind::FieldArray(_) => {
                 self.field_array_select_into(v, true, 0, 0);
                 return true;
-            }
+            },
         }
     }
 
-    /// Merman `Atom.fieldParentRef.selectField`: select this atom within its
-    /// parent's field.
     pub fn atom_parent_select_field(&mut self, atom: AtomId) -> bool {
         let Some(parent_ref) = &self.document.document_atom(atom).parent else {
             return false;
         };
         let (parent_atom, field, index) = (parent_ref.atom, parent_ref.field.clone(), parent_ref.index);
         let parent_visual = self.atom_visual[parent_atom].unwrap();
-        let kind = *self
-            .syntax
-            .syntax_type(self.document.document_atom(parent_atom).type_)
-            .fields
-            .get(&field)
-            .unwrap();
+        let kind =
+            *self.syntax.syntax_type(self.document.document_atom(parent_atom).type_).fields.get(&field).unwrap();
         match kind {
             FieldKind::Array => {
-                let field_visual = self
-                    .visual_atom(parent_visual)
-                    .selectable
-                    .iter()
-                    .find(|(f, _)| *f == field)
-                    .unwrap()
-                    .1;
+                let field_visual =
+                    self.visual_atom(parent_visual).selectable.iter().find(|(f, _)| *f == field).unwrap().1;
                 return self.field_array_select_into(field_visual, true, index, index);
-            }
+            },
             FieldKind::Atom => {
                 self.atom_select_by_id(parent_visual, &field);
                 return true;
-            }
+            },
             FieldKind::Primitive => unreachable!(),
         }
     }
 
-    /// Merman `Atom.Parent.selectParent` for a named field: select the field
-    /// within its atom, or the atom within its parent.
     pub fn field_parent_select_parent(&mut self, atom: AtomId, field: &str) -> bool {
         let visual = self.atom_visual[atom].unwrap();
         if self.visual_atom(visual).need_intermediate_cursor {
@@ -704,8 +679,6 @@ impl Context {
         }
         return self.atom_parent_select_field(atom);
     }
-
-    // ---- Hoverables --------------------------------------------------------
 
     pub fn clear_hover(&mut self) {
         if let Some(h) = self.hover.take() {
@@ -722,9 +695,11 @@ impl Context {
             return;
         };
         match h {
-            Hoverable::Atom { border, .. }
-            | Hoverable::Array { border, .. }
-            | Hoverable::ArrayPlaceholder { border, .. } => self.border_destroy(border),
+            Hoverable::Atom { border, .. } |
+            Hoverable::Array { border, .. } |
+            Hoverable::ArrayPlaceholder { border, .. } => self.border_destroy(
+                border,
+            ),
             Hoverable::Primitive(mut p) => self.range_destroy_state(&mut p.range),
         }
     }
@@ -735,7 +710,6 @@ impl Context {
         return id;
     }
 
-    /// Merman `SelectableChildParent.hover`'s `AtomHoverable` handling.
     pub fn atom_hover_selectable(&mut self, atom: VisualId, index: usize) -> (HoverableId, bool) {
         if let Some(h) = self.hover {
             if let Some(Hoverable::Atom { visual, index: i, .. }) = &self.hoverables[h] {
@@ -751,8 +725,8 @@ impl Context {
         let border = self.border_new(self.syntax.spec_root.hover.clone());
         let id = self.hoverable_push(Hoverable::Atom {
             visual: atom,
-            index,
-            border,
+            index: index,
+            border: border,
         });
         self.atom_hoverable_set_index(id, index);
         return (id, true);
@@ -763,7 +737,7 @@ impl Context {
             Hoverable::Atom { visual, index: i, border } => {
                 *i = index;
                 (*visual, *border)
-            }
+            },
             _ => unreachable!(),
         };
         let field_visual = self.visual_atom(visual).selectable[index].1;
@@ -773,7 +747,6 @@ impl Context {
         self.border_set_last(border, last);
     }
 
-    /// Merman `FrontArrayParent.hover` for an element.
     pub fn array_hover_element(&mut self, array: VisualId, index: usize) -> Option<(HoverableId, bool)> {
         if let Some(c) = self.cursor {
             if let Cursor::Array(ca) = self.cursor_get(c) {
@@ -784,23 +757,23 @@ impl Context {
         }
         let mut changed = false;
         let id = match self.hover {
-            Some(h) if matches!(&self.hoverables[h], Some(Hoverable::Array { visual, .. }) if *visual == array) => h,
+            Some(h) if matches!(&self.hoverables[h], Some(Hoverable::Array { visual, .. }) if * visual == array) => h,
             _ => {
                 changed = true;
                 let border = self.border_new(self.syntax.spec_root.hover.clone());
                 self.hoverable_push(Hoverable::Array {
                     visual: array,
-                    index,
-                    border,
+                    index: index,
+                    border: border,
                 })
-            }
+            },
         };
         let (old_index, border) = match self.hoverables[id].as_mut().unwrap() {
             Hoverable::Array { index: i, border, .. } => {
                 let old = *i;
                 *i = index;
                 (old, *border)
-            }
+            },
             _ => unreachable!(),
         };
         if old_index != index {
@@ -816,13 +789,15 @@ impl Context {
 
     pub fn array_hover_placeholder(&mut self, array: VisualId, brick: BrickId) -> (HoverableId, bool) {
         let border = self.border_new(self.syntax.spec_root.hover.clone());
-        let id = self.hoverable_push(Hoverable::ArrayPlaceholder { visual: array, border });
+        let id = self.hoverable_push(Hoverable::ArrayPlaceholder {
+            visual: array,
+            border: border,
+        });
         self.border_set_first(border, Some(brick));
         self.border_set_last(border, Some(brick));
         return (id, true);
     }
 
-    /// Merman `Line.hover`'s `PrimitiveHoverable` handling.
     pub fn primitive_hover_position(&mut self, visual: VisualId, offset: usize) -> (HoverableId, bool) {
         let mut changed = false;
         let id = match self.hover {
@@ -831,7 +806,7 @@ impl Context {
                 changed = true;
                 let range = RangeState {
                     for_selection: false,
-                    visual,
+                    visual: visual,
                     begin_offset: 0,
                     end_offset: 0,
                     begin_line: None,
@@ -841,8 +816,11 @@ impl Context {
                     border: None,
                     style: self.syntax.spec_root.hover.clone(),
                 };
-                self.hoverable_push(Hoverable::Primitive(HoverablePrimitive { visual, range }))
-            }
+                self.hoverable_push(Hoverable::Primitive(HoverablePrimitive {
+                    visual: visual,
+                    range: range,
+                }))
+            },
         };
         if self.range(RangeLoc::Hoverable(id)).range_lead_index() != offset {
             changed = true;
@@ -851,25 +829,24 @@ impl Context {
         return (id, changed);
     }
 
-    /// Merman `Hoverable.select`.
     pub fn hoverable_select(&mut self, id: HoverableId) {
         match self.hoverables[id].as_ref().expect("hoverable destroyed") {
             Hoverable::Atom { visual, index, .. } => {
                 let (v, i) = (*visual, *index);
                 self.atom_select(v, i);
-            }
+            },
             Hoverable::Array { visual, index, .. } => {
                 let (v, i) = (*visual, *index);
                 self.array_select(v, true, i, i);
-            }
+            },
             Hoverable::ArrayPlaceholder { visual, .. } => {
                 let v = *visual;
                 self.array_select(v, true, 0, 0);
-            }
+            },
             Hoverable::Primitive(p) => {
                 let (v, b, e) = (p.visual, p.range.begin_offset, p.range.end_offset);
                 self.primitive_select(v, true, b, e);
-            }
+            },
         }
     }
 
@@ -879,29 +856,27 @@ impl Context {
                 let mut p = self.atom_syntax_path(self.visual_atom(*visual).atom);
                 p.push(index.to_string());
                 return p;
-            }
+            },
             Hoverable::Array { visual, index, .. } => {
                 let (atom, field) = self.array_field(*visual);
                 let mut p = self.field_syntax_path(atom, &field);
                 p.push(index.to_string());
                 return p;
-            }
+            },
             Hoverable::ArrayPlaceholder { visual, .. } => {
                 let (atom, field) = self.array_field(*visual);
                 let mut p = self.field_syntax_path(atom, &field);
                 p.push("0".to_string());
                 return p;
-            }
+            },
             Hoverable::Primitive(hp) => {
                 let (atom, field) = self.primitive_field(hp.visual);
                 let mut p = self.field_syntax_path(atom, &field);
                 p.push(hp.range.range_lead_index().to_string());
                 return p;
-            }
+            },
         }
     }
-
-    // ---- Brick creation notifications for borders --------------------------
 
     pub fn atom_selectable_brick_created(&mut self, atom: VisualId, sel: usize, brick: BrickId, first: bool) {
         let mut borders = vec![];
@@ -932,7 +907,11 @@ impl Context {
         let mut borders = vec![];
         if let Some(c) = self.cursor {
             if let Cursor::Array(ca) = self.cursor_get(c) {
-                if ca.visual == array && (if first { ca.begin_index } else { ca.end_index }) == index {
+                if ca.visual == array && (if first {
+                    ca.begin_index
+                } else {
+                    ca.end_index
+                }) == index {
                     borders.push(ca.border);
                 }
             }
@@ -953,25 +932,19 @@ impl Context {
         }
     }
 
-    // ---- Syntax paths ------------------------------------------------------
-
-    /// Merman `Atom.getSyntaxPath`.
     pub fn atom_syntax_path(&self, atom: AtomId) -> Vec<String> {
         let Some(parent_ref) = &self.document.document_atom(atom).parent else {
             return vec![];
         };
         let mut path = self.field_syntax_path(parent_ref.atom, &parent_ref.field);
-        let kind = self
-            .syntax
-            .syntax_type(self.document.document_atom(parent_ref.atom).type_)
-            .fields[&parent_ref.field];
+        let kind =
+            self.syntax.syntax_type(self.document.document_atom(parent_ref.atom).type_).fields[&parent_ref.field];
         if kind == FieldKind::Array {
             path.push(parent_ref.index.to_string());
         }
         return path;
     }
 
-    /// Merman `Field.getSyntaxPath` for a named field.
     pub fn field_syntax_path(&self, atom: AtomId, field: &str) -> Vec<String> {
         let mut path = self.atom_syntax_path(atom);
         path.push("named".to_string());
@@ -979,7 +952,6 @@ impl Context {
         return path;
     }
 
-    /// Merman `Context.syntaxLocate`.
     pub fn syntax_locate(&self, path: &[String]) -> Option<Located> {
         let mut at = Located::Atom(self.document.root);
         let mut i = 0;
@@ -995,7 +967,7 @@ impl Context {
                     }
                     i += 2;
                     at = Located::Field(a, field);
-                }
+                },
                 Located::Field(a, ref field) => match self.document.document_atom(a).fields.get(field).unwrap() {
                     Field::Array(elements) => {
                         let Ok(index) = path[i].parse::<usize>() else {
@@ -1006,22 +978,19 @@ impl Context {
                         }
                         i += 1;
                         at = Located::Atom(elements[index]);
-                    }
+                    },
                     Field::Atom(child) => {
                         at = Located::Atom(*child);
-                    }
+                    },
                     Field::Primitive(_) => {
                         return Some(at);
-                    }
+                    },
                 },
             }
         }
         return Some(at);
     }
 
-    // ---- Copy --------------------------------------------------------------
-
-    /// Merman's cursor `actionCopy`.
     pub fn cursor_copy(&mut self) {
         let Some(c) = self.cursor else {
             return;
@@ -1033,50 +1002,44 @@ impl Context {
                     VisualKind::FieldAtom(fa) => {
                         let body = self.visual_atom(fa.body).atom;
                         self.copy_atoms(&[body], false);
-                    }
+                    },
                     VisualKind::FieldArray(_) => {
                         let elements = self.array_elements(field_visual);
                         if elements.is_empty() {
                             self.copy_array(field_visual, &[]);
                         } else {
                             let n = elements.len();
-                            self.copy_array(field_visual, &elements[0..n]);
+                            self.copy_array(field_visual, &elements[0 .. n]);
                         }
-                    }
+                    },
                     VisualKind::Primitive(p) => {
                         let text = p.value.clone();
                         self.clipboard = Some(text);
-                    }
+                    },
                     _ => panic!("unexpected selectable visual"),
                 }
-            }
+            },
             Cursor::Array(ca) => {
                 let elements = self.array_elements(ca.visual);
                 let (v, b, e) = (ca.visual, ca.begin_index, ca.end_index);
-                self.copy_array(v, &elements[b..=e]);
-            }
+                self.copy_array(v, &elements[b ..= e]);
+            },
             Cursor::Primitive(cp) => {
                 let text = self.visual_primitive(cp.visual).value.clone();
                 let (b, e) = (cp.range.begin_offset, cp.range.end_offset);
-                self.clipboard = Some(text[b.min(text.len())..e.min(text.len())].to_string());
-            }
+                self.clipboard = Some(text[b.min(text.len()) .. e.min(text.len())].to_string());
+            },
         }
     }
 
-    /// Copy array elements in their container's format: an object for record
-    /// backs, else an array.
     fn copy_array(&mut self, array: VisualId, atoms: &[AtomId]) {
         let a = self.visual_field_array(array);
         let field = self.front_array_spec(a.type_, a.front).field.clone();
-        let record = matches!(
-            back_of_field(&self.syntax.syntax_type(a.type_).back, &field),
-            Some(SpecBack::Record(_))
-        );
+        let record =
+            matches!(back_of_field(&self.syntax.syntax_type(a.type_).back, &field), Some(SpecBack::Record(_)));
         self.copy_atoms(atoms, record);
     }
 
-    /// Merman `Context.copy` with `CopyContext.ARRAY`/`RECORD`: the atoms as
-    /// pretty JSON in a wrapping array or object.
     pub fn copy_atoms(&mut self, atoms: &[AtomId], record: bool) {
         let value = if record {
             let mut out = Map::new();
@@ -1086,33 +1049,43 @@ impl Context {
             }
             Value::Object(out)
         } else {
-            Value::Array(
-                atoms
-                    .iter()
-                    .map(|a| serialize_atom(&self.syntax, &self.document, *a))
-                    .collect(),
-            )
+            Value::Array(atoms.iter().map(|a| serialize_atom(&self.syntax, &self.document, *a)).collect())
         };
         self.clipboard = Some(serde_json::to_string_pretty(&value).unwrap());
     }
 }
 
-/// The back spec capturing a field.
 fn back_of_field<'a>(back: &'a SpecBack, field: &str) -> Option<&'a SpecBack> {
     match back {
         SpecBack::String(f) | SpecBack::Number(f) | SpecBack::Literal(f) => {
-            return if f.id == field { Some(back) } else { None };
-        }
-        SpecBack::Atom(a) => return if a.id == field { Some(back) } else { None },
-        SpecBack::Array(a) | SpecBack::Record(a) => return if a.id == field { Some(back) } else { None },
-        SpecBack::Optional(a) => return if a.id == field { Some(back) } else { None },
+            return if f.id == field {
+                Some(back)
+            } else {
+                None
+            };
+        },
+        SpecBack::Atom(a) => return if a.id == field {
+            Some(back)
+        } else {
+            None
+        },
+        SpecBack::Array(a) | SpecBack::Record(a) => return if a.id == field {
+            Some(back)
+        } else {
+            None
+        },
+        SpecBack::Optional(a) => return if a.id == field {
+            Some(back)
+        } else {
+            None
+        },
         SpecBack::Pair(p) => {
             return back_of_field(&p.key, field).or_else(|| back_of_field(&p.value, field));
-        }
+        },
         SpecBack::FixedArray(elems) => return elems.iter().find_map(|e| back_of_field(e, field)),
         SpecBack::FixedRecord(entries) => {
             return entries.iter().find_map(|e| back_of_field(&e.value, field));
-        }
+        },
         SpecBack::FixedString(_) | SpecBack::FixedLiteral(_) | SpecBack::Discard(_) => return None,
     }
 }

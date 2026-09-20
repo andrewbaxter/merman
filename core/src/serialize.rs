@@ -1,16 +1,21 @@
-//! Writes atoms back to JSON following their back specs (merman's write states).
-use crate::document::{AtomId, Document, Field};
+use crate::document::{
+    AtomId,
+    Document,
+    Field,
+};
 use crate::spec::SpecBack;
 use crate::syntax::Syntax;
-use serde_json::{Map, Number, Value};
+use serde_json::{
+    Map,
+    Number,
+    Value,
+};
 
-/// JSON for an atom whose back is not a `pair`.
 pub fn serialize_atom(syntax: &Syntax, document: &Document, atom: AtomId) -> Value {
     let a = document.document_atom(atom);
     return write_back(syntax, document, atom, &syntax.syntax_type(a.type_).back);
 }
 
-/// Key and value of an atom whose back is a `pair`.
 pub fn serialize_pair(syntax: &Syntax, document: &Document, atom: AtomId) -> (String, Value) {
     let a = document.document_atom(atom);
     let SpecBack::Pair(pair) = &syntax.syntax_type(a.type_).back else {
@@ -37,9 +42,7 @@ fn literal(text: &str) -> Value {
 fn write_back(syntax: &Syntax, document: &Document, atom: AtomId, back: &SpecBack) -> Value {
     let a = document.document_atom(atom);
     let field = |id: &str| {
-        a.fields
-            .get(id)
-            .unwrap_or_else(|| panic!("atom is missing field `{}`", id))
+        a.fields.get(id).unwrap_or_else(|| panic!("atom is missing field `{}`", id))
     };
     match back {
         SpecBack::FixedString(s) => return Value::String(s.clone()),
@@ -49,30 +52,25 @@ fn write_back(syntax: &Syntax, document: &Document, atom: AtomId, back: &SpecBac
                 panic!("field `{}` is not a primitive", f.id);
             };
             return Value::String(s.clone());
-        }
+        },
         SpecBack::Number(f) | SpecBack::Literal(f) => {
             let Field::Primitive(s) = field(&f.id) else {
                 panic!("field `{}` is not a primitive", f.id);
             };
             return literal(s);
-        }
+        },
         SpecBack::Atom(f) => {
             let Field::Atom(child) = field(&f.id) else {
                 panic!("field `{}` is not an atom", f.id);
             };
             return serialize_atom(syntax, document, *child);
-        }
+        },
         SpecBack::Array(f) => {
             let Field::Array(children) = field(&f.id) else {
                 panic!("field `{}` is not an array", f.id);
             };
-            return Value::Array(
-                children
-                    .iter()
-                    .map(|c| serialize_atom(syntax, document, *c))
-                    .collect(),
-            );
-        }
+            return Value::Array(children.iter().map(|c| serialize_atom(syntax, document, *c)).collect());
+        },
         SpecBack::Optional(f) => {
             let Field::Array(children) = field(&f.id) else {
                 panic!("field `{}` is not an array", f.id);
@@ -81,13 +79,13 @@ fn write_back(syntax: &Syntax, document: &Document, atom: AtomId, back: &SpecBac
             match children.first() {
                 Some(c) => {
                     out.insert(f.some_key.clone(), serialize_atom(syntax, document, *c));
-                }
+                },
                 None => {
                     out.insert(f.none_key.clone(), Value::Null);
-                }
+                },
             }
             return Value::Object(out);
-        }
+        },
         SpecBack::Record(f) => {
             let Field::Array(children) = field(&f.id) else {
                 panic!("field `{}` is not an array", f.id);
@@ -98,23 +96,18 @@ fn write_back(syntax: &Syntax, document: &Document, atom: AtomId, back: &SpecBac
                 out.insert(k, v);
             }
             return Value::Object(out);
-        }
+        },
         SpecBack::Pair(_) => panic!("pair back outside a record"),
         SpecBack::FixedArray(elems) => {
-            return Value::Array(
-                elems
-                    .iter()
-                    .map(|e| write_back(syntax, document, atom, e))
-                    .collect(),
-            );
-        }
+            return Value::Array(elems.iter().map(|e| write_back(syntax, document, atom, e)).collect());
+        },
         SpecBack::FixedRecord(entries) => {
             let mut out = Map::new();
             for e in entries {
                 out.insert(e.key.clone(), write_back(syntax, document, atom, &e.value));
             }
             return Value::Object(out);
-        }
+        },
         SpecBack::Discard(_) => return Value::Null,
     }
 }

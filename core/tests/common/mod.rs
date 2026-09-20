@@ -1,6 +1,7 @@
-//! Shared helpers: build a context with the fixed measurer and run its idle
-//! tasks to completion.
-use merman3_core::context::{Context, ContextConfig};
+use merman3_core::context::{
+    Context,
+    ContextConfig,
+};
 use merman3_core::document::Document;
 use merman3_core::matcher::match_document;
 use merman3_core::measure::MeasureFixed;
@@ -19,7 +20,6 @@ pub fn load_document(syntax: &Syntax, text: &str) -> Rc<Document> {
     return Rc::new(match_document(syntax, &value).unwrap_or_else(|e| panic!("{}", e.mismatch_format())));
 }
 
-/// Fake clock: each call advances 1ms.
 pub struct Clock(pub f64);
 
 impl Clock {
@@ -40,7 +40,6 @@ pub fn build(syntax: Rc<Syntax>, document: Rc<Document>, converse: f64, transver
     );
 }
 
-/// Run idle timers until nothing is queued (merman would do this over time).
 pub fn settle(ctx: &mut Context, clock: &mut Clock) {
     let mut guard = 0;
     loop {
@@ -54,7 +53,6 @@ pub fn settle(ctx: &mut Context, clock: &mut Clock) {
     }
 }
 
-/// Render rows as text with one character per `unit` px.
 pub fn render_text(snapshot: &Snapshot, unit: f64) -> Vec<String> {
     let mut out = vec![];
     for row in &snapshot.rows {
