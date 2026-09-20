@@ -179,12 +179,12 @@ impl Context {
         }
     }
 
-    fn array_field(&self, v: VisualId) -> (AtomId, String) {
+    pub(crate) fn array_field(&self, v: VisualId) -> (AtomId, String) {
         let a = self.visual_field_array(v);
         return (a.atom, self.front_array_spec(a.type_, a.front).field.clone());
     }
 
-    fn primitive_field(&self, v: VisualId) -> (AtomId, String) {
+    pub(crate) fn primitive_field(&self, v: VisualId) -> (AtomId, String) {
         let p = self.visual_primitive(v);
         return (p.atom, self.front_primitive_spec(p.type_, p.front).field.clone());
     }
@@ -331,6 +331,13 @@ impl Context {
         self.border_set_last(border, last);
     }
 
+    pub fn cursor_array_set_position(&mut self, id: CursorId, index: usize) {
+        if let Cursor::Array(c) = self.cursor_get_mut(id) {
+            c.lead_first = true;
+        }
+        self.cursor_array_set_range(id, index, index);
+    }
+
     pub fn cursor_array_set_begin(&mut self, id: CursorId, index: usize) {
         let (visual, border) = match self.cursor_get_mut(id) {
             Cursor::Array(c) => {
@@ -423,7 +430,7 @@ impl Context {
         self.range_set_offsets(RangeLoc::Cursor(id), begin, end);
     }
 
-    fn range(&self, loc: RangeLoc) -> &RangeState {
+    pub(crate) fn range(&self, loc: RangeLoc) -> &RangeState {
         match loc {
             RangeLoc::Cursor(c) => match self.cursor_get(c) {
                 Cursor::Primitive(p) => return &p.range,

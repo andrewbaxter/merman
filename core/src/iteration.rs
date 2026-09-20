@@ -284,81 +284,7 @@ impl Context {
                             true
                         };
                     },
-                    TaskKind::Hover { .. } => {
-                        break 'run_task ({
-                            let (more, changed) = 'hover_inner: {
-                                let (point, at) = match self.task_kind_mut(task_id) {
-                                    Some(TaskKind::Hover { point, at }) => (*point, *at),
-                                    _ => unreachable!(),
-                                };
-                                let Some(at) = at else {
-                                    break 'hover_inner (false, false);
-                                };
-                                let Some(course) = self.bricks[at].course else {
-                                    break 'hover_inner (false, false);
-                                };
-                                let Some(point) = point else {
-                                    self.hover_brick = None;
-                                    break 'hover_inner (false, false);
-                                };
-                                let ci = self.courses[course].index;
-                                if point.transverse < self.courses[course].transverse_start && ci > 0 {
-                                    let prev = self.wall.children[ci - 1];
-                                    let b = self.courses[prev].children[0];
-                                    if let Some(TaskKind::Hover { at, .. }) = self.task_kind_mut(task_id) {
-                                        *at = Some(b);
-                                    }
-                                    (true, false)
-                                } else if ci < self.wall.children.len() - 1 &&
-                                    point.transverse > self.courses[self.wall.children[ci + 1]].transverse_start {
-                                    let next = self.wall.children[ci + 1];
-                                    let b = self.courses[next].children[0];
-                                    if let Some(TaskKind::Hover { at, .. }) = self.task_kind_mut(task_id) {
-                                        *at = Some(b);
-                                    }
-                                    (true, false)
-                                } else {
-                                    let mut at = at;
-                                    while point.converse < self.brick_get_converse(at) && self.bricks[at].index > 0 {
-                                        at = self.courses[course].children[self.bricks[at].index - 1];
-                                    }
-                                    while point.converse >= self.brick_converse_edge(at) &&
-                                        self.bricks[at].index < self.courses[course].children.len() - 1 {
-                                        at = self.courses[course].children[self.bricks[at].index + 1];
-                                    }
-                                    let old = self.hover;
-                                    let hover0 = self.brick_hover(at, point);
-                                    let hover_changed;
-                                    match hover0 {
-                                        None => {
-                                            hover_changed = old.is_some();
-                                            self.hover = None;
-                                        },
-                                        Some((h, changed)) => {
-                                            hover_changed = changed;
-                                            self.hover = Some(h);
-                                        },
-                                    }
-                                    if hover_changed {
-                                        if let Some(o) = old {
-                                            if self.hover != Some(o) {
-                                                self.hoverable_clear(o);
-                                            }
-                                        }
-                                    }
-                                    self.hover_brick = Some(at);
-                                    if let Some(TaskKind::Hover { at: a, .. }) = self.task_kind_mut(task_id) {
-                                        *a = Some(at);
-                                    }
-                                    (false, hover_changed)
-                                }
-                            };
-                            if changed {
-                                self.hover_changed();
-                            }
-                            more
-                        });
-                    },
+                    TaskKind::Hover { .. } => break 'run_task self.run_hover(task_id),
                     TaskKind::ConcensusAlign { align } => {
                         let a = *align;
                         break 'run_task self.run_concensus_align(a);
@@ -458,7 +384,81 @@ impl Context {
         }
     }
 
-    pub fn mouse_moved(&mut self, point: Vector) {
+    fn run_hover(&mut self, task_id: TaskId) -> bool {
+        let (more, changed) = 'hover: {
+            let (point, at) = match self.task_kind_mut(task_id) {
+                Some(TaskKind::Hover { point, at }) => (*point, *at),
+                _ => unreachable!(),
+            };
+            let Some(at) = at else {
+                break 'hover (false, false);
+            };
+            let Some(course) = self.bricks[at].course else {
+                break 'hover (false, false);
+            };
+            let Some(point) = point else {
+                self.hover_brick = None;
+                break 'hover (false, false);
+            };
+            let ci = self.courses[course].index;
+            if point.transverse < self.courses[course].transverse_start && ci > 0 {
+                let prev = self.wall.children[ci - 1];
+                let b = self.courses[prev].children[0];
+                if let Some(TaskKind::Hover { at, .. }) = self.task_kind_mut(task_id) {
+                    *at = Some(b);
+                }
+                (true, false)
+            } else if ci < self.wall.children.len() - 1 &&
+                point.transverse > self.courses[self.wall.children[ci + 1]].transverse_start {
+                let next = self.wall.children[ci + 1];
+                let b = self.courses[next].children[0];
+                if let Some(TaskKind::Hover { at, .. }) = self.task_kind_mut(task_id) {
+                    *at = Some(b);
+                }
+                (true, false)
+            } else {
+                let mut at = at;
+                while point.converse < self.brick_get_converse(at) && self.bricks[at].index > 0 {
+                    at = self.courses[course].children[self.bricks[at].index - 1];
+                }
+                while point.converse >= self.brick_converse_edge(at) &&
+                    self.bricks[at].index < self.courses[course].children.len() - 1 {
+                    at = self.courses[course].children[self.bricks[at].index + 1];
+                }
+                let old = self.hover;
+                let hover0 = self.brick_hover(at, point);
+                let hover_changed;
+                match hover0 {
+                    None => {
+                        hover_changed = old.is_some();
+                        self.hover = None;
+                    },
+                    Some((h, changed)) => {
+                        hover_changed = changed;
+                        self.hover = Some(h);
+                    },
+                }
+                if hover_changed {
+                    if let Some(o) = old {
+                        if self.hover != Some(o) {
+                            self.hoverable_clear(o);
+                        }
+                    }
+                }
+                self.hover_brick = Some(at);
+                if let Some(TaskKind::Hover { at: a, .. }) = self.task_kind_mut(task_id) {
+                    *a = Some(at);
+                }
+                (false, hover_changed)
+            }
+        };
+        if changed {
+            self.hover_changed();
+        }
+        return more;
+    }
+
+    pub fn mouse_moved(&mut self, point: Vector, now_ms: &mut dyn FnMut() -> f64) {
         if self.hover_idle.is_none() {
             let at = match self.hover_brick {
                 Some(b) => Some(b),
@@ -470,20 +470,24 @@ impl Context {
             }, P::HOVER);
             self.hover_idle = Some(t);
         }
-        let t = self.hover_idle.unwrap();
-        if let Some(TaskKind::Hover { point: p, .. }) = self.task_kind_mut(t) {
+        let task = self.hover_idle.unwrap();
+        if let Some(TaskKind::Hover { point: p, .. }) = self.task_kind_mut(task) {
             *p = Some(point);
+        }
+        let start = now_ms();
+        loop {
+            if !self.run_hover(task) {
+                self.task_destroy(task);
+                return;
+            }
+            if now_ms() - start > 4. {
+                return;
+            }
         }
     }
 
     pub fn mouse_exited(&mut self) {
-        if let Some(t) = self.hover_idle {
-            if let Some(TaskKind::Hover { point, .. }) = self.task_kind_mut(t) {
-                *point = None;
-            }
-        } else if self.hover.is_some() {
-            self.clear_hover();
-        }
+        self.clear_hover();
     }
 
     pub fn cornerstone_changed(&mut self, brick: BrickId) {

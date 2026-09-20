@@ -152,7 +152,7 @@ fn hover_click_and_copy() {
     let row = &snapshot.rows[0];
     let true_brick = row.bricks.iter().find(|b| b.text == "true").unwrap();
     let point = Vector::new(true_brick.converse + 1., row.transverse + 1.);
-    ctx.mouse_moved(point);
+    ctx.mouse_moved(point, &mut || clock.now());
     settle(&mut ctx, &mut clock);
     assert!(ctx.hover.is_some(), "hovering a brick should produce a hoverable");
     assert_eq!(ctx.render_snapshot().drawings.len(), 1, "hover draws one border");
@@ -167,7 +167,7 @@ fn hover_click_and_copy() {
     ctx.key_copy(&mut || clock.now());
     assert_eq!(ctx.clipboard.take().unwrap(), "[\n  true\n]");
     let brace = row.bricks.iter().find(|b| b.text == "{").unwrap();
-    ctx.mouse_moved(Vector::new(brace.converse + 1., row.transverse + 1.));
+    ctx.mouse_moved(Vector::new(brace.converse + 1., row.transverse + 1.), &mut || clock.now());
     settle(&mut ctx, &mut clock);
     let snapshot = ctx.render_snapshot();
     assert_eq!(snapshot.transverse.0, 0.);

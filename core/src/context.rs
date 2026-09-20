@@ -18,6 +18,10 @@ use crate::iteration::{
     QueueEntry,
     Task,
 };
+use crate::keys::{
+    KeyStroke,
+    Keymap,
+};
 use crate::measure::Measure;
 use crate::syntax::Syntax;
 use crate::visual::Visual;
@@ -59,6 +63,7 @@ impl Vector {
 pub struct ContextConfig {
     pub lay_brick_batch_size: usize,
     pub retry_expand_factor: f64,
+    pub keys: Keymap,
 }
 
 impl Default for ContextConfig {
@@ -66,6 +71,7 @@ impl Default for ContextConfig {
         return ContextConfig {
             lay_brick_batch_size: 10,
             retry_expand_factor: 1.25,
+            keys: Keymap::default(),
         };
     }
 }
@@ -107,6 +113,7 @@ pub struct Context {
     pub cursor: Option<CursorId>,
     pub select_token: u64,
     pub drag_select: Option<DragSelect>,
+    pub key_pending: Vec<KeyStroke>,
     pub clipboard: Option<String>,
 }
 
@@ -159,6 +166,7 @@ impl Context {
             cursor: None,
             select_token: 0,
             drag_select: None,
+            key_pending: vec![],
             clipboard: None,
         };
         c.edge = c.edge_from_converse_size(converse_size);

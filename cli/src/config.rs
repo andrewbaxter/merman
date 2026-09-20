@@ -1,3 +1,4 @@
+pub use merman3_core::keys::SpecKeys;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -7,6 +8,8 @@ use std::path::PathBuf;
 pub struct SpecConfig {
     #[serde(default)]
     pub extensions: HashMap<String, PathBuf>,
+    #[serde(default)]
+    pub keys: SpecKeys,
 }
 
 pub struct Mapping {
@@ -16,6 +19,7 @@ pub struct Mapping {
 
 pub struct Config {
     pub extensions: HashMap<String, Mapping>,
+    pub keys: SpecKeys,
     pub sources: Vec<PathBuf>,
 }
 

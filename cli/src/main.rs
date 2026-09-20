@@ -19,6 +19,7 @@ use loga::{
     ea,
     ResultContext,
 };
+use merman3_core::keys::Keymap;
 use merman3_core::matcher::match_document;
 use merman3_core::spec::SpecSyntax;
 use merman3_core::syntax::Syntax;
@@ -96,6 +97,7 @@ fn main() {
             let source = &args.source;
             let config = {
                 let mut extensions = std::collections::HashMap::new();
+                let mut keys = config::SpecKeys::default();
                 let mut sources = vec![];
                 let dirs = {
                     let mut out = vec![];
@@ -136,11 +138,15 @@ fn main() {
                                 config: path.clone(),
                             });
                         }
+                        for (action, bindings) in spec.keys.0 {
+                            keys.0.entry(action).or_insert(bindings);
+                        }
                         sources.push(path);
                     }
                 }
                 config::Config {
                     extensions: extensions,
+                    keys: keys,
                     sources: sources,
                 }
             };
@@ -217,10 +223,24 @@ fn main() {
                 },
             };
             eprintln!("Matched {} atoms", document.atoms.len());
+            if let Err(errors) = Keymap::keymap_resolve(&config.keys) {
+                return Err(
+                    loga::agg_err_with(
+                        "Errors in key bindings",
+                        errors.into_iter().map(loga::err).collect(),
+                        ea!(
+                            config_files =
+                                config.sources.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join(", ")
+                        ),
+                    ),
+                );
+            }
+            let keys_text = serde_json::to_string(&config.keys).unwrap();
             return Ok(
                 include_str!("../static/index.html")
                     .replace("__MERMAN_SYNTAX__", &embed_json(&syntax_text))
-                    .replace("__MERMAN_SOURCE__", &embed_json(&source_text)),
+                    .replace("__MERMAN_SOURCE__", &embed_json(&source_text))
+                    .replace("__MERMAN_KEYS__", &embed_json(&keys_text)),
             );
         })()?;
         let handler: Arc<dyn Handler<Body>> = Arc::new(HandlerStatic { html: html.into_bytes() });

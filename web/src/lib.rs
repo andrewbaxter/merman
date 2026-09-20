@@ -23,6 +23,12 @@ use merman3_core::context::{
     Vector,
 };
 use merman3_core::direction::DirectionConvert;
+use merman3_core::keys::{
+    KeyName,
+    KeyStroke,
+    Keymap,
+    SpecKeys,
+};
 use merman3_core::matcher::match_document;
 use merman3_core::measure::{
     FontMetrics,
@@ -124,6 +130,8 @@ struct State {
     origin: (f64, f64),
     origin_known: bool,
     raf: Option<AnimationFrame>,
+    hover_point: Option<Vector>,
+    hover_raf: Option<AnimationFrame>,
     timer: Option<Timeout>,
 }
 
@@ -398,6 +406,13 @@ pub fn start() {
             ).map_err(|e| format!("Error parsing syntax JSON: {}", e))?;
         let syntax =
             Rc::new(Syntax::syntax_resolve(spec).map_err(|e| format!("Syntax errors:\n{}", e.join("\n")))?);
+        let keys = match document().get_element_by_id("merman-keys").map(|e| e.text_content().unwrap_or_default()) {
+            Some(text) if !text.trim().is_empty() => serde_json::from_str::<SpecKeys>(
+                &text,
+            ).map_err(|e| format!("Error parsing keys JSON: {}", e))?,
+            _ => SpecKeys::default(),
+        };
+        let keys = Keymap::keymap_resolve(&keys).map_err(|e| format!("Errors in key bindings:\n{}", e.join("\n")))?;
         let value: serde_json::Value =
             serde_json::from_str(
                 &read_embedded("merman-source")?,
@@ -458,6 +473,8 @@ pub fn start() {
             origin: (0., 0.),
             origin_known: false,
             raf: None,
+            hover_point: None,
+            hover_raf: None,
             timer: None,
         }));
         let eg = EventGraph::new();
@@ -470,7 +487,12 @@ pub fn start() {
                     (pc = pc),
                     (size = size.clone()),
                     (layout_version = layout_version.clone()),
-                    (state = state.clone(), syntax = syntax.clone(), document_ = document_.clone()) {
+                    (
+                        state = state.clone(),
+                        syntax = syntax.clone(),
+                        document_ = document_.clone(),
+                        keys = keys.clone(),
+                    ) {
                         let Some((inline, block)) = *size.borrow() else {
                             return None;
                         };
@@ -482,36 +504,26 @@ pub fn start() {
                                 Some(ctx) => ctx.context_resize(converse, transverse),
                                 None => {
                                     s.context =
-                                        Some(
-                                            Context::context_new(
-                                                syntax.clone(),
-                                                document_.clone(),
-                                                ContextConfig::default(),
-                                                Box::new({
-                                                    let canvas: HtmlCanvasElement =
-                                                        document()
-                                                            .create_element("canvas")
-                                                            .unwrap()
-                                                            .dyn_into()
-                                                            .unwrap();
-                                                    let context: CanvasRenderingContext2d =
-                                                        canvas
-                                                            .get_context("2d")
-                                                            .unwrap()
-                                                            .expect("canvas 2d context unavailable")
-                                                            .dyn_into()
-                                                            .unwrap();
-                                                    MeasureWeb {
-                                                        context: context,
-                                                        current_font: String::new(),
-                                                        widths: HashMap::new(),
-                                                        metrics: HashMap::new(),
-                                                    }
-                                                }),
-                                                converse,
-                                                transverse,
-                                            )
-                                        );
+                                        Some(Context::context_new(syntax.clone(), document_.clone(), ContextConfig {
+                                            keys: keys.clone(),
+                                            ..ContextConfig::default()
+                                        }, Box::new({
+                                            let canvas: HtmlCanvasElement =
+                                                document().create_element("canvas").unwrap().dyn_into().unwrap();
+                                            let context: CanvasRenderingContext2d =
+                                                canvas
+                                                    .get_context("2d")
+                                                    .unwrap()
+                                                    .expect("canvas 2d context unavailable")
+                                                    .dyn_into()
+                                                    .unwrap();
+                                            MeasureWeb {
+                                                context: context,
+                                                current_font: String::new(),
+                                                widths: HashMap::new(),
+                                                metrics: HashMap::new(),
+                                            }
+                                        }), converse, transverse,));
                                 },
                             }
                         }
@@ -599,12 +611,40 @@ pub fn start() {
                         let (c, t) = s.convert().direction_convert_point(local.0, local.1);
                         Vector::new(c, t)
                     };
-                    with_context(&state, |ctx| ctx.mouse_moved(point));
+                    {
+                        let mut s = state.borrow_mut();
+                        s.hover_point = Some(point);
+                        if s.hover_raf.is_some() {
+                            return;
+                        }
+                    }
+                    let frame = request_animation_frame({
+                        let state = state.clone();
+                        move |_| {
+                            let point = {
+                                let mut s = state.borrow_mut();
+                                s.hover_raf = None;
+                                s.hover_point.take()
+                            };
+                            let Some(point) = point else {
+                                return;
+                            };
+                            with_context(&state, |ctx| ctx.mouse_moved(point, &mut now_ms));
+                        }
+                    });
+                    state.borrow_mut().hover_raf = Some(frame);
                 }
             });
             container.ref_on("mouseleave", {
                 let state = state.clone();
-                move |_| with_context(&state, |ctx| ctx.mouse_exited())
+                move |_| {
+                    {
+                        let mut s = state.borrow_mut();
+                        s.hover_point = None;
+                        s.hover_raf = None;
+                    }
+                    with_context(&state, |ctx| ctx.mouse_exited())
+                }
             });
             container.ref_on("mousedown", {
                 let state = state.clone();
@@ -633,11 +673,44 @@ pub fn start() {
             });
             container.ref_own(|_| {
                 let state = state.clone();
+                let convert = syntax.spec_root.convert;
                 EventListener::new(&document(), "keydown", move |e| {
                     let e: &KeyboardEvent = e.dyn_ref().unwrap();
-                    if (e.ctrl_key() || e.meta_key()) && e.key() == "c" {
+                    let key = e.key();
+                    let name = match key.as_str() {
+                        "ArrowUp" => convert.direction_convert_cardinal(SpecDirection::Up).into(),
+                        "ArrowDown" => convert.direction_convert_cardinal(SpecDirection::Down).into(),
+                        "ArrowLeft" => convert.direction_convert_cardinal(SpecDirection::Left).into(),
+                        "ArrowRight" => convert.direction_convert_cardinal(SpecDirection::Right).into(),
+                        "Enter" => KeyName::Enter,
+                        "Escape" => KeyName::Escape,
+                        " " => KeyName::Space,
+                        "Tab" => KeyName::Tab,
+                        "Backspace" => KeyName::Backspace,
+                        "Delete" => KeyName::Delete,
+                        "Home" => KeyName::Home,
+                        "End" => KeyName::End,
+                        "PageUp" => KeyName::PageUp,
+                        "PageDown" => KeyName::PageDown,
+                        other => {
+                            let mut chars = other.chars();
+                            let (Some(c), None) = (chars.next(), chars.next()) else {
+                                return;
+                            };
+                            KeyName::Char(c.to_lowercase().next().unwrap_or(c))
+                        },
+                    };
+                    let stroke = KeyStroke {
+                        ctrl: e.ctrl_key(),
+                        alt: e.alt_key(),
+                        shift: e.shift_key(),
+                        meta: e.meta_key(),
+                        key: name,
+                    };
+                    let mut handled = false;
+                    with_context(&state, |ctx| handled = ctx.key_press(stroke, &mut now_ms));
+                    if handled {
                         e.prevent_default();
-                        with_context(&state, |ctx| ctx.key_copy(&mut now_ms));
                     }
                 })
             });

@@ -9,6 +9,14 @@ pub struct DirectionConvert {
     pub transverse: SpecDirection,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DirectionKey {
+    Dive,
+    Surface,
+    Next,
+    Previous,
+}
+
 /// A page position along one axis.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct UnconvertAxis {
@@ -23,6 +31,27 @@ impl DirectionConvert {
             converse: converse,
             transverse: transverse,
         };
+    }
+
+    pub fn direction_convert_cardinal(&self, cardinal: SpecDirection) -> DirectionKey {
+        use SpecDirection::*;
+
+        if cardinal == self.converse {
+            return DirectionKey::Dive;
+        }
+        let against_converse = match self.converse {
+            Up => Down,
+            Down => Up,
+            Left => Right,
+            Right => Left,
+        };
+        if cardinal == against_converse {
+            return DirectionKey::Surface;
+        }
+        if cardinal == self.transverse {
+            return DirectionKey::Next;
+        }
+        return DirectionKey::Previous;
     }
 
     pub fn direction_converse_vertical(&self) -> bool {

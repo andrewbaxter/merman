@@ -14,5 +14,6 @@ pub mod alignment;
 pub mod attachment;
 pub mod cursor;
 pub mod iteration;
+pub mod keys;
 pub mod input;
 pub mod render;
