@@ -16,3 +16,7 @@ http = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
 loga = "0.5"
 open = "5"
+serde = { version = "1", features = ["derive"] }
+directories = "6"
+tao = "0.37"
+wry = "0.57"

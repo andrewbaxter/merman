@@ -1,0 +1,6 @@
+{
+  "extensions": {
+    "json": "syntaxes/json.json",
+    "at": "syntaxes/alligatorus.json"
+  }
+}

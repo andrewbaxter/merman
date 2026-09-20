@@ -6,7 +6,7 @@ use common::{build, load_document, load_syntax, render_text, settle, Clock};
 #[test]
 fn lays_out_synth_module() {
     let syntax = load_syntax(include_str!("../../syntaxes/alligatorus.json"));
-    let doc = load_document(&syntax, include_str!("../../../../ecosystem/synth-midi-sine.at"));
+    let doc = load_document(&syntax, include_str!("data/synth-midi-sine.at"));
     let unit = syntax.syntax_style(0).font.size * 0.6;
     let edge_chars = 100.;
     let pad = syntax.spec_root.pad.converse_start + syntax.spec_root.pad.converse_end;
