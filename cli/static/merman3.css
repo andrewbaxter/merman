@@ -1,0 +1,56 @@
+@font-face {
+  font-family: "Material Icons";
+  src: url("./MaterialIcons-Regular.ttf") format("truetype");
+}
+
+html, body { margin: 0; padding: 0; height: 100%; }
+body { background: #222222; }
+
+.merman_panels { display: flex; align-items: stretch; height: 100vh; }
+.merman_panel { overflow: auto; position: relative; box-sizing: border-box; }
+
+/* The filesystem panel gets a third of the row and the code panel two thirds,
+   which at the narrowest width that fits both is exactly their minimums. */
+.merman_panel_filesystem { flex: 1 1 0; min-width: 10cm; background: #2b2b2b; }
+.merman_panel_code, pre.merman_panel { flex: 2 1 0; min-width: 20cm; }
+
+/* Below the two minimums together there's no room for both, so only the panel
+   being used is shown and it takes the whole row. */
+@media (max-width: 30cm) {
+  .merman_panel { min-width: 0; }
+  .merman_panel:not(.merman_panel_focus) { display: none; }
+  .merman_panel_focus { flex: 1 1 100%; }
+}
+
+/* The cursor and hover marks of a panel that isn't taking keys are faded. */
+.merman_panel:not(.merman_panel_focus) .merman_overlay { opacity: 0.4; }
+
+.merman { display: block; box-sizing: border-box; }
+.merman svg { display: block; overflow: visible; }
+.merman svg text { white-space: pre; }
+
+.merman_rows { padding: 12px; font-family: monospace; font-size: 12px; color: #cacaca; }
+.merman_row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 3px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  white-space: pre;
+}
+.merman_row:hover { border-color: #888888; }
+.merman_row_select { border-color: #ffffff; }
+
+/* Files have an icon box too, just an empty one, so the names line up. */
+.merman_icon { flex: none; width: 1em; font-family: "Material Icons"; font-size: 12px; line-height: 1; color: #e0c060; }
+.merman_row_empty { padding: 1px 3px; color: #767676; }
+
+.merman_error {
+  margin: 0;
+  padding: 1em;
+  color: #ff8080;
+  background: #222222;
+  font-family: monospace;
+  white-space: pre-wrap;
+}

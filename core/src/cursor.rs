@@ -21,6 +21,7 @@ use crate::spec::{
     SpecObbox,
 };
 use crate::syntax::FieldKind;
+use crate::stylist::ObboxType;
 use crate::visual::VisualKind;
 use serde_json::{
     Map,
@@ -72,6 +73,23 @@ pub enum Cursor {
     Atom(CursorAtom),
     Array(CursorArray),
     Primitive(CursorPrimitive),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CursorKind {
+    Atom,
+    Array,
+    Primitive,
+}
+
+impl Cursor {
+    pub fn cursor_kind(&self) -> CursorKind {
+        match self {
+            Cursor::Atom(_) => return CursorKind::Atom,
+            Cursor::Array(_) => return CursorKind::Array,
+            Cursor::Primitive(_) => return CursorKind::Primitive,
+        }
+    }
 }
 
 pub struct HoverablePrimitive {
@@ -208,7 +226,7 @@ impl Context {
                 }
             }
         }
-        let border = self.border_new(self.syntax.spec_root.cursor.clone());
+        let border = self.border_new(self.stylist.style_obbox(ObboxType::Cursor));
         let id = self.set_cursor(Cursor::Atom(CursorAtom {
             visual: visual,
             index: index,
@@ -292,7 +310,7 @@ impl Context {
                 }
             }
         }
-        let border = self.border_new(self.syntax.spec_root.cursor.clone());
+        let border = self.border_new(self.stylist.style_obbox(ObboxType::Cursor));
         let id = self.set_cursor(Cursor::Array(CursorArray {
             visual: visual,
             begin_index: start,
@@ -608,6 +626,25 @@ impl Context {
     }
 
     pub fn visual_select_into_any_child(&mut self, v: VisualId) -> bool {
+        let v = 'window: {
+            if !self.window {
+                break 'window v;
+            }
+            let atom_visual = match &self.visuals[v].kind {
+                VisualKind::Atom(_) => Some(v),
+                _ => self.visual_containing_atom(v),
+            };
+            let Some(atom_visual) = atom_visual else {
+                break 'window v;
+            };
+            let atom = self.visual_atom(atom_visual).atom;
+            let was_root = self.root_visual;
+            self.window_adjust_minimal_to(atom);
+            if self.root_visual == was_root {
+                break 'window v;
+            }
+            break 'window self.atom_visual[atom].unwrap();
+        };
         match &self.visuals[v].kind {
             VisualKind::Atom(a) => {
                 if a.selectable.is_empty() {
@@ -729,7 +766,7 @@ impl Context {
                 }
             }
         }
-        let border = self.border_new(self.syntax.spec_root.hover.clone());
+        let border = self.border_new(self.stylist.style_obbox(ObboxType::Hover));
         let id = self.hoverable_push(Hoverable::Atom {
             visual: atom,
             index: index,
@@ -767,7 +804,7 @@ impl Context {
             Some(h) if matches!(&self.hoverables[h], Some(Hoverable::Array { visual, .. }) if * visual == array) => h,
             _ => {
                 changed = true;
-                let border = self.border_new(self.syntax.spec_root.hover.clone());
+                let border = self.border_new(self.stylist.style_obbox(ObboxType::Hover));
                 self.hoverable_push(Hoverable::Array {
                     visual: array,
                     index: index,
@@ -795,7 +832,7 @@ impl Context {
     }
 
     pub fn array_hover_placeholder(&mut self, array: VisualId, brick: BrickId) -> (HoverableId, bool) {
-        let border = self.border_new(self.syntax.spec_root.hover.clone());
+        let border = self.border_new(self.stylist.style_obbox(ObboxType::Hover));
         let id = self.hoverable_push(Hoverable::ArrayPlaceholder {
             visual: array,
             border: border,
@@ -1021,7 +1058,7 @@ impl Context {
                     },
                     VisualKind::Primitive(p) => {
                         let text = p.value.clone();
-                        self.clipboard = Some(text);
+                        self.environment.environment_clipboard_set(&text);
                     },
                     _ => panic!("unexpected selectable visual"),
                 }
@@ -1034,7 +1071,7 @@ impl Context {
             Cursor::Primitive(cp) => {
                 let text = self.visual_primitive(cp.visual).value.clone();
                 let (b, e) = (cp.range.begin_offset, cp.range.end_offset);
-                self.clipboard = Some(text[b.min(text.len()) .. e.min(text.len())].to_string());
+                self.environment.environment_clipboard_set(&text[b.min(text.len()) .. e.min(text.len())]);
             },
         }
     }
@@ -1058,7 +1095,7 @@ impl Context {
         } else {
             Value::Array(atoms.iter().map(|a| serialize_atom(&self.syntax, &self.document, *a)).collect())
         };
-        self.clipboard = Some(serde_json::to_string_pretty(&value).unwrap());
+        self.environment.environment_clipboard_set(&serde_json::to_string_pretty(&value).unwrap());
     }
 }
 
@@ -1076,7 +1113,7 @@ fn back_of_field<'a>(back: &'a SpecBack, field: &str) -> Option<&'a SpecBack> {
         } else {
             None
         },
-        SpecBack::Array(a) | SpecBack::Record(a) => return if a.id == field {
+        SpecBack::Array(a) | SpecBack::Record(a) | SpecBack::SubArray(a) => return if a.id == field {
             Some(back)
         } else {
             None
@@ -1089,10 +1126,12 @@ fn back_of_field<'a>(back: &'a SpecBack, field: &str) -> Option<&'a SpecBack> {
         SpecBack::Pair(p) => {
             return back_of_field(&p.key, field).or_else(|| back_of_field(&p.value, field));
         },
-        SpecBack::FixedArray(elems) => return elems.iter().find_map(|e| back_of_field(e, field)),
-        SpecBack::FixedRecord(entries) => {
-            return entries.iter().find_map(|e| back_of_field(&e.value, field));
+        SpecBack::FixedArray(elems) | SpecBack::FixedSubArray(elems) => {
+            return elems.iter().find_map(|e| back_of_field(e, field));
         },
-        SpecBack::FixedString(_) | SpecBack::FixedLiteral(_) | SpecBack::Discard(_) => return None,
+        SpecBack::FixedRecord(entries) => {
+            return entries.iter().filter_map(|e| e.value.as_ref()).find_map(|v| back_of_field(v, field));
+        },
+        SpecBack::FixedString(_) | SpecBack::FixedLiteral(_) | SpecBack::Id(_) => return None,
     }
 }

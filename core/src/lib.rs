@@ -1,6 +1,7 @@
 //! Platform independent parts of the merman3 viewer: syntax specification,
 //! structural matching of JSON documents against the syntax, and text layout.
 pub mod spec;
+pub mod error;
 pub mod direction;
 pub mod syntax;
 pub mod document;
@@ -16,4 +17,6 @@ pub mod cursor;
 pub mod iteration;
 pub mod keys;
 pub mod input;
-pub mod render;
+pub mod display;
+pub mod environment;
+pub mod stylist;

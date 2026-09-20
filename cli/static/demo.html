@@ -3,22 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>merman3</title>
-<style>
-html, body { margin: 0; padding: 0; }
-.merman { display: block; box-sizing: border-box; }
-.merman svg { display: block; overflow: visible; }
-.merman svg text { white-space: pre; }
-.merman-error { color: #ff8080; background: #222; margin: 0; padding: 1em; white-space: pre-wrap; font-family: monospace; min-height: 100vh; }
-</style>
+<title>merman3 demo</title>
+<link rel="stylesheet" href="./merman3.css">
 </head>
 <body>
 <script id="merman-syntax" type="application/json">__MERMAN_SYNTAX__</script>
 <script id="merman-source" type="application/json">__MERMAN_SOURCE__</script>
 <script id="merman-keys" type="application/json">__MERMAN_KEYS__</script>
 <script type="module">
-import init from "./merman3_web.js";
-init();
+import init, { start_demo } from "./merman3_web.js";
+await init();
+start_demo();
 </script>
 </body>
 </html>

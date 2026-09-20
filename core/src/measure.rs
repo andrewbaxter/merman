@@ -21,17 +21,14 @@ pub struct FontMetrics {
     pub descent: f64,
 }
 
-pub trait Measure {
-    fn measure_width(&mut self, font: &FontSpec, text: &str) -> f64;
-    fn measure_metrics(&mut self, font: &FontSpec) -> FontMetrics;
-}
-
-pub fn measure_index_at_converse(measure: &mut dyn Measure, font: &FontSpec, text: &str, converse: f64) -> usize {
+pub fn measure_index_at_converse<
+    D: crate::display::Display + ?Sized,
+>(display: &mut D, font: &FontSpec, text: &str, converse: f64) -> usize {
     let mut previous_width = 0.;
     let mut previous_index = 0;
     for (i, g) in text.grapheme_indices(true) {
         let end = i + g.len();
-        let width = measure.measure_width(font, &text[..end]);
+        let width = display.display_font_width(font, &text[..end]);
         if (converse - previous_width) / (width - previous_width) < 0.5 {
             break;
         }
@@ -60,20 +57,4 @@ pub fn measure_line_before_or_at(text: &str, offset: usize) -> usize {
         }
     }
     return out;
-}
-
-/// Fixed width fake for tests: every grapheme is `size * 0.6` wide.
-pub struct MeasureFixed;
-
-impl Measure for MeasureFixed {
-    fn measure_width(&mut self, font: &FontSpec, text: &str) -> f64 {
-        return text.graphemes(true).count() as f64 * font.size * 0.6;
-    }
-
-    fn measure_metrics(&mut self, font: &FontSpec) -> FontMetrics {
-        return FontMetrics {
-            ascent: font.size * 0.8,
-            descent: font.size * 0.2,
-        };
-    }
 }

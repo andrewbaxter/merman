@@ -8,6 +8,7 @@ use crate::context::{
     Vector,
     VisualId,
 };
+use crate::display::DisplayNodeId;
 use crate::iteration::{
     IterationContext,
     TaskKind,
@@ -16,19 +17,39 @@ use crate::iteration::{
 use crate::spec::SpecSplit;
 use crate::syntax::StyleId;
 use crate::visual::VisualKind;
-use crate::wall::BrickInter::Line;
 use std::collections::HashSet;
 
 pub enum BrickKind {
-    Text {
-        text: String,
-        style: StyleId,
-    },
-    Empty {
-        ascent: f64,
-        descent: f64,
-        span: f64,
-    },
+    Text(BrickText),
+    Line(BrickText, usize),
+    Empty(BrickEmpty),
+}
+
+pub struct BrickText {
+    pub text: String,
+    pub style: StyleId,
+}
+
+pub struct BrickEmpty {
+    pub ascent: f64,
+    pub descent: f64,
+    pub span: f64,
+}
+
+impl BrickKind {
+    pub fn brick_kind_text(&self) -> Option<&BrickText> {
+        match self {
+            BrickKind::Text(t) | BrickKind::Line(t, _) => return Some(t),
+            BrickKind::Empty(_) => return None,
+        }
+    }
+
+    fn brick_kind_text_mut(&mut self) -> Option<&mut BrickText> {
+        match self {
+            BrickKind::Text(t) | BrickKind::Line(t, _) => return Some(t),
+            BrickKind::Empty(_) => return None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -36,17 +57,22 @@ pub enum BrickInter {
     Symbol(VisualId),
     Line(VisualId, usize),
     ArrayEmpty(VisualId),
+    FieldAtomEllipsis(VisualId),
 }
 
 impl BrickInter {
     pub fn visual(&self) -> VisualId {
         match self {
-            BrickInter::Symbol(v) | BrickInter::Line(v, _) | BrickInter::ArrayEmpty(v) => return *v,
+            BrickInter::Symbol(v) |
+            BrickInter::Line(v, _) |
+            BrickInter::ArrayEmpty(v) |
+            BrickInter::FieldAtomEllipsis(v) => return *v,
         }
     }
 }
 
 pub struct Brick {
+    pub node: DisplayNodeId,
     pub kind: BrickKind,
     pub inter: BrickInter,
     pub split: SpecSplit,
@@ -66,6 +92,7 @@ pub struct Brick {
 }
 
 pub struct Course {
+    pub group: DisplayNodeId,
     pub index: usize,
     pub transverse_start: f64,
     pub ascent: f64,
@@ -80,8 +107,16 @@ pub struct Course {
     pub alive: bool,
 }
 
+pub struct Bedding {
+    pub before: f64,
+    pub after: f64,
+}
+
 #[derive(Default)]
 pub struct Wall {
+    pub bedding: Vec<Option<Bedding>>,
+    pub bedding_before: f64,
+    pub bedding_after: f64,
     pub children: Vec<CourseId>,
     pub cornerstone: Option<BrickId>,
     pub cornerstone_course: Option<CourseId>,
@@ -108,7 +143,12 @@ impl Context {
         split_align_id: Option<AlignId>,
     ) -> BrickId {
         let id = self.bricks.len();
+        let node = match &kind {
+            BrickKind::Text(_) | BrickKind::Line(_, _) => self.display.display_text(),
+            BrickKind::Empty(_) => self.display.display_blank(),
+        };
         self.bricks.push(Brick {
+            node: node,
             kind: kind,
             inter: inter,
             split: split,
@@ -133,54 +173,70 @@ impl Context {
 
     fn brick_recalculate_size(&mut self, b: BrickId) {
         let unprintable = self.syntax.spec_root.unprintable.clone();
-        match &mut self.bricks[b].kind {
-            BrickKind::Text { text, style } => {
-                let mut shown = String::with_capacity(text.len());
-                for c in text.chars() {
+        let node = self.bricks[b].node;
+        let style_id = match self.bricks[b].kind.brick_kind_text_mut() {
+            Some(t) => {
+                let mut shown = String::with_capacity(t.text.len());
+                for c in t.text.chars() {
                     if c.is_control() {
                         shown.push_str(&unprintable);
                     } else {
                         shown.push(c);
                     }
                 }
-                *text = shown;
-                let style = self.syntax.syntax_style(*style);
-                let font = self.measure.measure_metrics(&style.font);
-                let width = self.measure.measure_width(&style.font, text);
+                t.text = shown;
+                Some(t.style)
+            },
+            None => None,
+        };
+        match style_id {
+            Some(style_id) => {
+                let stylist = self.stylist.clone();
+                let style = stylist.style_text(style_id);
+                let text = self.brick_text(b).to_string();
+                let font = self.display.display_font_metrics(&style.font);
+                let width = self.display.display_font_width(&style.font, &text);
                 let brick = &mut self.bricks[b];
                 brick.converse_span = width + style.padding.converse_start + style.padding.converse_end;
                 brick.ascent = style.ascent.unwrap_or(font.ascent) + style.padding.transverse_start;
                 brick.descent = style.descent.unwrap_or(font.descent) + style.padding.transverse_end;
                 brick.pad_before = style.padding.converse_start;
+                let (ascent, descent) = (self.bricks[b].ascent, self.bricks[b].descent);
+                self.display.text_set(node, &text, &style.font, &style.color);
+                self.display.node_set_span(node, width, ascent, descent);
             },
-            BrickKind::Empty { ascent, descent, span } => {
-                let (a, d, s) = (*ascent, *descent, *span);
+            None => {
+                let (a, d, s) = match &self.bricks[b].kind {
+                    BrickKind::Empty(e) => (e.ascent, e.descent, e.span),
+                    BrickKind::Text(_) | BrickKind::Line(_, _) => unreachable!(),
+                };
                 let brick = &mut self.bricks[b];
                 brick.converse_span = s;
                 brick.ascent = a;
                 brick.descent = d;
                 brick.pad_before = 0.;
+                self.display.node_set_span(node, s, a, d);
             },
         }
     }
 
     pub fn brick_set_text(&mut self, b: BrickId, text: String) {
-        if let BrickKind::Text { text: t, .. } = &mut self.bricks[b].kind {
-            *t = text;
+        if let Some(t) = self.bricks[b].kind.brick_kind_text_mut() {
+            t.text = text;
         }
         self.brick_recalculate_size(b);
         self.brick_layout_properties_changed(b);
     }
 
     pub fn brick_text(&self, b: BrickId) -> &str {
-        match &self.bricks[b].kind {
-            BrickKind::Text { text, .. } => return text,
-            BrickKind::Empty { .. } => return "",
+        match self.bricks[b].kind.brick_kind_text() {
+            Some(t) => return &t.text,
+            None => return "",
         }
     }
 
     pub fn brick_is_split_with(&self, b: BrickId, compact: bool) -> bool {
-        if let Line(_, i) = self.bricks[b].inter {
+        if let BrickKind::Line(_, i) = self.bricks[b].kind {
             if i > 0 {
                 return true;
             }
@@ -212,29 +268,31 @@ impl Context {
     }
 
     pub fn brick_text_get_converse_offset(&mut self, b: BrickId, index: usize) -> f64 {
-        let (text, style, pad) = match &self.bricks[b].kind {
-            BrickKind::Text { text, style } => (text.clone(), *style, self.bricks[b].pad_before),
-            BrickKind::Empty { .. } => return 0.,
+        let (text, style, pad) = match self.bricks[b].kind.brick_kind_text() {
+            Some(t) => (t.text.clone(), t.style, self.bricks[b].pad_before),
+            None => return 0.,
         };
         let font = self.syntax.syntax_style(style).font.clone();
         let index = index.min(text.len());
-        return pad + self.measure.measure_width(&font, &text[..index]);
+        return pad + self.display.display_font_width(&font, &text[..index]);
     }
 
     pub fn brick_text_get_under(&mut self, b: BrickId, point: Vector) -> usize {
-        let (text, style) = match &self.bricks[b].kind {
-            BrickKind::Text { text, style } => (text.clone(), *style),
-            BrickKind::Empty { .. } => return 0,
+        let (text, style) = match self.bricks[b].kind.brick_kind_text() {
+            Some(t) => (t.text.clone(), t.style),
+            None => return 0,
         };
         let font = self.syntax.syntax_style(style).font.clone();
         let converse = point.converse - self.bricks[b].converse - self.bricks[b].pad_before;
-        return crate::measure::measure_index_at_converse(&mut *self.measure, &font, &text, converse);
+        return self.display.display_index_at_converse(&font, &text, converse);
     }
 
     pub fn brick_set_converse(&mut self, b: BrickId, min_converse: f64, converse: f64) {
         let brick = &mut self.bricks[b];
         brick.pre_align_converse = min_converse;
         brick.converse = converse;
+        let (node, pad_before) = (brick.node, brick.pad_before);
+        self.display.node_set_converse(node, converse + pad_before, false);
     }
 
     pub fn brick_layout_properties_changed(&mut self, b: BrickId) {
@@ -351,6 +409,8 @@ impl Context {
             self.bricks[brick].course = None;
             self.bricks[brick].index = 0;
             self.courses[c].children.remove(at);
+            let group = self.courses[c].group;
+            self.display.group_remove(group, at, 1);
             let ci = self.courses[c].index;
             if ci >= 1 {
                 let prev = self.wall.children[ci - 1];
@@ -383,12 +443,17 @@ impl Context {
                 self.alignment_remove_brick(a, b);
             }
         }
+        let node = self.bricks[b].node;
+        self.display.display_destroy(node);
         self.bricks[b].alive = false;
     }
 
     pub fn course_new(&mut self, transverse_start: f64) -> CourseId {
         let id = self.courses.len();
+        let group = self.display.display_group();
+        self.display.node_set_transverse(group, transverse_start, false);
         self.courses.push(Course {
+            group: group,
             index: 0,
             transverse_start: transverse_start,
             ascent: 0.,
@@ -416,6 +481,9 @@ impl Context {
 
     fn course_set_transverse(&mut self, c: CourseId, transverse: f64) {
         self.courses[c].transverse_start = transverse;
+        let group = self.courses[c].group;
+        let animate = self.config.animate_course_placement;
+        self.display.node_set_transverse(group, transverse, animate);
         let ascent = self.courses[c].ascent;
         for child in self.courses[c].children.clone() {
             for a in self.bricks[child].attachments.clone() {
@@ -452,6 +520,8 @@ impl Context {
         let reset_cornerstone = self.wall.cornerstone_course == Some(c);
         let previous = self.wall.children[self.courses[c].index - 1];
         let children = std::mem::take(&mut self.courses[c].children);
+        let group = self.courses[c].group;
+        self.display.group_clear(group);
         let at = self.courses[previous].children.len();
         self.course_add(previous, at, children);
         self.course_destroy_inner(c);
@@ -469,6 +539,8 @@ impl Context {
         self.wall_add(ci + 1, vec![next]);
         if index < self.courses[c].children.len() {
             let transplant: Vec<BrickId> = self.courses[c].children.drain(index..).collect();
+            let group = self.courses[c].group;
+            self.display.group_remove(group, index, transplant.len());
             let task = self.course_get_idle_place(c);
             for brick in &transplant {
                 if self.courses[c].alignment_brick == Some(*brick) {
@@ -504,6 +576,8 @@ impl Context {
             self.courses[c].children.insert(at + i, *b);
             self.bricks[*b].course = Some(c);
             self.bricks[*b].index = at + i;
+            let (group, node) = (self.courses[c].group, self.bricks[*b].node);
+            self.display.group_add(group, at + i, node);
         }
         self.course_renumber(c, at + count);
         let (start, ascent, descent) = {
@@ -543,6 +617,10 @@ impl Context {
                 }
             }
             self.wall.children.remove(at);
+            let text_layer = self.text_layer;
+            self.display.group_remove(text_layer, at, 1);
+            let group = self.courses[c].group;
+            self.display.display_destroy(group);
             if at < self.wall.children.len() {
                 self.wall_renumber(at);
                 if self.wall.cornerstone_course.is_some() {
@@ -655,6 +733,8 @@ impl Context {
             changed.iter().copied().collect()
         };
         for b in targets {
+            let node = self.bricks[b].node;
+            self.display.node_set_baseline_transverse(node, ascent, false);
             for a in self.bricks[b].attachments.clone() {
                 self.attachment_set_transverse_span(a, ascent, descent);
             }
@@ -926,6 +1006,35 @@ impl Context {
         return true;
     }
 
+    pub fn wall_add_bedding(&mut self, bedding: Bedding) -> usize {
+        let id = self.wall.bedding.len();
+        self.wall.bedding.push(Some(bedding));
+        self.wall_bedding_changed();
+        return id;
+    }
+
+    pub fn wall_remove_bedding(&mut self, id: usize) {
+        self.wall.bedding[id] = None;
+        self.wall_bedding_changed();
+    }
+
+    fn wall_bedding_changed(&mut self) {
+        let mut before = 0.;
+        let mut after = 0.;
+        for b in self.wall.bedding.iter().flatten() {
+            before += b.before;
+            after += b.after;
+        }
+        self.wall.bedding_before = before;
+        self.wall.bedding_after = after;
+        let Some(cc) = self.wall.cornerstone_course else {
+            return;
+        };
+        let index = self.courses[cc].index;
+        self.wall_adjust(index);
+        self.scroll_visible();
+    }
+
     pub fn wall_clear(&mut self) {
         while let Some(last) = self.wall.children.last().copied() {
             self.course_destroy(last);
@@ -957,6 +1066,8 @@ impl Context {
     fn wall_add(&mut self, at: usize, courses: Vec<CourseId>) {
         for (i, c) in courses.iter().enumerate() {
             self.wall.children.insert(at + i, *c);
+            let (text_layer, group) = (self.text_layer, self.courses[*c].group);
+            self.display.group_add(text_layer, at + i, group);
         }
         self.wall_renumber(at);
         let task = self.wall_ensure_idle_adjust();
@@ -1093,22 +1204,28 @@ impl Context {
         if backward >= 0 {
             let child = self.wall.children[backward as usize];
             let preceding = self.wall.children[backward as usize + 1];
-            let transverse = self.courses[preceding].transverse_start - if stride == 0. {
+            let mut transverse = self.courses[preceding].transverse_start - if stride == 0. {
                 self.course_transverse_span(child)
             } else {
                 stride
             };
+            if preceding == cc {
+                transverse -= self.wall.bedding_before;
+            }
             self.course_set_transverse(child, transverse);
             backward -= 1;
             modified = true;
         }
         if forward < self.wall.children.len() {
             let preceding = self.wall.children[forward - 1];
-            let transverse = self.courses[preceding].transverse_start + if stride == 0. {
+            let mut transverse = self.courses[preceding].transverse_start + if stride == 0. {
                 self.course_transverse_span(preceding)
             } else {
                 stride
             };
+            if preceding == cc {
+                transverse += self.wall.bedding_after;
+            }
             let child = self.wall.children[forward];
             self.course_set_transverse(child, transverse);
             forward += 1;
@@ -1118,6 +1235,13 @@ impl Context {
             *f = forward;
             *b = backward;
         }
+        self.wall_usage = match (self.wall.children.first(), self.wall.children.last()) {
+            (Some(first), Some(last)) => (
+                self.courses[*first].transverse_start,
+                self.course_transverse_edge(*last),
+            ),
+            _ => (0., 0.),
+        };
         return modified;
     }
 

@@ -7,6 +7,11 @@ use crate::context::{
     TextBorderId,
     Vector,
 };
+use crate::display::{
+    obbox_commands,
+    DisplayNodeId,
+    DrawCommand,
+};
 use crate::spec::SpecObbox;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -25,23 +30,9 @@ pub enum DrawingLayer {
     Overlay,
 }
 
-pub enum DrawingKind {
-    Obbox {
-        points: Vec<(Vector, bool)>,
-        style: SpecObbox,
-    },
-    Line {
-        from: Vector,
-        to: Vector,
-        thickness: f64,
-        color: String,
-        round_cap: bool,
-    },
-}
-
 pub struct Drawing {
     pub layer: DrawingLayer,
-    pub kind: Option<DrawingKind>,
+    pub node: DisplayNodeId,
 }
 
 pub struct Border {
@@ -85,17 +76,33 @@ pub struct Caret {
 }
 
 impl Context {
+    fn drawing_layer_group(&self, layer: DrawingLayer) -> DisplayNodeId {
+        match layer {
+            DrawingLayer::Background => return self.background_layer,
+            DrawingLayer::Overlay => return self.overlay_layer,
+        }
+    }
+
     fn drawing_new(&mut self, layer: DrawingLayer) -> DrawingId {
         let id = self.drawings.len();
+        let node = self.display.display_drawing();
+        let group = self.drawing_layer_group(layer);
+        let at = self.drawings.iter().flatten().filter(|d| d.layer == layer).count();
+        self.display.group_add(group, at, node);
         self.drawings.push(Some(Drawing {
             layer: layer,
-            kind: None,
+            node: node,
         }));
         return id;
     }
 
     fn drawing_remove(&mut self, id: DrawingId) {
-        self.drawings[id] = None;
+        let Some(drawing) = self.drawings[id].take() else {
+            return;
+        };
+        let group = self.drawing_layer_group(drawing.layer);
+        self.display.group_remove_node(group, drawing.node);
+        self.display.display_destroy(drawing.node);
     }
 
     pub fn attachment_set_transverse(&mut self, a: AttachmentRef, transverse: f64) {
@@ -281,11 +288,9 @@ impl Context {
                 border.end_transverse + border.end_transverse_span,
             );
         let style = border.style.clone();
-        let drawing = border.drawing;
-        self.drawings[drawing].as_mut().unwrap().kind = Some(DrawingKind::Obbox {
-            points: points,
-            style: style,
-        });
+        let node = self.drawings[border.drawing].as_ref().unwrap().node;
+        self.display.drawing_clear(node);
+        self.display.drawing_draw(node, &obbox_commands(&points, &style));
     }
 
     pub fn text_border_new(&mut self, style: SpecObbox) -> TextBorderId {
@@ -390,11 +395,9 @@ impl Context {
                 tb.end_transverse + tb.end_transverse_span,
             );
         let style = tb.style.clone();
-        let drawing = tb.drawing;
-        self.drawings[drawing].as_mut().unwrap().kind = Some(DrawingKind::Obbox {
-            points: points,
-            style: style,
-        });
+        let node = self.drawings[tb.drawing].as_ref().unwrap().node;
+        self.display.drawing_clear(node);
+        self.display.drawing_draw(node, &obbox_commands(&points, &style));
     }
 
     pub fn caret_new(&mut self, style: SpecObbox) -> CaretId {
@@ -471,19 +474,27 @@ impl Context {
                 start_transverse + ascent + offset.transverse,
             );
         let half_buffer = (style.line_thickness / 2. + 0.5).floor();
-        let from = Vector::new(position.converse + half_buffer, position.transverse + half_buffer);
-        let to =
-            Vector::new(
-                position.converse + size.converse - half_buffer - 1.,
-                position.transverse + size.transverse - half_buffer - 1.,
-            );
-        self.drawings[drawing].as_mut().unwrap().kind = Some(DrawingKind::Line {
-            from: from,
-            to: to,
-            thickness: style.line_thickness,
-            color: style.line_color.clone(),
-            round_cap: style.round_start,
-        });
+        let node = self.drawings[drawing].as_ref().unwrap().node;
+        self.display.drawing_clear(node);
+        self.display.drawing_resize(node, size);
+        self.display.node_set_position(node, position.converse, position.transverse, false);
+        let mut commands =
+            vec![
+                DrawCommand::SetLineThickness(style.line_thickness),
+                if style.round_start {
+                    DrawCommand::SetLineCapRound
+                } else {
+                    DrawCommand::SetLineCapFlat
+                },
+                DrawCommand::SetLineColor(style.line_color.clone()),
+                DrawCommand::BeginStrokePath,
+                DrawCommand::MoveTo(Vector::new(half_buffer, half_buffer)),
+            ];
+        commands.push(
+            DrawCommand::LineTo(Vector::new(size.converse - half_buffer - 1., size.transverse - half_buffer - 1.)),
+        );
+        commands.push(DrawCommand::ClosePath);
+        self.display.drawing_draw(node, &commands);
     }
 
     pub fn caret_destroy(&mut self, c: CaretId) {

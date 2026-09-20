@@ -194,12 +194,12 @@ impl Context {
         }
     }
 
-    pub fn handle_timer(&mut self, now_ms: &mut dyn FnMut() -> f64) {
+    pub fn handle_timer(&mut self) {
         if self.iteration_pending {
             return;
         }
         self.iteration_pending = true;
-        self.flush_iteration(1000, now_ms);
+        self.flush_iteration(1000);
         self.iteration_pending = false;
         self.iteration_timer = false;
         if !self.queue.is_empty() {
@@ -208,11 +208,11 @@ impl Context {
         }
     }
 
-    pub fn flush_iteration(&mut self, limit: usize, now_ms: &mut dyn FnMut() -> f64) {
-        let start = now_ms();
+    pub fn flush_iteration(&mut self, limit: usize) {
+        let start = self.environment.environment_now_ms();
         let mut iteration = IterationContext::default();
         for i in 0 .. limit {
-            if i % 100 == 0 && now_ms() > start + 500. {
+            if i % 100 == 0 && self.environment.environment_now_ms() > start + 500. {
                 break;
             }
             let Some(entry) = self.queue.pop() else {
@@ -458,7 +458,7 @@ impl Context {
         return more;
     }
 
-    pub fn mouse_moved(&mut self, point: Vector, now_ms: &mut dyn FnMut() -> f64) {
+    pub fn mouse_moved(&mut self, point: Vector) {
         if self.hover_idle.is_none() {
             let at = match self.hover_brick {
                 Some(b) => Some(b),
@@ -474,13 +474,13 @@ impl Context {
         if let Some(TaskKind::Hover { point: p, .. }) = self.task_kind_mut(task) {
             *p = Some(point);
         }
-        let start = now_ms();
+        let start = self.environment.environment_now_ms();
         loop {
             if !self.run_hover(task) {
                 self.task_destroy(task);
                 return;
             }
-            if now_ms() - start > 4. {
+            if self.environment.environment_now_ms() - start > 4. {
                 return;
             }
         }

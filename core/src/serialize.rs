@@ -13,7 +13,8 @@ use serde_json::{
 
 pub fn serialize_atom(syntax: &Syntax, document: &Document, atom: AtomId) -> Value {
     let a = document.document_atom(atom);
-    return write_back(syntax, document, atom, &syntax.syntax_type(a.type_).back);
+    let mut next_id = 0;
+    return write_back(syntax, document, atom, &syntax.syntax_type(a.type_).back, &mut next_id);
 }
 
 pub fn serialize_pair(syntax: &Syntax, document: &Document, atom: AtomId) -> (String, Value) {
@@ -21,10 +22,11 @@ pub fn serialize_pair(syntax: &Syntax, document: &Document, atom: AtomId) -> (St
     let SpecBack::Pair(pair) = &syntax.syntax_type(a.type_).back else {
         panic!("serializing a non-pair atom as a record entry");
     };
-    let Value::String(key) = write_back(syntax, document, atom, &pair.key) else {
+    let mut next_id = 0;
+    let Value::String(key) = write_back(syntax, document, atom, &pair.key, &mut next_id) else {
         panic!("pair key back did not produce a string; syntax validation should have caught this");
     };
-    return (key, write_back(syntax, document, atom, &pair.value));
+    return (key, write_back(syntax, document, atom, &pair.value, &mut next_id));
 }
 
 fn literal(text: &str) -> Value {
@@ -39,10 +41,35 @@ fn literal(text: &str) -> Value {
     }
 }
 
-fn write_back(syntax: &Syntax, document: &Document, atom: AtomId, back: &SpecBack) -> Value {
+fn write_sub_array(
+    syntax: &Syntax,
+    document: &Document,
+    atom: AtomId,
+    specs: &[SpecBack],
+    out: &mut Vec<Value>,
+    next_id: &mut usize,
+) {
+    let a = document.document_atom(atom);
+    for spec in specs {
+        match spec {
+            SpecBack::SubArray(s) => {
+                let Some(Field::Array(elements)) = a.fields.get(&s.id) else {
+                    panic!("field `{}` is not an array", s.id);
+                };
+                for e in elements {
+                    out.push(serialize_atom(syntax, document, *e));
+                }
+            },
+            SpecBack::FixedSubArray(inner) => write_sub_array(syntax, document, atom, inner, out, next_id),
+            _ => out.push(write_back(syntax, document, atom, spec, next_id)),
+        }
+    }
+}
+
+fn write_back(syntax: &Syntax, document: &Document, atom: AtomId, back: &SpecBack, next_id: &mut usize) -> Value {
     let a = document.document_atom(atom);
     let field = |id: &str| {
-        a.fields.get(id).unwrap_or_else(|| panic!("atom is missing field `{}`", id))
+        return a.fields.get(id).unwrap_or_else(|| panic!("atom is missing field `{}`", id));
     };
     match back {
         SpecBack::FixedString(s) => return Value::String(s.clone()),
@@ -99,15 +126,27 @@ fn write_back(syntax: &Syntax, document: &Document, atom: AtomId, back: &SpecBac
         },
         SpecBack::Pair(_) => panic!("pair back outside a record"),
         SpecBack::FixedArray(elems) => {
-            return Value::Array(elems.iter().map(|e| write_back(syntax, document, atom, e)).collect());
+            let mut out = vec![];
+            write_sub_array(syntax, document, atom, elems, &mut out, next_id);
+            return Value::Array(out);
+        },
+        SpecBack::SubArray(_) | SpecBack::FixedSubArray(_) => {
+            panic!("sub arrays are only valid inside an array");
+        },
+        SpecBack::Id(_) => {
+            let value = a.back_ids.get(*next_id).copied().unwrap_or(0);
+            *next_id += 1;
+            return Value::Number(value.into());
         },
         SpecBack::FixedRecord(entries) => {
             let mut out = Map::new();
             for e in entries {
-                out.insert(e.key.clone(), write_back(syntax, document, atom, &e.value));
+                let Some(value) = &e.value else {
+                    continue;
+                };
+                out.insert(e.key.clone(), write_back(syntax, document, atom, value, next_id));
             }
             return Value::Object(out);
         },
-        SpecBack::Discard(_) => return Value::Null,
     }
 }

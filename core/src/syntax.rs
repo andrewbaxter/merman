@@ -1,6 +1,11 @@
 //! Validated syntax: the spec with names resolved to indices and all cross
 //! references checked.
 use crate::direction::DirectionConvert;
+use crate::error::{
+    ErrorKind,
+    MultiError,
+};
+use crate::display::display_unit_to_pixels;
 use crate::measure::FontSpec;
 use crate::spec::{
     SpecAlignment,
@@ -10,6 +15,7 @@ use crate::spec::{
     SpecDisplayUnit,
     SpecFront,
     SpecFrontArray,
+    SpecFrontArrayAsAtom,
     SpecFrontAtom,
     SpecFrontPrimitive,
     SpecObbox,
@@ -45,7 +51,7 @@ pub struct Syntax {
 /// Global settings copied out of the spec, lengths converted to px.
 pub struct SpecSyntaxSettings {
     pub background: String,
-    /// Multiplier from display units to px.
+    pub display_unit: SpecDisplayUnit,
     pub to_pixels: f64,
     pub convert: DirectionConvert,
     pub pad: SpecPadding,
@@ -65,6 +71,7 @@ fn scale_obbox(o: &SpecObbox, to_pixels: f64) -> SpecObbox {
 }
 
 /// Lengths in px.
+#[derive(Clone)]
 pub struct Style {
     pub font: FontSpec,
     pub color: String,
@@ -73,18 +80,10 @@ pub struct Style {
     pub descent: Option<f64>,
 }
 
-/// CSS px per display unit.
-pub fn syntax_to_pixels(unit: SpecDisplayUnit) -> f64 {
-    match unit {
-        SpecDisplayUnit::Px => return 1.,
-        SpecDisplayUnit::Mm => return 96. / 25.4,
-    }
-}
-
 /// Font px for a size in display units: the size converted to points, used as px
 /// (as merman's displays do).
 fn font_pixels(unit: SpecDisplayUnit, size: f64) -> f64 {
-    let mm_per_unit = syntax_to_pixels(unit) / syntax_to_pixels(SpecDisplayUnit::Mm);
+    let mm_per_unit = display_unit_to_pixels(unit) / display_unit_to_pixels(SpecDisplayUnit::Mm);
     return size * mm_per_unit * 72. / 25.4;
 }
 
@@ -137,7 +136,9 @@ pub struct FrontPrimitive {
 }
 
 pub struct FrontAtom {
+    pub ellipsis: Symbol,
     pub field: String,
+    pub from_array: bool,
     pub forward_alignments: Rc<HashSet<String>>,
 }
 
@@ -189,13 +190,7 @@ impl Symbol {
     }
 }
 
-struct Errors(Vec<String>);
-
-impl Errors {
-    fn add(&mut self, path: &str, message: impl AsRef<str>) {
-        self.0.push(format!("{}: {}", path, message.as_ref()));
-    }
-}
+type Errors = MultiError;
 
 struct StyleTable {
     ids: HashMap<String, StyleId>,
@@ -208,7 +203,7 @@ impl StyleTable {
             Some(n) => match self.ids.get(n) {
                 Some(i) => return *i,
                 None => {
-                    errors.add(path, format!("unknown style `{}`", n));
+                    errors.multi_error_add(path, ErrorKind::UnknownStyle { style: n.clone() });
                     return 0;
                 },
             },
@@ -217,21 +212,17 @@ impl StyleTable {
 }
 
 impl Syntax {
-    pub fn syntax_resolve(spec: SpecSyntax) -> Result<Syntax, Vec<String>> {
-        let mut errors = Errors(vec![]);
-        let to_pixels = syntax_to_pixels(spec.display_unit);
+    pub fn syntax_resolve(spec: SpecSyntax) -> Result<Syntax, MultiError> {
+        let mut errors = Errors::default();
+        let to_pixels = display_unit_to_pixels(spec.display_unit);
 
         // Directions
         let vertical = |d: SpecDirection| matches!(d, SpecDirection::Up | SpecDirection::Down);
         if vertical(spec.converse_direction) == vertical(spec.transverse_direction) {
-            errors.add(
-                "transverse_direction",
-                format!(
-                    "{:?} is not perpendicular to converse direction {:?}",
-                    spec.transverse_direction,
-                    spec.converse_direction
-                ),
-            );
+            errors.multi_error_add("transverse_direction", ErrorKind::NotTransverse {
+                converse: spec.converse_direction,
+                transverse: spec.transverse_direction,
+            });
         }
 
         // Styles
@@ -280,10 +271,10 @@ impl Syntax {
         for (i, t) in spec.types.into_iter().enumerate() {
             let path = format!("types[{}]({})", i, t.id);
             if t.id.starts_with("__") {
-                errors.add(&path, "type ids starting with `__` are reserved");
+                errors.multi_error_add(&path, ErrorKind::ReservedAtomTypeId { atom_type: t.id.clone() });
             }
             if type_ids.insert(t.id.clone(), types.len()).is_some() {
-                errors.add(&path, "duplicate type id");
+                errors.multi_error_add(&path, ErrorKind::DuplicateAtomTypeIds { atom_type: t.id.clone() });
             }
             types.push(build_type(&mut errors, &style_table, &path, t));
         }
@@ -299,11 +290,11 @@ impl Syntax {
             for (i, g) in spec.groups.iter().enumerate() {
                 let path = format!("groups[{}]({})", i, g.id);
                 if type_ids.contains_key(&g.id) {
-                    errors.add(&path, "group id collides with a type id");
+                    errors.multi_error_add(&path, ErrorKind::DuplicateAtomTypeIdsInGroup { group: g.id.clone() });
                     continue;
                 }
                 if groups.contains_key(&g.id) {
-                    errors.add(&path, "duplicate group id");
+                    errors.multi_error_add(&path, ErrorKind::DuplicateGroupId { group: g.id.clone() });
                     continue;
                 }
                 let mut out = vec![];
@@ -328,7 +319,10 @@ impl Syntax {
                     }
                     if let Some(members) = spec_groups.get(&member.to_string()) {
                         if stack.iter().any(|s| s == member) {
-                            errors.add(path, format!("group reference cycle: {} -> {}", stack.join(" -> "), member));
+                            errors.multi_error_add(path, ErrorKind::TypeCircularReference {
+                                stack: stack.clone(),
+                                member: member.to_string(),
+                            });
                             return;
                         }
                         stack.push(member.to_string());
@@ -338,14 +332,14 @@ impl Syntax {
                         stack.pop();
                         return;
                     }
-                    errors.add(path, format!("member `{}` is neither a type nor a group", member));
+                    errors.multi_error_add(path, ErrorKind::GroupChildDoesntExist { member: member.to_string() });
                 }
 
                 for m in &g.members {
                     walk(&mut errors, &path, &spec_groups, &type_ids, &mut stack, &mut seen, &mut out, m);
                 }
                 if out.is_empty() {
-                    errors.add(&path, "group covers no types");
+                    errors.multi_error_add(&path, ErrorKind::EmptyGroup { group: g.id.clone() });
                 }
                 groups.insert(g.id.clone(), out);
             }
@@ -359,16 +353,17 @@ impl Syntax {
                 format!("types[{}]({})", ti - 1, t.id)
             };
             if ti == TYPE_ROOT && t.is_pair {
-                errors.add(&path, "the root back can't be a `pair`");
+                errors.multi_error_add(&path, ErrorKind::RootBackIsKey);
             }
             check_back_refs(&mut errors, &format!("{}.back", path), &groups, &types, &t.back);
         }
-        if !errors.0.is_empty() {
-            return Err(errors.0);
+        if !errors.multi_error_is_empty() {
+            return Err(errors);
         }
         return Ok(Syntax {
             spec_root: SpecSyntaxSettings {
                 background: spec.background,
+                display_unit: spec.display_unit,
                 to_pixels: to_pixels,
                 convert: DirectionConvert::new(spec.converse_direction, spec.transverse_direction),
                 pad: scale_padding(&spec.pad, to_pixels),
@@ -401,17 +396,20 @@ fn check_back_refs(
 ) {
     let check_group = |errors: &mut Errors, path: &str, name: &str, want_pair: bool| {
         let Some(members) = groups.get(name) else {
-            errors.add(path, format!("unknown type or group `{}`", name));
+            errors.multi_error_add(path, ErrorKind::AtomTypeDoesntExist { candidate_type: name.to_string() });
             return;
         };
         for m in members {
             if types[*m].is_pair != want_pair {
                 if want_pair {
-                    errors.add(path, format!("record element type `{}` must have a `pair` back", types[*m].id));
-                } else {
-                    errors.add(
+                    errors.multi_error_add(
                         path,
-                        format!("type `{}` has a `pair` back and can only be used as a record element", types[*m].id),
+                        ErrorKind::NonKeyInvalidAtLocation { atom_type: types[*m].id.clone() },
+                    );
+                } else {
+                    errors.multi_error_add(
+                        path,
+                        ErrorKind::KeyInvalidForGroupMember { atom_type: types[*m].id.clone() },
                     );
                 }
             }
@@ -422,8 +420,7 @@ fn check_back_refs(
         SpecBack::FixedLiteral(_) |
         SpecBack::String(_) |
         SpecBack::Number(_) |
-        SpecBack::Literal(_) |
-        SpecBack::Discard(_) => {
+        SpecBack::Literal(_) => {
 
         },
         SpecBack::Atom(a) => check_group(errors, path, &a.type_, false),
@@ -434,17 +431,58 @@ fn check_back_refs(
             check_back_refs(errors, &format!("{}.key", path), groups, types, &p.key);
             check_back_refs(errors, &format!("{}.value", path), groups, types, &p.value);
         },
-        SpecBack::FixedArray(elems) => {
+        SpecBack::FixedArray(elems) | SpecBack::FixedSubArray(elems) => {
             for (i, e) in elems.iter().enumerate() {
                 check_back_refs(errors, &format!("{}[{}]", path, i), groups, types, e);
             }
         },
+        SpecBack::SubArray(a) => check_group(errors, path, &a.element, false),
+        SpecBack::Id(_) => { },
         SpecBack::FixedRecord(entries) => {
             for e in entries {
-                check_back_refs(errors, &format!("{}.{}", path, e.key), groups, types, &e.value);
+                if let Some(v) = &e.value {
+                    check_back_refs(errors, &format!("{}.{}", path, e.key), groups, types, v);
+                }
             }
         },
     }
+}
+
+pub fn back_sub_array_slots(elems: &[SpecBack]) -> (usize, Option<usize>) {
+    let mut fixed = 0;
+    let mut variable = None;
+    for e in elems {
+        match e {
+            SpecBack::SubArray(_) => {
+                if variable.is_none() {
+                    variable = Some(fixed);
+                }
+            },
+            SpecBack::FixedSubArray(inner) => {
+                let (inner_fixed, inner_variable) = back_sub_array_slots(inner);
+                if let Some(at) = inner_variable {
+                    if variable.is_none() {
+                        variable = Some(fixed + at);
+                    }
+                }
+                fixed += inner_fixed;
+            },
+            _ => fixed += 1,
+        }
+    }
+    return (fixed, variable);
+}
+
+fn count_variable_runs(elems: &[SpecBack]) -> usize {
+    let mut out = 0;
+    for e in elems {
+        match e {
+            SpecBack::SubArray(_) => out += 1,
+            SpecBack::FixedSubArray(inner) => out += count_variable_runs(inner),
+            _ => { },
+        }
+    }
+    return out;
 }
 
 fn collect_fields(
@@ -456,30 +494,46 @@ fn collect_fields(
 ) {
     let mut put = |errors: &mut Errors, id: &str, kind: FieldKind| {
         if fields.insert(id.to_string(), kind).is_some() {
-            errors.add(path, format!("duplicate field id `{}`", id));
+            errors.multi_error_add(path, ErrorKind::DuplicateBackId { id: id.to_string() });
         }
     };
     match back {
-        SpecBack::FixedString(_) | SpecBack::FixedLiteral(_) | SpecBack::Discard(_) => { },
+        SpecBack::FixedString(_) | SpecBack::FixedLiteral(_) => { },
         SpecBack::String(f) | SpecBack::Number(f) | SpecBack::Literal(f) => {
             put(errors, &f.id, FieldKind::Primitive)
         },
         SpecBack::Atom(a) => put(errors, &a.id, FieldKind::Atom),
-        SpecBack::Array(a) | SpecBack::Record(a) => put(errors, &a.id, FieldKind::Array),
+        SpecBack::Array(a) | SpecBack::Record(a) | SpecBack::SubArray(a) => {
+            put(errors, &a.id, FieldKind::Array)
+        },
+        SpecBack::Id(_) => { },
         SpecBack::Optional(a) => put(errors, &a.id, FieldKind::Array),
         SpecBack::Pair(p) => {
             if !top {
-                errors.add(path, "`pair` is only valid as the whole back of a type");
+                errors.multi_error_add(path, ErrorKind::KeyInvalidAtLocation);
             }
             match &*p.key {
                 SpecBack::FixedString(_) | SpecBack::String(_) => { },
-                _ => errors.add(path, "a pair key must be `fixed_string` or `string`"),
+                _ => errors.multi_error_add(path, ErrorKind::BackFieldWrongType {
+                    field: "key".to_string(),
+                    found: "other".to_string(),
+                    expected: "fixed_string or string".to_string(),
+                }),
             }
             collect_fields(errors, &format!("{}.key", path), &p.key, false, fields);
             collect_fields(errors, &format!("{}.value", path), &p.value, false, fields);
         },
-        SpecBack::FixedArray(elems) => {
+        SpecBack::FixedArray(elems) | SpecBack::FixedSubArray(elems) => {
+            if let SpecBack::FixedArray(_) = back {
+                if count_variable_runs(elems) > 1 {
+                    errors.multi_error_add(path, ErrorKind::ArrayMultipleAtoms);
+                }
+            }
             for (i, e) in elems.iter().enumerate() {
+                match e {
+                    SpecBack::SubArray(_) | SpecBack::FixedSubArray(_) => { },
+                    _ => { },
+                }
                 collect_fields(errors, &format!("{}[{}]", path, i), e, false, fields);
             }
         },
@@ -487,9 +541,11 @@ fn collect_fields(
             let mut keys = HashSet::new();
             for e in entries {
                 if !keys.insert(&e.key) {
-                    errors.add(path, format!("duplicate record key `{}`", e.key));
+                    errors.multi_error_add(path, ErrorKind::RecordDiscardDuplicateKey { key: e.key.clone() });
                 }
-                collect_fields(errors, &format!("{}.{}", path, e.key), &e.value, false, fields);
+                if let Some(v) = &e.value {
+                    collect_fields(errors, &format!("{}.{}", path, e.key), v, false, fields);
+                }
             }
         },
     }
@@ -516,11 +572,12 @@ fn build_symbol(
     if let Some(SpecCondition::Empty(c)) = &condition {
         match fields.get(&c.field) {
             Some(FieldKind::Primitive) | Some(FieldKind::Array) => { },
-            Some(FieldKind::Atom) => errors.add(
-                path,
-                format!("condition field `{}` must be a primitive or array", c.field),
-            ),
-            None => errors.add(path, format!("condition refers to unknown field `{}`", c.field)),
+            Some(FieldKind::Atom) => errors.multi_error_add(path, ErrorKind::BackFieldWrongType {
+                field: c.field.clone(),
+                found: "Atom".to_string(),
+                expected: "Primitive or Array".to_string(),
+            }),
+            None => errors.multi_error_add(path, ErrorKind::MissingBack { field: c.field.clone() }),
         }
     }
     return Symbol {
@@ -541,8 +598,12 @@ fn build_type(errors: &mut Errors, styles: &StyleTable, path: &str, t: SpecType)
         used.insert(field.to_string());
         match fields.get(field) {
             Some(k) if *k == want => { },
-            Some(k) => errors.add(path, format!("field `{}` is {:?} but the front expects {:?}", field, k, want)),
-            None => errors.add(path, format!("unknown field `{}`", field)),
+            Some(k) => errors.multi_error_add(path, ErrorKind::BackFieldWrongType {
+                field: field.to_string(),
+                found: format!("{:?}", k),
+                expected: format!("{:?}", want),
+            }),
+            None => errors.multi_error_add(path, ErrorKind::MissingBack { field: field.to_string() }),
         }
     };
     let mut front = vec![];
@@ -574,19 +635,30 @@ fn build_type(errors: &mut Errors, styles: &StyleTable, path: &str, t: SpecType)
                     soft_split_alignment: soft_split_alignment.clone(),
                 }));
             },
-            SpecFront::Atom(SpecFrontAtom { field, forward_alignments }) => {
+            SpecFront::Atom(SpecFrontAtom { field, ellipsis, forward_alignments }) => {
                 check_field(errors, &fpath, field, FieldKind::Atom);
                 front.push(Front::Atom(FrontAtom {
+                    ellipsis: build_symbol(errors, styles, &format!("{}.ellipsis", fpath), &fields, ellipsis),
                     field: field.clone(),
+                    from_array: false,
+                    forward_alignments: Rc::new(forward_alignments.iter().cloned().collect()),
+                }));
+            },
+            SpecFront::ArrayAsAtom(SpecFrontArrayAsAtom { field, ellipsis, forward_alignments }) => {
+                check_field(errors, &fpath, field, FieldKind::Array);
+                front.push(Front::Atom(FrontAtom {
+                    ellipsis: build_symbol(errors, styles, &format!("{}.ellipsis", fpath), &fields, ellipsis),
+                    field: field.clone(),
+                    from_array: true,
                     forward_alignments: Rc::new(forward_alignments.iter().cloned().collect()),
                 }));
             },
             SpecFront::Array(SpecFrontArray { field, prefix, suffix, separator, empty, forward_alignments }) => {
                 check_field(errors, &fpath, field, FieldKind::Array);
                 let build = |errors: &mut Errors, name: &str, syms: &Vec<SpecSymbol>| {
-                    syms.iter().enumerate().map(|(j, s)| {
-                        build_symbol(errors, styles, &format!("{}.{}[{}]", fpath, name, j), &fields, s)
-                    }).collect::<Vec<_>>()
+                    return syms.iter().enumerate().map(|(j, s)| {
+                        return build_symbol(errors, styles, &format!("{}.{}[{}]", fpath, name, j), &fields, s);
+                    }).collect::<Vec<_>>();
                 };
                 front.push(Front::Array(FrontArray {
                     field: field.clone(),
@@ -603,19 +675,13 @@ fn build_type(errors: &mut Errors, styles: &StyleTable, path: &str, t: SpecType)
     }
     for (id, _) in &fields {
         if !used.contains(id) {
-            errors.add(
-                path,
-                format!(
-                    "field `{}` is captured by the back but not shown by the front (use `discard` in the back to drop it)",
-                    id
-                ),
-            );
+            errors.multi_error_add(path, ErrorKind::UnusedBackData { unused: id.clone() });
         }
     }
     for (name, a) in &t.alignments {
         if let SpecAlignment::Relative(r) = a {
             if r.base.is_empty() {
-                errors.add(&format!("{}.alignments.{}", path, name), "empty base name");
+                errors.multi_error_add(format!("{}.alignments.{}", path, name), ErrorKind::EmptyAlignmentBase);
             }
         }
     }

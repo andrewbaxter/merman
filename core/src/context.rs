@@ -10,6 +10,12 @@ use crate::cursor::{
     DragSelect,
     Hoverable,
 };
+use crate::environment::Environment;
+use crate::display::{
+    Display,
+    DisplayLayer,
+    DisplayNodeId,
+};
 use crate::document::{
     AtomId,
     Document,
@@ -22,7 +28,10 @@ use crate::keys::{
     KeyStroke,
     Keymap,
 };
-use crate::measure::Measure;
+use crate::stylist::{
+    Stylist,
+    StylistDirect,
+};
 use crate::syntax::Syntax;
 use crate::visual::Visual;
 use crate::wall::{
@@ -63,6 +72,11 @@ impl Vector {
 pub struct ContextConfig {
     pub lay_brick_batch_size: usize,
     pub retry_expand_factor: f64,
+    pub ellipsize_threshold: i64,
+    pub animate_course_placement: bool,
+    pub start_windowed: bool,
+    pub scroll_factor: f64,
+    pub scroll_alot_factor: f64,
     pub keys: Keymap,
 }
 
@@ -71,6 +85,11 @@ impl Default for ContextConfig {
         return ContextConfig {
             lay_brick_batch_size: 10,
             retry_expand_factor: 1.25,
+            ellipsize_threshold: i64::MAX,
+            animate_course_placement: false,
+            start_windowed: false,
+            scroll_factor: 0.1,
+            scroll_alot_factor: 0.8,
             keys: Keymap::default(),
         };
     }
@@ -80,10 +99,19 @@ pub struct Context {
     pub syntax: Rc<Syntax>,
     pub document: Rc<Document>,
     pub config: ContextConfig,
-    pub measure: Box<dyn Measure>,
+    pub display: Box<dyn Display>,
+    pub environment: Box<dyn Environment>,
+    pub stylist: Rc<dyn Stylist>,
+    pub to_pixels: f64,
+    pub from_pixels_to_mm: f64,
+    pub background_layer: DisplayNodeId,
+    pub text_layer: DisplayNodeId,
+    pub overlay_layer: DisplayNodeId,
     pub visuals: Vec<Visual>,
     pub atom_visual: Vec<Option<VisualId>>,
     pub root_visual: VisualId,
+    pub window: bool,
+    pub window_atom: AtomId,
     pub bricks: Vec<Brick>,
     pub courses: Vec<Course>,
     pub wall: Wall,
@@ -101,6 +129,7 @@ pub struct Context {
     pub iteration_timer: bool,
     pub iteration_pending: bool,
     pub edge: f64,
+    pub wall_usage: (f64, f64),
     pub transverse_edge: f64,
     pub scroll: f64,
     pub scroll_start: f64,
@@ -114,7 +143,6 @@ pub struct Context {
     pub select_token: u64,
     pub drag_select: Option<DragSelect>,
     pub key_pending: Vec<KeyStroke>,
-    pub clipboard: Option<String>,
 }
 
 impl Context {
@@ -122,10 +150,18 @@ impl Context {
         syntax: Rc<Syntax>,
         document: Rc<Document>,
         config: ContextConfig,
-        measure: Box<dyn Measure>,
+        mut display: Box<dyn Display>,
+        environment: Box<dyn Environment>,
         converse_size: f64,
         transverse_size: f64,
     ) -> Context {
+        display.display_set_background(&syntax.spec_root.background);
+        let syntax_for_stylist = syntax.clone();
+        let to_pixels = display.display_to_pixels(syntax.spec_root.display_unit);
+        let from_pixels_to_mm = 1. / display.display_to_pixels(crate::spec::SpecDisplayUnit::Mm);
+        let background_layer = display.display_layer(DisplayLayer::Background);
+        let text_layer = display.display_layer(DisplayLayer::Text);
+        let overlay_layer = display.display_layer(DisplayLayer::Overlay);
         let mut c = Context {
             atom_visual: vec![
                 None;
@@ -134,9 +170,18 @@ impl Context {
             syntax: syntax,
             document: document,
             config: config,
-            measure: measure,
+            display: display,
+            environment: environment,
+            stylist: Rc::new(StylistDirect { syntax: syntax_for_stylist }),
+            to_pixels: to_pixels,
+            from_pixels_to_mm: from_pixels_to_mm,
+            background_layer: background_layer,
+            text_layer: text_layer,
+            overlay_layer: overlay_layer,
             visuals: vec![],
             root_visual: 0,
+            window: false,
+            window_atom: 0,
             bricks: vec![],
             courses: vec![],
             wall: Wall::default(),
@@ -154,6 +199,7 @@ impl Context {
             iteration_timer: false,
             iteration_pending: false,
             edge: 0.,
+            wall_usage: (0., 0.),
             transverse_edge: 0.,
             scroll: 0.,
             scroll_start: 0.,
@@ -167,12 +213,15 @@ impl Context {
             select_token: 0,
             drag_select: None,
             key_pending: vec![],
-            clipboard: None,
         };
         c.edge = c.edge_from_converse_size(converse_size);
         c.wall.mod_old_edge = c.edge;
         c.transverse_edge = transverse_size;
         let root = c.document.root;
+        c.window_atom = root;
+        if c.config.start_windowed {
+            c.window = true;
+        }
         c.root_visual = c.visual_ensure_atom(root, None, 0, 0);
         let cornerstone =
             c.visual_create_or_get_cornerstone_candidate(c.root_visual).expect("root produced no brick");
@@ -209,10 +258,83 @@ impl Context {
         return a.atom;
     }
 
+    pub fn atom_is_subtree(&self, subtree: AtomId, supertree: AtomId) -> bool {
+        let mut at = subtree;
+        loop {
+            if at == supertree {
+                return true;
+            }
+            let Some(parent) = &self.document.document_atom(at).parent else {
+                return false;
+            };
+            at = parent.atom;
+        }
+    }
+
+    pub fn window_adjust_minimal_to(&mut self, atom: AtomId) {
+        if self.atom_is_subtree(self.window_atom, atom) {
+            self.window_to_supertree(atom);
+            return;
+        }
+        let mut next_window = atom;
+        let mut depth = 0i64;
+        loop {
+            if next_window == self.window_atom {
+                return;
+            }
+            let Some(parent) = &self.document.document_atom(next_window).parent else {
+                break;
+            };
+            let parent_atom = parent.atom;
+            depth += self.syntax.syntax_type(self.document.document_atom(next_window).type_).depth_score;
+            if depth >= self.config.ellipsize_threshold {
+                break;
+            }
+            next_window = parent_atom;
+        }
+        self.window_to_nonsupertree(next_window);
+    }
+
+    pub fn window_clear(&mut self) {
+        self.window = false;
+        let root = self.document.root;
+        self.window_atom = root;
+        self.root_visual = self.visual_ensure_atom(root, None, 0, 0);
+    }
+
+    fn window_to_supertree(&mut self, supertree: AtomId) {
+        self.window = true;
+        self.window_atom = supertree;
+        self.root_visual = self.visual_ensure_atom(supertree, None, 0, 0);
+    }
+
+    fn window_to_nonsupertree(&mut self, tree: AtomId) {
+        self.window = true;
+        let old = self.root_visual;
+        self.window_atom = tree;
+        let visual = self.visual_ensure_atom(tree, None, 0, 0);
+        self.root_visual = visual;
+        if old != visual {
+            self.visual_uproot(old, Some(visual));
+        }
+    }
+
+    pub fn window_exact(&mut self, atom: AtomId) {
+        if self.atom_is_subtree(self.window_atom, atom) {
+            self.window_to_supertree(atom);
+        } else {
+            self.window_to_nonsupertree(atom);
+        }
+    }
+
+    pub fn context_apply_scroll(&mut self) {
+        self.pending_scroll = Some(self.scroll);
+    }
+
     pub fn scroll_visible(&mut self) {
         let pad = &self.syntax.spec_root.pad;
-        let minimum = self.scroll_start - pad.transverse_start;
-        let maximum = self.scroll_end + pad.transverse_end;
+        let minimum = self.scroll_start - self.wall.bedding_before - pad.transverse_start;
+        let maximum = self.scroll_end + self.wall.bedding_after + pad.transverse_end;
         let max_diff = maximum - self.transverse_edge - self.scroll;
         let mut new_scroll = None;
         if minimum < self.scroll {
@@ -222,7 +344,7 @@ impl Context {
         }
         if let Some(s) = new_scroll {
             self.scroll = s;
-            self.pending_scroll = Some(s);
+            self.context_apply_scroll();
         }
     }
 }

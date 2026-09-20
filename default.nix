@@ -22,10 +22,14 @@ let
     cp ${./Cargo.toml} $out/Cargo.toml
     cp ${./Cargo.lock} $out/Cargo.lock
     cp -r ${./core} $out/core
+    cp -r ${./api} $out/api
     cp -r ${./web} $out/web
     cp -r ${./cli/src} $out/cli/src
     cp ${./cli/Cargo.toml} $out/cli/Cargo.toml
-    cp ${./cli/static/index.html} $out/cli/static/index.html
+    cp ${./cli/static/demo.html} $out/cli/static/demo.html
+    cp ${./cli/static/editor.html} $out/cli/static/editor.html
+    cp ${./cli/static/merman3.css} $out/cli/static/merman3.css
+    cp ${./cli/static/MaterialIcons-Regular.ttf} $out/cli/static/MaterialIcons-Regular.ttf
     cp -r ${./syntaxes} $out/syntaxes
   '';
 

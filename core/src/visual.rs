@@ -27,8 +27,10 @@ use crate::syntax::{
     TypeId,
 };
 use crate::wall::{
+    BrickEmpty,
     BrickInter,
     BrickKind,
+    BrickText,
 };
 use std::collections::HashSet;
 use std::rc::Rc;
@@ -113,6 +115,7 @@ pub struct VisualFieldAtom {
     pub type_: TypeId,
     pub front: usize,
     pub body: VisualId,
+    pub ellipsis: Option<BrickId>,
 }
 
 pub struct VisualFieldArray {
@@ -260,6 +263,7 @@ impl Context {
         depth_score: i64,
     ) -> VisualId {
         if let Some(v) = self.atom_visual[atom] {
+            self.visual_root(v, parent, depth, depth_score);
             return v;
         }
         let syntax = self.syntax.clone();
@@ -345,23 +349,28 @@ impl Context {
                     v
                 },
                 Front::Atom(f) => {
-                    let Some(Field::Atom(child_atom)) = a.fields.get(&f.field) else {
-                        panic!("atom field `{}` missing", f.field);
+                    let child_atom = match a.fields.get(&f.field) {
+                        Some(Field::Atom(child)) => Some(*child),
+                        Some(Field::Array(elements)) if f.from_array => elements.first().copied(),
+                        _ => panic!("atom field `{}` missing", f.field),
                     };
                     let v = self.push_visual(VisualKind::FieldAtom(VisualFieldAtom {
                         atom: atom,
                         type_: a.type_,
                         front: index,
-                        body: 0,
+                        body: usize::MAX,
+                        ellipsis: None,
                     }), child_parent, depth + 1);
-                    let body = self.visual_ensure_atom(*child_atom, Some(VisualParent {
-                        visual: v,
-                        index: 0,
-                    }), depth + 2, depth_score);
-                    let VisualKind::FieldAtom(fa) = &mut self.visuals[v].kind else {
-                        unreachable!();
-                    };
-                    fa.body = body;
+                    if let Some(child_atom) = child_atom {
+                        let body = self.visual_ensure_atom(child_atom, Some(VisualParent {
+                            visual: v,
+                            index: 0,
+                        }), depth + 2, depth_score);
+                        let VisualKind::FieldAtom(fa) = &mut self.visuals[v].kind else {
+                            unreachable!();
+                        };
+                        fa.body = body;
+                    }
                     need_intermediate = true;
                     self.visual_atom_mut(vid).selectable.push((f.field.clone(), v));
                     v
@@ -489,7 +498,7 @@ impl Context {
     ) -> VisualId {
         let condition = condition.as_ref().map(|c| {
             let a = self.document.document_atom(atom);
-            match c {
+            return match c {
                 SpecCondition::Empty(c) => {
                     let empty = match a.fields.get(&c.field) {
                         Some(Field::Primitive(s)) => s.is_empty(),
@@ -577,7 +586,7 @@ impl Context {
                     };
                     is_precedent != c.invert
                 },
-            }
+            };
         });
         return self.push_visual(VisualKind::Symbol(VisualSymbol {
             symbol: symbol,
@@ -631,6 +640,206 @@ impl Context {
         return self.visual_find_alignment(atom, name, None);
     }
 
+    pub fn visual_field_atom_ellipsize(&self, v: VisualId) -> bool {
+        if !self.window {
+            return false;
+        }
+        let Some(atom) = self.visual_containing_atom(v) else {
+            return false;
+        };
+        return self.visual_atom(atom).depth_score >= self.config.ellipsize_threshold;
+    }
+
+    fn field_atom_create_ellipsis(&mut self, v: VisualId) -> BrickId {
+        let (type_, front) = {
+            let VisualKind::FieldAtom(fa) = &self.visuals[v].kind else {
+                unreachable!();
+            };
+            (fa.type_, fa.front)
+        };
+        let syntax = self.syntax.clone();
+        let Front::Atom(f) = &syntax.syntax_type(type_).front[front] else {
+            unreachable!();
+        };
+        let spec = &f.ellipsis;
+        let split = spec.split;
+        let align = self.leaf_find_alignment(v, &spec.alignment);
+        let split_align = self.leaf_find_alignment(v, &spec.split_alignment);
+        let kind = match &spec.kind {
+            SymbolKind::Text { text, style } => BrickKind::Text(BrickText {
+                text: text.clone(),
+                style: *style,
+            }),
+            SymbolKind::Space { width, ascent, descent } => {
+                let to_pixels = syntax.spec_root.to_pixels;
+                BrickKind::Empty(BrickEmpty {
+                    ascent: ascent * to_pixels,
+                    descent: descent * to_pixels,
+                    span: width * to_pixels,
+                })
+            },
+        };
+        let brick = self.brick_new(kind, BrickInter::FieldAtomEllipsis(v), split, align, split_align);
+        let VisualKind::FieldAtom(fa) = &mut self.visuals[v].kind else {
+            unreachable!();
+        };
+        fa.ellipsis = Some(brick);
+        self.parent_notify_first_brick_created(v, brick);
+        self.parent_notify_last_brick_created(v, brick);
+        return brick;
+    }
+
+    pub fn visual_root(&mut self, v: VisualId, parent: Option<VisualParent>, depth: usize, depth_score: i64) {
+        self.visuals[v].parent = parent;
+        self.visuals[v].depth = depth;
+        match &self.visuals[v].kind {
+            VisualKind::Atom(a) => {
+                let atom = a.atom;
+                let type_ = a.type_;
+                let score = if parent.is_none() {
+                    0
+                } else {
+                    depth_score + self.syntax.syntax_type(type_).depth_score
+                };
+                self.atom_visual[atom] = Some(v);
+                self.visual_atom_mut(v).depth_score = score;
+                for child in self.visual_children(v) {
+                    let child_parent = self.visuals[child].parent;
+                    self.visual_root(child, child_parent, depth + 1, score);
+                }
+            },
+            VisualKind::Group(_) | VisualKind::FieldArray(_) => {
+                for child in self.visual_children(v) {
+                    let child_parent = self.visuals[child].parent;
+                    self.visual_root(child, child_parent, depth + 1, depth_score);
+                }
+            },
+            VisualKind::FieldAtom(fa) => {
+                let (body, ellipsis) = (fa.body, fa.ellipsis);
+                if self.visual_field_atom_ellipsize(v) {
+                    if body != usize::MAX {
+                        self.visual_uproot(body, None);
+                        let VisualKind::FieldAtom(fa) = &mut self.visuals[v].kind else {
+                            unreachable!();
+                        };
+                        fa.body = usize::MAX;
+                        self.parent_lay_bricks_around(v);
+                    }
+                } else {
+                    if let Some(b) = ellipsis {
+                        self.brick_destroy(b);
+                    }
+                    let atom = {
+                        let (owner, type_, front) = {
+                            let VisualKind::FieldAtom(fa) = &self.visuals[v].kind else {
+                                unreachable!();
+                            };
+                            (fa.atom, fa.type_, fa.front)
+                        };
+                        let syntax = self.syntax.clone();
+                        let Front::Atom(f) = &syntax.syntax_type(type_).front[front] else {
+                            unreachable!();
+                        };
+                        let Some(Field::Atom(child)) =
+                            self.document.document_atom(owner).fields.get(&f.field) else {
+                                unreachable!();
+                            };
+                        *child
+                    };
+                    if body == usize::MAX {
+                        let created = self.visual_ensure_atom(atom, Some(VisualParent {
+                            visual: v,
+                            index: 0,
+                        }), depth + 1, depth_score);
+                        let VisualKind::FieldAtom(fa) = &mut self.visuals[v].kind else {
+                            unreachable!();
+                        };
+                        fa.body = created;
+                        self.parent_lay_bricks_around(v);
+                    } else {
+                        self.visual_root(body, Some(VisualParent {
+                            visual: v,
+                            index: 0,
+                        }), depth + 1, depth_score);
+                    }
+                }
+            },
+            VisualKind::Symbol(_) | VisualKind::Primitive(_) => { },
+        }
+    }
+
+    fn parent_lay_bricks_around(&mut self, v: VisualId) {
+        if let Some(b) = self.parent_find_previous_brick(v) {
+            self.trigger_idle_lay_bricks_after_end(b);
+        }
+        if let Some(b) = self.parent_find_next_brick(v) {
+            self.trigger_idle_lay_bricks_before_start(b);
+        }
+    }
+
+    pub fn visual_uproot(&mut self, v: VisualId, root: Option<VisualId>) {
+        if root == Some(v) {
+            return;
+        }
+        if let Some(c) = self.cursor {
+            let cursor_visual = match self.cursor_get(c) {
+                crate::cursor::Cursor::Atom(c) => c.visual,
+                crate::cursor::Cursor::Array(c) => c.visual,
+                crate::cursor::Cursor::Primitive(c) => c.visual,
+            };
+            if cursor_visual == v {
+                self.clear_cursor();
+            }
+        }
+        if let Some(h) = self.hover {
+            let hover_visual = match self.hoverables[h].as_ref() {
+                Some(crate::cursor::Hoverable::Atom { visual, .. }) |
+                Some(crate::cursor::Hoverable::Array { visual, .. }) |
+                Some(crate::cursor::Hoverable::ArrayPlaceholder { visual, .. }) => Some(
+                    *visual,
+                ),
+                Some(crate::cursor::Hoverable::Primitive(p)) => Some(p.visual),
+                None => None,
+            };
+            if hover_visual == Some(v) {
+                self.clear_hover();
+            }
+        }
+        match &self.visuals[v].kind {
+            VisualKind::Atom(a) => {
+                let atom = a.atom;
+                self.atom_visual[atom] = None;
+                for child in self.visual_children(v) {
+                    self.visual_uproot(child, root);
+                }
+            },
+            VisualKind::Group(_) | VisualKind::FieldArray(_) => {
+                for child in self.visual_children(v) {
+                    self.visual_uproot(child, root);
+                }
+            },
+            VisualKind::FieldAtom(fa) => {
+                let (body, ellipsis) = (fa.body, fa.ellipsis);
+                if let Some(b) = ellipsis {
+                    self.brick_destroy(b);
+                }
+                if body != usize::MAX {
+                    self.visual_uproot(body, root);
+                }
+            },
+            VisualKind::Symbol(s) => {
+                if let Some(b) = s.brick {
+                    self.brick_destroy(b);
+                }
+            },
+            VisualKind::Primitive(p) => {
+                for b in p.lines.iter().filter_map(|l| l.brick).collect::<Vec<_>>() {
+                    self.brick_destroy(b);
+                }
+            },
+        }
+    }
+
     pub fn visual_create_first_brick(&mut self, v: VisualId) -> ExtendBrickResult {
         match &self.visuals[v].kind {
             VisualKind::Atom(_) | VisualKind::Group(_) => {
@@ -657,7 +866,16 @@ impl Context {
             },
             VisualKind::Primitive(_) => return self.line_create_brick(v, 0),
             VisualKind::FieldAtom(fa) => {
-                let body = fa.body;
+                let (body, ellipsis) = (fa.body, fa.ellipsis);
+                if self.visual_field_atom_ellipsize(v) {
+                    if ellipsis.is_some() {
+                        return ExtendBrickResult::Exists;
+                    }
+                    return ExtendBrickResult::Brick(self.field_atom_create_ellipsis(v));
+                }
+                if body == usize::MAX {
+                    return ExtendBrickResult::Empty;
+                }
                 return self.visual_create_first_brick(body);
             },
             VisualKind::FieldArray(a) => {
@@ -700,7 +918,16 @@ impl Context {
                 return self.line_create_brick(v, last);
             },
             VisualKind::FieldAtom(fa) => {
-                let body = fa.body;
+                let (body, ellipsis) = (fa.body, fa.ellipsis);
+                if self.visual_field_atom_ellipsize(v) {
+                    if ellipsis.is_some() {
+                        return ExtendBrickResult::Exists;
+                    }
+                    return ExtendBrickResult::Brick(self.field_atom_create_ellipsis(v));
+                }
+                if body == usize::MAX {
+                    return ExtendBrickResult::Empty;
+                }
                 return self.visual_create_last_brick(body);
             },
             VisualKind::FieldArray(a) => {
@@ -735,7 +962,12 @@ impl Context {
             },
             VisualKind::Symbol(s) => return s.brick,
             VisualKind::Primitive(p) => return p.lines[0].brick,
-            VisualKind::FieldAtom(fa) => return self.visual_get_first_brick(fa.body),
+            VisualKind::FieldAtom(fa) => {
+                if self.visual_field_atom_ellipsize(v) || fa.body == usize::MAX {
+                    return fa.ellipsis;
+                }
+                return self.visual_get_first_brick(fa.body);
+            },
             VisualKind::FieldArray(a) => {
                 if a.empty.is_some() {
                     return a.empty;
@@ -755,7 +987,12 @@ impl Context {
             },
             VisualKind::Symbol(s) => return s.brick,
             VisualKind::Primitive(p) => return p.lines.last().unwrap().brick,
-            VisualKind::FieldAtom(fa) => return self.visual_get_last_brick(fa.body),
+            VisualKind::FieldAtom(fa) => {
+                if self.visual_field_atom_ellipsize(v) || fa.body == usize::MAX {
+                    return fa.ellipsis;
+                }
+                return self.visual_get_last_brick(fa.body);
+            },
             VisualKind::FieldArray(a) => {
                 if a.empty.is_some() {
                     return a.empty;
@@ -789,7 +1026,16 @@ impl Context {
             },
             VisualKind::Primitive(_) => return Some(self.line_create_or_get_brick(v, 0)),
             VisualKind::FieldAtom(fa) => {
-                let body = fa.body;
+                let (body, ellipsis) = (fa.body, fa.ellipsis);
+                if self.visual_field_atom_ellipsize(v) {
+                    if let Some(b) = ellipsis {
+                        return Some(b);
+                    }
+                    return Some(self.field_atom_create_ellipsis(v));
+                }
+                if body == usize::MAX {
+                    return None;
+                }
                 return self.visual_create_or_get_cornerstone_candidate(body);
             },
             VisualKind::FieldArray(a) => {
@@ -819,17 +1065,17 @@ impl Context {
         let align = self.leaf_find_alignment(v, &spec.alignment);
         let split_align = self.leaf_find_alignment(v, &spec.split_alignment);
         let kind = match &spec.kind {
-            SymbolKind::Text { text, style } => BrickKind::Text {
+            SymbolKind::Text { text, style } => BrickKind::Text(BrickText {
                 text: text.clone(),
                 style: *style,
-            },
+            }),
             SymbolKind::Space { width, ascent, descent } => {
                 let to_pixels = syntax.spec_root.to_pixels;
-                BrickKind::Empty {
+                BrickKind::Empty(BrickEmpty {
                     ascent: ascent * to_pixels,
                     descent: descent * to_pixels,
                     span: width * to_pixels,
-                }
+                })
             },
         };
         let brick = self.brick_new(kind, BrickInter::Symbol(v), split, align, split_align);
@@ -852,17 +1098,17 @@ impl Context {
         let align = self.leaf_find_alignment(v, &empty.alignment);
         let split_align = self.leaf_find_alignment(v, &empty.split_alignment);
         let kind = match &empty.kind {
-            SymbolKind::Text { text, style } => BrickKind::Text {
+            SymbolKind::Text { text, style } => BrickKind::Text(BrickText {
                 text: text.clone(),
                 style: *style,
-            },
+            }),
             SymbolKind::Space { width, ascent, descent } => {
                 let to_pixels = syntax.spec_root.to_pixels;
-                BrickKind::Empty {
+                BrickKind::Empty(BrickEmpty {
                     ascent: ascent * to_pixels,
                     descent: descent * to_pixels,
                     span: width * to_pixels,
-                }
+                })
             },
         };
         let brick = self.brick_new(kind, BrickInter::ArrayEmpty(v), split, align, split_align);
@@ -890,12 +1136,20 @@ impl Context {
                 };
                 a.empty = None;
             },
+            BrickInter::FieldAtomEllipsis(v) => {
+                let VisualKind::FieldAtom(fa) = &mut self.visuals[v].kind else {
+                    unreachable!();
+                };
+                fa.ellipsis = None;
+            },
         }
     }
 
     pub fn brick_create_next(&mut self, inter: BrickInter) -> ExtendBrickResult {
         match inter {
-            BrickInter::Symbol(v) | BrickInter::ArrayEmpty(v) => return self.parent_create_next_brick(v),
+            BrickInter::Symbol(v) | BrickInter::ArrayEmpty(v) | BrickInter::FieldAtomEllipsis(v) => {
+                return self.parent_create_next_brick(v)
+            },
             BrickInter::Line(v, i) => {
                 if i + 1 == self.visual_primitive(v).lines.len() {
                     return self.parent_create_next_brick(v);
@@ -907,7 +1161,7 @@ impl Context {
 
     pub fn brick_create_previous(&mut self, inter: BrickInter) -> ExtendBrickResult {
         match inter {
-            BrickInter::Symbol(v) | BrickInter::ArrayEmpty(v) => {
+            BrickInter::Symbol(v) | BrickInter::ArrayEmpty(v) | BrickInter::FieldAtomEllipsis(v) => {
                 return self.parent_create_previous_brick(v)
             },
             BrickInter::Line(v, i) => {
@@ -1171,6 +1425,7 @@ impl Context {
                 return Some(self.primitive_hover_position(v, new_index));
             },
             BrickInter::ArrayEmpty(v) => return Some(self.array_hover_placeholder(v, brick)),
+            BrickInter::FieldAtomEllipsis(v) => return self.parent_hover(v, point),
         }
     }
 
@@ -1266,7 +1521,14 @@ impl Context {
                     }
                 }
             },
-            VisualKind::FieldAtom(fa) => self.visual_get_leaf_bricks(fa.body, out),
+            VisualKind::FieldAtom(fa) => {
+                if let Some(b) = fa.ellipsis {
+                    out.push(b);
+                } else if fa.body != usize::MAX {
+                    let body = fa.body;
+                    self.visual_get_leaf_bricks(body, out);
+                }
+            },
         }
     }
 
@@ -1314,10 +1576,10 @@ impl Context {
         let style = self.front_primitive_spec(p.type_, p.front).style;
         let text = p.lines[index].text.clone();
         let line_count = p.lines.len();
-        let brick = self.brick_new(BrickKind::Text {
+        let brick = self.brick_new(BrickKind::Line(BrickText {
             text: text,
             style: style,
-        }, BrickInter::Line(v, index), split, align, split_align);
+        }, index), BrickInter::Line(v, index), split, align, split_align);
         self.visual_primitive_mut(v).lines[index].brick = Some(brick);
         if index == 0 {
             self.parent_notify_first_brick_created(v, brick);
@@ -1533,11 +1795,11 @@ impl Context {
     }
 
     fn resplit_fit(&mut self, font: &crate::measure::FontSpec, text: &str, converse: f64) -> usize {
-        let width = self.measure.measure_width(font, text);
+        let width = self.display.display_font_width(font, text);
         let edge = converse + width;
         if converse < self.edge && edge > self.edge {
             let edge_offset = self.edge - converse;
-            let under = crate::measure::measure_index_at_converse(&mut *self.measure, font, text, edge_offset);
+            let under = self.display.display_index_at_converse(font, text, edge_offset);
             if under == text.len() {
                 return under;
             }

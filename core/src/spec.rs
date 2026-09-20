@@ -279,10 +279,11 @@ pub enum SpecBack {
     Pair(SpecBackPair),
     /// A JSON array with exactly these elements.
     FixedArray(Vec<SpecBack>),
+    SubArray(SpecBackArray),
+    FixedSubArray(Vec<SpecBack>),
+    Id(SpecBackId),
     /// A JSON object with exactly these keys, in any order.
     FixedRecord(Vec<SpecBackEntry>),
-    /// Any JSON value, ignored.
-    Discard(SpecBackDiscard),
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -326,12 +327,13 @@ pub struct SpecBackPair {
 #[serde(deny_unknown_fields)]
 pub struct SpecBackEntry {
     pub key: String,
-    pub value: SpecBack,
+    #[serde(default)]
+    pub value: Option<SpecBack>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
-pub struct SpecBackDiscard {}
+pub struct SpecBackId {}
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
@@ -340,6 +342,17 @@ pub enum SpecFront {
     Primitive(SpecFrontPrimitive),
     Atom(SpecFrontAtom),
     Array(SpecFrontArray),
+    ArrayAsAtom(SpecFrontArrayAsAtom),
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct SpecFrontArrayAsAtom {
+    pub field: String,
+    #[serde(default = "default_ellipsis")]
+    pub ellipsis: SpecSymbol,
+    #[serde(default)]
+    pub forward_alignments: Vec<String>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -428,10 +441,23 @@ pub struct SpecFrontPrimitive {
     pub soft_split_alignment: Option<String>,
 }
 
+fn default_ellipsis() -> SpecSymbol {
+    return SpecSymbol::Text(SpecSymbolText {
+        text: "...".to_string(),
+        style: None,
+        split: SpecSplit::Never,
+        alignment: None,
+        split_alignment: None,
+        condition: None,
+    });
+}
+
 #[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct SpecFrontAtom {
     pub field: String,
+    #[serde(default = "default_ellipsis")]
+    pub ellipsis: SpecSymbol,
     /// Names of this atom's alignments visible to the nested atom.
     #[serde(default)]
     pub forward_alignments: Vec<String>,

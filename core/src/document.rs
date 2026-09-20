@@ -11,6 +11,7 @@ pub struct Document {
 
 pub struct Atom {
     pub type_: TypeId,
+    pub back_ids: Vec<i64>,
     pub fields: HashMap<String, Field>,
     /// None for the root.
     pub parent: Option<AtomParent>,

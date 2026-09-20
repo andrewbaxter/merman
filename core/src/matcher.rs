@@ -110,6 +110,7 @@ impl<'a> Matcher<'a> {
         let id = mark;
         self.atoms.push(Atom {
             type_: type_id,
+            back_ids: vec![],
             fields: HashMap::new(),
             parent: None,
         });
@@ -147,6 +148,44 @@ impl<'a> Matcher<'a> {
             message: format!("{} matched no type in `{}`", describe(value), group),
             alternatives: alternatives,
         });
+    }
+
+    fn match_sub_array(
+        &mut self,
+        specs: &[SpecBack],
+        elems: &[Value],
+        at: &mut usize,
+        run: usize,
+        path: &str,
+        owner: AtomId,
+        fields: &mut HashMap<String, Field>,
+    ) -> Result<(), Mismatch> {
+        for spec in specs {
+            match spec {
+                SpecBack::SubArray(a) => {
+                    let mut out = vec![];
+                    for i in 0 .. run {
+                        let child = self.match_group(&a.element, &elems[*at + i], &format!("{}/{}", path, *at + i))?;
+                        self.atoms[child].parent = Some(AtomParent {
+                            atom: owner,
+                            field: a.id.clone(),
+                            index: i,
+                        });
+                        out.push(child);
+                    }
+                    fields.insert(a.id.clone(), Field::Array(out));
+                    *at += run;
+                },
+                SpecBack::FixedSubArray(inner) => {
+                    self.match_sub_array(inner, elems, at, run, path, owner, fields)?;
+                },
+                _ => {
+                    self.match_back(spec, &elems[*at], &format!("{}/{}", path, *at), owner, fields)?;
+                    *at += 1;
+                },
+            }
+        }
+        return Ok(());
     }
 
     fn match_back(
@@ -303,6 +342,7 @@ impl<'a> Matcher<'a> {
                                 let mark = self.atoms.len();
                                 let id = mark;
                                 self.atoms.push(Atom {
+                                    back_ids: vec![],
                                     type_: t,
                                     fields: HashMap::new(),
                                     parent: None,
@@ -357,14 +397,35 @@ impl<'a> Matcher<'a> {
                 let Value::Array(elems) = value else {
                     return Err(Mismatch::leaf(path, format!("expected an array, got {}", describe(value))));
                 };
-                if elems.len() != specs.len() {
+                let (fixed, variable) = crate::syntax::back_sub_array_slots(specs);
+                if variable.is_none() && elems.len() != fixed {
                     return Err(
-                        Mismatch::leaf(path, format!("expected an array of {}, got {}", specs.len(), describe(value))),
+                        Mismatch::leaf(path, format!("expected an array of {}, got {}", fixed, describe(value))),
                     );
                 }
-                for (i, (s, e)) in specs.iter().zip(elems.iter()).enumerate() {
-                    self.match_back(s, e, &format!("{}/{}", path, i), owner, fields)?;
+                if variable.is_some() && elems.len() < fixed {
+                    return Err(
+                        Mismatch::leaf(
+                            path,
+                            format!("expected an array of at least {}, got {}", fixed, describe(value)),
+                        ),
+                    );
                 }
+                let mut at = 0;
+                self.match_sub_array(specs, elems, &mut at, elems.len() - fixed, path, owner, fields)?;
+                return Ok(());
+            },
+            SpecBack::SubArray(_) | SpecBack::FixedSubArray(_) => {
+                return Err(Mismatch::leaf(path, "sub arrays are only valid inside an array".to_string()));
+            },
+            SpecBack::Id(_) => {
+                let Value::Number(n) = value else {
+                    return Err(Mismatch::leaf(path, format!("expected an integer id, got {}", describe(value))));
+                };
+                let Some(n) = n.as_i64() else {
+                    return Err(Mismatch::leaf(path, format!("expected an integer id, got {}", describe(value))));
+                };
+                self.atoms[owner].back_ids.push(n);
                 return Ok(());
             },
             SpecBack::FixedRecord(entries) => {
@@ -393,17 +454,13 @@ impl<'a> Matcher<'a> {
                     );
                 }
                 for e in entries {
-                    self.match_back(
-                        &e.value,
-                        o.get(&e.key).unwrap(),
-                        &format!("{}/{}", path, e.key),
-                        owner,
-                        fields,
-                    )?;
+                    let Some(value) = &e.value else {
+                        continue;
+                    };
+                    self.match_back(value, o.get(&e.key).unwrap(), &format!("{}/{}", path, e.key), owner, fields)?;
                 }
                 return Ok(());
             },
-            SpecBack::Discard(_) => return Ok(()),
         }
     }
 }
