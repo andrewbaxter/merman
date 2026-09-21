@@ -268,6 +268,36 @@ impl Context {
         self.drawing_remove(border.drawing);
     }
 
+    fn obbox_place(&mut self, drawing: DrawingId, points: &[(Vector, bool)], style: &SpecObbox) {
+        let node = self.drawings[drawing].as_ref().unwrap().node;
+        self.display.drawing_clear(node);
+        if points.is_empty() {
+            return;
+        }
+        let buffer = (style.line_thickness + 1.).floor();
+        let points =
+            points
+                .iter()
+                .map(|(point, round)| (Vector::new(point.converse.round(), point.transverse.round()), *round))
+                .collect::<Vec<_>>();
+        let mut min = points[0].0;
+        let mut max = points[0].0;
+        for (point, _) in &points {
+            min.converse = min.converse.min(point.converse);
+            min.transverse = min.transverse.min(point.transverse);
+            max.converse = max.converse.max(point.converse);
+            max.transverse = max.transverse.max(point.transverse);
+        }
+        let size =
+            Vector::new(max.converse - min.converse + buffer * 2., max.transverse - min.transverse + buffer * 2.);
+        self.display.drawing_resize(node, size);
+        self.display.node_set_position(node, min.converse - buffer, min.transverse - buffer, false);
+        let mut commands =
+            vec![DrawCommand::Translate(Vector::new(buffer - min.converse, buffer - min.transverse))];
+        commands.extend(obbox_commands(&points, style));
+        self.display.drawing_draw(node, &commands);
+    }
+
     fn border_redraw(&mut self, b: BorderId) {
         let border = self.borders[b].as_ref().unwrap();
         let (Some(first), Some(last)) = (border.first, border.last) else {
@@ -288,9 +318,8 @@ impl Context {
                 border.end_transverse + border.end_transverse_span,
             );
         let style = border.style.clone();
-        let node = self.drawings[border.drawing].as_ref().unwrap().node;
-        self.display.drawing_clear(node);
-        self.display.drawing_draw(node, &obbox_commands(&points, &style));
+        let drawing = border.drawing;
+        self.obbox_place(drawing, &points, &style);
     }
 
     pub fn text_border_new(&mut self, style: SpecObbox) -> TextBorderId {
@@ -395,9 +424,8 @@ impl Context {
                 tb.end_transverse + tb.end_transverse_span,
             );
         let style = tb.style.clone();
-        let node = self.drawings[tb.drawing].as_ref().unwrap().node;
-        self.display.drawing_clear(node);
-        self.display.drawing_draw(node, &obbox_commands(&points, &style));
+        let drawing = tb.drawing;
+        self.obbox_place(drawing, &points, &style);
     }
 
     pub fn caret_new(&mut self, style: SpecObbox) -> CaretId {

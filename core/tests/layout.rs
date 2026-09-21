@@ -149,11 +149,23 @@ fn hover_click_and_copy() {
     let rows = display.display_test_rows();
     let row = &rows[0];
     let true_brick = row.bricks.iter().find(|b| b.text == "true").unwrap();
-    let point = Vector::new(true_brick.converse + 1., row.transverse + 1.);
-    ctx.mouse_moved(point);
+    let pad = ctx.syntax.spec_root.pad.converse_start;
+    ctx.mouse_moved(Vector::new(true_brick.converse + 1. + pad, row.transverse + 1.));
     settle(&mut ctx);
     assert!(ctx.hover.is_some(), "hovering a brick should produce a hoverable");
     assert_eq!(display.display_test_drawings(), 1, "hover draws one border");
+    let drawn = display.display_test_drawn();
+    let border = &drawn[0];
+    assert!(
+        border.size.converse > 0. && border.size.transverse > 0.,
+        "the border is sized to what it draws, or a bitmap display clips it away"
+    );
+    assert!(
+        border.transverse >= row.transverse - 20. && border.transverse <= row.transverse + 20.,
+        "the border is placed at the row it marks, not at the origin: {} vs {}",
+        border.transverse,
+        row.transverse
+    );
     assert!(ctx.mouse_button(true,));
     ctx.mouse_button(false);
     settle(&mut ctx);
@@ -165,7 +177,7 @@ fn hover_click_and_copy() {
     ctx.key_copy();
     assert_eq!(environment.0.borrow_mut().clipboard.take().unwrap(), "[\n  true\n]");
     let brace = row.bricks.iter().find(|b| b.text == "{").unwrap();
-    ctx.mouse_moved(Vector::new(brace.converse + 1., row.transverse + 1.));
+    ctx.mouse_moved(Vector::new(brace.converse + 1. + pad, row.transverse + 1.));
     settle(&mut ctx);
     assert_eq!(display.display_test_rows()[0].transverse, 0.);
     assert_eq!(display.display_test_drawings(), 2);

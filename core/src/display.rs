@@ -172,11 +172,18 @@ enum TestKind {
     Drawing(bool),
 }
 
+pub struct TestDrawing {
+    pub converse: f64,
+    pub transverse: f64,
+    pub size: Vector,
+}
+
 struct TestNode {
     kind: TestKind,
     converse: f64,
     converse_span: f64,
     transverse: f64,
+    size: Vector,
 }
 
 #[derive(Default)]
@@ -200,6 +207,7 @@ impl DisplayTestState {
             converse: 0.,
             converse_span: 0.,
             transverse: 0.,
+            size: Vector::default(),
         }));
         return id;
     }
@@ -234,6 +242,22 @@ impl DisplayTest {
     pub fn display_test_drawings(&self) -> usize {
         let s = self.0.borrow();
         return s.nodes.iter().flatten().filter(|n| matches!(n.kind, TestKind::Drawing(true))).count();
+    }
+
+    pub fn display_test_drawn(&self) -> Vec<TestDrawing> {
+        let s = self.0.borrow();
+        let mut out = vec![];
+        for node in s.nodes.iter().flatten() {
+            if !matches!(node.kind, TestKind::Drawing(true)) {
+                continue;
+            }
+            out.push(TestDrawing {
+                converse: node.converse,
+                transverse: node.transverse,
+                size: node.size,
+            });
+        }
+        return out;
     }
 }
 
@@ -374,7 +398,10 @@ impl Display for DisplayTest {
         s.nodes[node].as_mut().unwrap().kind = TestKind::Drawing(false);
     }
 
-    fn drawing_resize(&mut self, _node: DisplayNodeId, _size: Vector) { }
+    fn drawing_resize(&mut self, node: DisplayNodeId, size: Vector) {
+        let mut s = self.0.borrow_mut();
+        s.nodes[node].as_mut().unwrap().size = size;
+    }
 
     fn drawing_draw(&mut self, node: DisplayNodeId, commands: &[DrawCommand]) {
         if commands.is_empty() {

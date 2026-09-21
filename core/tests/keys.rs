@@ -238,7 +238,9 @@ fn hover_resolves_during_the_move() {
     let rows = display.display_test_rows();
     let row = &rows[0];
     let brick = row.bricks.iter().find(|b| b.text == "true").unwrap();
-    ctx.mouse_moved(Vector::new(brick.converse + 1., row.transverse + 1.));
+    let pad = ctx.syntax.spec_root.pad.converse_start;
+    ctx.mouse_moved(Vector::new(brick.converse + 1. + pad, row.transverse + 1.));
+    settle(&mut ctx);
     assert!(ctx.hover.is_some());
     ctx.mouse_exited();
     assert!(ctx.hover.is_none());

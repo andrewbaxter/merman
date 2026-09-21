@@ -7,6 +7,9 @@ use common::{
     render_text,
     settle,
 };
+use merman3_core::context::Vector;
+use merman3_core::keys::Action;
+use std::time::Instant;
 
 #[test]
 fn lays_out_synth_module() {
@@ -114,4 +117,74 @@ fn first_difference(got: &serde_json::Value, want: &serde_json::Value, path: &st
             return true;
         },
     }
+}
+
+fn profile(name: &str, source: &str) {
+    println!("\n--- {} ({} bytes)", name, source.len());
+    let syntax = load_syntax(include_str!("../../syntaxes/alligatorus.json"));
+    let document = load_document(&syntax, source);
+    let start = Instant::now();
+    let (mut ctx, display, _environment) = build(syntax, document.clone(), 1200., 800.);
+    let build = start.elapsed();
+    let lay = Instant::now();
+    settle(&mut ctx);
+    let lay = lay.elapsed();
+    println!("atoms {} | context_new {:?} | settle {:?}", document.atoms.len(), build, lay);
+    println!(
+        "visuals {} | bricks {} | courses {} | wall transverse {:.0} vs 800 viewport",
+        ctx.visuals.len(),
+        ctx.bricks.iter().filter(|b| b.alive).count(),
+        ctx.wall.children.len(),
+        ctx.courses.last().map(|c| c.transverse_start).unwrap_or(0.)
+    );
+    let mut worst = std::time::Duration::ZERO;
+    let mut total = std::time::Duration::ZERO;
+    let mut dives = 0;
+    loop {
+        let press = Instant::now();
+        let handled = ctx.key_action(Action::Enter);
+        if handled {
+            ctx.input_flush();
+        }
+        settle(&mut ctx);
+        let press = press.elapsed();
+        if !handled {
+            break;
+        }
+        total += press;
+        worst = worst.max(press);
+        dives += 1;
+        assert!(dives < 1000, "diving never bottomed out");
+    }
+    println!("enter x{} to the deepest leaf: total {:?} | worst {:?}", dives, total, worst);
+    let rows = display.display_test_rows();
+    let mut worst = std::time::Duration::ZERO;
+    for row in [rows.len() - 1, 0, rows.len() / 2] {
+        let row = &rows[row];
+        let hover = Instant::now();
+        ctx.mouse_moved(Vector::new(row.bricks[0].converse + 1., row.transverse + 1.));
+        settle(&mut ctx);
+        worst = worst.max(hover.elapsed());
+    }
+    println!("hover across the wall ({} rows): worst {:?}", rows.len(), worst);
+}
+
+fn repeated(source: &str, times: usize) -> String {
+    let mut value: serde_json::Value = serde_json::from_str(source).unwrap();
+    let exprs = value["v1"]["expr"]["variant"]["seq"]["exprs"].as_array().unwrap().clone();
+    let mut grown = vec![];
+    for _ in 0 .. times {
+        grown.extend(exprs.iter().cloned());
+    }
+    value["v1"]["expr"]["variant"]["seq"]["exprs"] = serde_json::Value::Array(grown);
+    return serde_json::to_string(&value).unwrap();
+}
+
+#[test]
+#[ignore]
+fn profile_large_document() {
+    let source = include_str!("data/synth-midi-sine.at");
+    profile("synth-midi-sine", source);
+    profile("x4", &repeated(source, 4));
+    profile("x16", &repeated(source, 16));
 }

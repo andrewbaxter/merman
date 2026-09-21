@@ -134,7 +134,6 @@ pub struct Context {
     pub scroll: f64,
     pub scroll_start: f64,
     pub scroll_end: f64,
-    pub pending_scroll: Option<f64>,
     pub hover_brick: Option<BrickId>,
     pub hoverables: Vec<Option<Hoverable>>,
     pub hover: Option<HoverableId>,
@@ -204,7 +203,6 @@ impl Context {
             scroll: 0.,
             scroll_start: 0.,
             scroll_end: 0.,
-            pending_scroll: None,
             hover_brick: None,
             hoverables: vec![],
             hover: None,
@@ -226,6 +224,7 @@ impl Context {
         let cornerstone =
             c.visual_create_or_get_cornerstone_candidate(c.root_visual).expect("root produced no brick");
         c.wall_set_cornerstone(cornerstone, None, None);
+        c.context_apply_scroll();
         c.trigger_idle_lay_bricks_outward();
         return c;
     }
@@ -247,8 +246,9 @@ impl Context {
         }
     }
 
-    pub fn context_scrolled(&mut self, scroll: f64) {
-        self.scroll = scroll;
+    pub fn context_scroll_by(&mut self, delta: f64) {
+        self.scroll += delta;
+        self.context_apply_scroll();
     }
 
     pub fn atom_id_of_visual(&self, visual: VisualId) -> AtomId {
@@ -328,7 +328,12 @@ impl Context {
     }
 
     pub fn context_apply_scroll(&mut self) {
-        self.pending_scroll = Some(self.scroll);
+        let converse_pad = self.syntax.spec_root.pad.converse_start.round();
+        let scroll = self.scroll.round();
+        let animate = self.config.animate_course_placement;
+        for layer in [self.background_layer, self.text_layer, self.overlay_layer] {
+            self.display.node_set_position(layer, converse_pad, -scroll, animate);
+        }
     }
 
     pub fn scroll_visible(&mut self) {
