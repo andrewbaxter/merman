@@ -71,6 +71,7 @@ impl Vector {
 
 pub struct ContextConfig {
     pub lay_brick_batch_size: usize,
+    pub lay_beyond_view: f64,
     pub retry_expand_factor: f64,
     pub ellipsize_threshold: i64,
     pub animate_course_placement: bool,
@@ -84,6 +85,7 @@ impl Default for ContextConfig {
     fn default() -> Self {
         return ContextConfig {
             lay_brick_batch_size: 10,
+            lay_beyond_view: 1.,
             retry_expand_factor: 1.25,
             ellipsize_threshold: i64::MAX,
             animate_course_placement: false,
@@ -243,6 +245,7 @@ impl Context {
         if transverse_size != self.transverse_edge {
             self.transverse_edge = transverse_size;
             self.scroll_visible();
+            self.wall_view_changed();
         }
     }
 
@@ -334,6 +337,7 @@ impl Context {
         for layer in [self.background_layer, self.text_layer, self.overlay_layer] {
             self.display.node_set_position(layer, converse_pad, -scroll, animate);
         }
+        self.wall_view_changed();
     }
 
     pub fn scroll_visible(&mut self) {

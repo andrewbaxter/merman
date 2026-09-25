@@ -137,7 +137,7 @@ fn after_context(state: &Rc<RefCell<State>>) {
             let converse_edge = context.display.group_converse_span(context.text_layer);
             let (t_min, t_max) = context.wall_usage;
             let (x_span, y_span) = convert.direction_unconvert_span(converse_edge.max(edge), t_max - t_min);
-            let new_origin = convert.direction_unconvert(0., t_min, x_span, y_span);
+            let new_origin = convert.direction_unconvert(0., 0., x_span, y_span);
             if s.origin != new_origin {
                 s.origin = new_origin;
                 s.shift.ref_attr("style", &format!("left: {}px; top: {}px", -new_origin.0, -new_origin.1));

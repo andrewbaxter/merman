@@ -922,6 +922,71 @@ impl Context {
         }
     }
 
+    fn cursor_border_containing(&self, brick: BrickId) -> Option<BorderId> {
+        let c = self.cursor?;
+        let mut at = self.bricks[brick].inter.visual();
+        match self.cursor_get(c) {
+            Cursor::Atom(ca) => {
+                let field = self.visual_atom(ca.visual).selectable[ca.index].1;
+                loop {
+                    if at == field {
+                        return Some(ca.border);
+                    }
+                    at = self.visuals[at].parent?.visual;
+                }
+            },
+            Cursor::Array(ca) => {
+                loop {
+                    let p = self.visuals[at].parent?;
+                    if p.visual == ca.visual {
+                        let index = self.array_value_index(ca.visual, p.index);
+                        if index >= ca.begin_index && index <= ca.end_index {
+                            return Some(ca.border);
+                        }
+                        return None;
+                    }
+                    at = p.visual;
+                }
+            },
+            Cursor::Primitive(_) => return None,
+        }
+    }
+
+    pub fn cursor_brick_laid(&mut self, brick: BrickId, forward: bool) {
+        let Some(b) = self.cursor_border_containing(brick) else {
+            return;
+        };
+        if forward {
+            self.border_set_last(b, Some(brick));
+        } else {
+            self.border_set_first(b, Some(brick));
+        }
+    }
+
+    pub fn cursor_brick_destroying(&mut self, brick: BrickId) {
+        let Some(c) = self.cursor else {
+            return;
+        };
+        let border = match self.cursor_get(c) {
+            Cursor::Atom(ca) => ca.border,
+            Cursor::Array(ca) => ca.border,
+            Cursor::Primitive(_) => return,
+        };
+        let Some(bd) = self.borders[border].as_ref() else {
+            return;
+        };
+        let (first, last) = (bd.first, bd.last);
+        if last == Some(brick) {
+            let previous =
+                self.brick_previous(brick).filter(|p| self.cursor_border_containing(*p) == Some(border));
+            self.border_set_last(border, previous);
+        }
+        if first == Some(brick) {
+            let next = self.brick_next(brick).filter(|n| self.cursor_border_containing(*n) == Some(border));
+            self.border_set_first(border, next);
+        }
+    }
+
     pub fn atom_selectable_brick_created(&mut self, atom: VisualId, sel: usize, brick: BrickId, first: bool) {
         let mut borders = vec![];
         if let Some(c) = self.cursor {

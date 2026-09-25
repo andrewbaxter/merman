@@ -28,16 +28,10 @@ pub fn build(
 ) -> (Context, DisplayTest, EnvironmentTest) {
     let display = DisplayTest::default();
     let environment = EnvironmentTest::default();
-    let context =
-        Context::context_new(
-            syntax,
-            document,
-            ContextConfig::default(),
-            Box::new(display.clone()),
-            Box::new(environment.clone()),
-            converse,
-            transverse,
-        );
+    let context = Context::context_new(syntax, document, ContextConfig {
+        lay_beyond_view: f64::INFINITY,
+        ..ContextConfig::default()
+    }, Box::new(display.clone()), Box::new(environment.clone()), converse, transverse);
     return (context, display, environment);
 }
 

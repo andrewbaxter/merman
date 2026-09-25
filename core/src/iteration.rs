@@ -22,6 +22,7 @@ impl P {
     pub const WALL_COMPACT: f64 = 110.;
     pub const COURSE_EXPAND: f64 = -95.;
     pub const WALL_EXPAND: f64 = -100.;
+    pub const WALL_CULL: f64 = -110.;
 }
 
 pub enum TaskKind {
@@ -51,6 +52,7 @@ pub enum TaskKind {
         at: usize,
         expanding: Option<CourseId>,
     },
+    WallCull,
     LayBricks {
         ends: Vec<BrickId>,
         starts: Vec<BrickId>,
@@ -180,6 +182,11 @@ impl Context {
                     self.wall.idle_expand = None;
                 }
             },
+            TaskKind::WallCull => {
+                if self.wall.idle_cull == Some(task) {
+                    self.wall.idle_cull = None;
+                }
+            },
             TaskKind::LayBricks { .. } => {
                 if self.idle_lay_bricks == Some(task) {
                     self.idle_lay_bricks = None;
@@ -244,6 +251,7 @@ impl Context {
                     TaskKind::WallAdjust { .. } => break 'run_task self.run_wall_adjust(task_id),
                     TaskKind::WallCompact { .. } => break 'run_task self.run_wall_compact(task_id),
                     TaskKind::WallExpand { .. } => break 'run_task self.run_wall_expand(task_id, iteration),
+                    TaskKind::WallCull => break 'run_task self.run_wall_cull(),
                     TaskKind::LayBricks { .. } => {
                         break 'run_task 'run_lay_bricks: {
                             for _ in 0 .. self.config.lay_brick_batch_size {
@@ -256,11 +264,19 @@ impl Context {
                                     },
                                     _ => unreachable!(),
                                 };
+                                let margin = self.transverse_edge * self.config.lay_beyond_view;
                                 if let Some(end) = end {
-                                    if self.bricks[end].alive && self.bricks[end].course.is_some() {
+                                    if self.bricks[end].alive &&
+                                        self.bricks[end]
+                                            .course
+                                            .is_some_and(
+                                                |c| self.courses[c].transverse_start <=
+                                                    self.scroll + self.transverse_edge + margin,
+                                            ) {
                                         let inter = self.bricks[end].inter;
                                         if let ExtendBrickResult::Brick(created) = self.brick_create_next(inter) {
                                             self.brick_add_after(end, created);
+                                            self.cursor_brick_laid(created, true);
                                             if let Some(TaskKind::LayBricks { ends, .. }) =
                                                 self.task_kind_mut(task_id) {
                                                 ends.push(created);
@@ -269,10 +285,16 @@ impl Context {
                                     }
                                 }
                                 if let Some(start) = start {
-                                    if self.bricks[start].alive && self.bricks[start].course.is_some() {
+                                    if self.bricks[start].alive &&
+                                        self.bricks[start]
+                                            .course
+                                            .is_some_and(
+                                                |c| self.course_transverse_edge(c) >= self.scroll - margin,
+                                            ) {
                                         let inter = self.bricks[start].inter;
                                         if let ExtendBrickResult::Brick(created) = self.brick_create_previous(inter) {
                                             self.brick_add_before(start, created);
+                                            self.cursor_brick_laid(created, false);
                                             if let Some(TaskKind::LayBricks { starts, .. }) =
                                                 self.task_kind_mut(task_id) {
                                                 starts.push(created);

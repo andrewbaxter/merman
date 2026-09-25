@@ -197,7 +197,11 @@ impl Context {
                     border.first = None;
                 }
             },
-            AttachmentRef::BorderLast(_) => { },
+            AttachmentRef::BorderLast(b) => {
+                if let Some(border) = self.borders[b].as_mut() {
+                    border.last = None;
+                }
+            },
             AttachmentRef::TextBorderFirst(b) => {
                 if let Some(border) = self.text_borders[b].as_mut() {
                     border.first = None;

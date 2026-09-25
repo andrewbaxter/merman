@@ -123,6 +123,7 @@ pub struct Wall {
     pub idle_adjust: Option<TaskId>,
     pub idle_compact: Option<TaskId>,
     pub idle_expand: Option<TaskId>,
+    pub idle_cull: Option<TaskId>,
     pub mod_old_edge: f64,
 }
 
@@ -388,6 +389,7 @@ impl Context {
     }
 
     pub fn brick_destroy(&mut self, b: BrickId) {
+        self.cursor_brick_destroying(b);
         for a in self.bricks[b].attachments.clone() {
             self.attachment_destroy(a);
         }
@@ -1039,7 +1041,9 @@ impl Context {
         while let Some(last) = self.wall.children.last().copied() {
             self.course_destroy(last);
         }
-        for t in [self.wall.idle_compact, self.wall.idle_expand, self.wall.idle_adjust].into_iter().flatten() {
+        for t in [self.wall.idle_compact, self.wall.idle_expand, self.wall.idle_adjust, self.wall.idle_cull]
+            .into_iter()
+            .flatten() {
             self.task_destroy(t);
         }
     }
@@ -1118,6 +1122,46 @@ impl Context {
         }
     }
 
+    pub fn wall_view_changed(&mut self) {
+        self.trigger_idle_lay_bricks_outward();
+        if self.wall.idle_cull.is_none() {
+            let t = self.add_iteration(TaskKind::WallCull, P::WALL_CULL);
+            self.wall.idle_cull = Some(t);
+        }
+    }
+
+    pub fn run_wall_cull(&mut self) -> bool {
+        let Some(cornerstone_course) = self.wall.cornerstone_course else {
+            return false;
+        };
+        let margin = self.transverse_edge * self.config.lay_beyond_view * 2.;
+        let min = self.scroll - margin;
+        let max = self.scroll + self.transverse_edge + margin;
+        let culled = match (self.wall.children.first().copied(), self.wall.children.last().copied()) {
+            (Some(first), _) if self.course_transverse_edge(first) < min => first,
+            (_, Some(last)) if self.courses[last].transverse_start > max => last,
+            _ => return false,
+        };
+        if culled == cornerstone_course {
+            let Some(visible) =
+                self
+                    .wall
+                    .children
+                    .iter()
+                    .copied()
+                    .find(
+                        |c| self.course_transverse_edge(*c) >= self.scroll &&
+                            self.courses[*c].transverse_start <= self.scroll + self.transverse_edge,
+                    ) else {
+                    return false;
+                };
+            let anchor = self.courses[visible].children[0];
+            self.wall_set_cornerstone_existing(Some(anchor));
+        }
+        self.course_destroy(culled);
+        return true;
+    }
+
     pub fn wall_converse_edge_changed(&mut self, _old: f64, new: f64) {
         if new < self.wall.mod_old_edge {
             self.wall_idle_compact();
@@ -1146,15 +1190,14 @@ impl Context {
     ) {
         self.wall.cornerstone = Some(cornerstone);
         if self.bricks[cornerstone].course.is_none() {
-            if let Some(found) = find_previous {
-                self.brick_add_after(found, cornerstone);
-            } else if let Some(found) = find_next {
-                self.brick_add_before(found, cornerstone);
-            } else {
-                self.wall_clear();
-                let course = self.course_new(0.);
-                self.wall_add(0, vec![course]);
-                self.course_add(course, 0, vec![cornerstone]);
+            match (find_previous, find_next) {
+                (Some(found), Some(_)) => self.brick_add_after(found, cornerstone),
+                _ => {
+                    self.wall_clear();
+                    let course = self.course_new(0.);
+                    self.wall_add(0, vec![course]);
+                    self.course_add(course, 0, vec![cornerstone]);
+                },
             }
         }
         let course = self.bricks[cornerstone].course.unwrap();

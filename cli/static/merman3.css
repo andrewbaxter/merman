@@ -39,6 +39,13 @@ body { background: #222222; }
 /* Every node merman draws is placed by merman and takes no part in hit testing, so a
    mouse event lands on the panel and its offset is already the coordinate merman wants. */
 .merman_display { position: absolute; pointer-events: none; margin: 0; padding: 0; }
+/* A text brick is an svg holding one <text>, placed at the glyph box's corner, and a
+   drawing (cursor and hover boxes) an svg holding <path>s. Each svg is a single
+   pixel (an svg of zero size isn't rendered at all) and doesn't clip, so its size
+   never matters and glyph overhang shows. */
+.merman_display_text, .merman_display_drawing { width: 1px; height: 1px; overflow: visible; }
+/* Brick text is measured with its spaces, so it has to be drawn with them too. */
+.merman_display_text text { white-space: pre; }
 .merman_animate { transition: left 0.1s linear, top 0.1s linear; }
 
 .merman_rows { padding: 12px; font-family: monospace; font-size: 12px; color: #cacaca; }
