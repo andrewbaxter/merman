@@ -1,13 +1,12 @@
-use crate::client::client_send;
 use crate::panels::{
     panel_key_stroke,
-    PanelKey,
+    Panel,
+    PanelResult,
 };
-use futures::channel::oneshot::Receiver;
 use gloo_utils::window;
 use merman3_api::{
     ListEntry,
-    ReqList,
+    RespList,
 };
 use merman3_core::direction::DirectionConvert;
 use merman3_core::cursor::CursorKind;
@@ -20,13 +19,12 @@ use merman3_core::keys::{
 use merman3_core::spec::SpecDirection;
 use rooting::{
     el,
-    spawn_rooted,
     El,
 };
 use std::cell::RefCell;
-use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use web_sys::{
+    Element,
     HtmlElement,
     KeyboardEvent,
     MouseEvent,
@@ -35,54 +33,39 @@ use web_sys::{
 struct State {
     keys: Keymap,
     pending: Vec<KeyStroke>,
+    dir: String,
     parent: Option<String>,
     entries: Vec<ListEntry>,
     selected: Option<usize>,
-    panel: El,
-    rows: El,
-    request: Option<Receiver<()>>,
-    on_open: Rc<dyn Fn(&str)>,
+    remembered: Option<usize>,
+    attached: Option<(El, El)>,
 }
 
-fn draw(state: &Rc<RefCell<State>>) {
-    let rows;
-    {
-        let s = state.borrow();
-        if s.entries.is_empty() {
-            s.rows.ref_clear();
-            s.rows.ref_push(el("div").classes(&["merman_row_empty"]).text("empty"));
-            return;
-        }
-        rows = s.entries.iter().enumerate().map(|(i, entry)| {
-            let row = el("div").classes(&["merman_row"]);
-            if s.selected == Some(i) {
-                row.ref_classes(&["merman_row_select"]);
-            }
-            row.ref_push(el("span").classes(&["merman_icon"]).text(if entry.dir {
-                "\u{e2c7}"
-            } else {
-                ""
-            }));
-            row.ref_push(el("span").classes(&["merman_name"]).text(&entry.name));
-            row.ref_on("mousedown", {
-                let state = state.clone();
-                move |e| {
-                    let e: &MouseEvent = e.dyn_ref().unwrap();
-                    if e.button() != 0 {
-                        return;
-                    }
-                    e.prevent_default();
-                    state.borrow_mut().selected = Some(i);
-                    draw(&state);
-                }
-            });
-            return row;
-        }).collect::<Vec<_>>();
+fn draw(s: &State) {
+    let Some((panel, rows)) = s.attached.as_ref() else {
+        return;
+    };
+    if s.entries.is_empty() {
+        rows.ref_clear();
+        rows.ref_push(el("div").classes(&["merman_row_empty"]).text("empty"));
+        return;
     }
-    let s = state.borrow();
-    s.rows.ref_clear();
-    s.rows.ref_extend(rows);
-    let panel = s.panel.raw();
+    let new_rows = s.entries.iter().enumerate().map(|(i, entry)| {
+        let row = el("div").classes(&["merman_row"]);
+        if s.selected == Some(i) {
+            row.ref_classes(&["merman_row_select"]);
+        }
+        row.ref_push(el("span").classes(&["merman_icon"]).text(if entry.dir {
+            "\u{e2c7}"
+        } else {
+            ""
+        }));
+        row.ref_push(el("span").classes(&["merman_name"]).text(&entry.name));
+        return row;
+    }).collect::<Vec<_>>();
+    rows.ref_clear();
+    rows.ref_extend(new_rows);
+    let panel = panel.raw();
     let Some(row) = panel.query_selector(".merman_row_select").ok().flatten() else {
         return;
     };
@@ -98,63 +81,89 @@ fn draw(state: &Rc<RefCell<State>>) {
     }
 }
 
-pub struct FilesystemPanel(Rc<RefCell<State>>);
+pub struct FilesystemPanel(RefCell<State>);
 
 impl FilesystemPanel {
-    pub fn filesystem_new(keys: Keymap, on_open: impl Fn(&str) + 'static) -> FilesystemPanel {
-        let rows = el("div").classes(&["merman_rows"]);
-        let panel = el("div").classes(&["merman_panel", "merman_panel_filesystem"]).push(rows.clone());
-        let state = Rc::new(RefCell::new(State {
+    pub fn filesystem_new(keys: Keymap, listing: RespList, select: Option<String>) -> FilesystemPanel {
+        let selected = select.and_then(|path| listing.entries.iter().position(|e| e.path == path));
+        let state = State {
             keys: keys,
             pending: vec![],
-            parent: None,
-            entries: vec![],
-            selected: None,
-            panel: panel.clone(),
-            rows: rows,
-            request: None,
-            on_open: Rc::new(on_open),
-        }));
-        return FilesystemPanel(state);
+            dir: listing.dir,
+            parent: listing.parent,
+            entries: listing.entries,
+            selected: selected,
+            remembered: selected,
+            attached: None,
+        };
+        return FilesystemPanel(RefCell::new(state));
     }
 
-    pub fn filesystem_element(&self) -> El {
-        return self.0.borrow().panel.clone();
+    fn filesystem_select(&self, index: usize) -> PanelResult {
+        let mut s = self.0.borrow_mut();
+        if s.selected == Some(index) {
+            return PanelResult::Used;
+        }
+        s.selected = Some(index);
+        s.remembered = Some(index);
+        draw(&s);
+        return PanelResult::Selected;
+    }
+}
+
+impl Panel for FilesystemPanel {
+    fn panel_attach(&self) -> El {
+        let rows = el("div").classes(&["merman_rows"]);
+        let panel = el("div").classes(&["merman_panel", "merman_panel_filesystem"]).push(rows.clone());
+        let mut s = self.0.borrow_mut();
+        s.attached = Some((panel.clone(), rows));
+        draw(&s);
+        return panel;
     }
 
-    pub fn filesystem_show(&self, dir: &str) {
-        let state = self.0.clone();
-        let dir = dir.to_string();
-        let request = spawn_rooted(async move {
-            match client_send(ReqList { dir: dir }).await {
-                Ok(listing) => {
-                    {
-                        let mut s = state.borrow_mut();
-                        s.parent = listing.parent;
-                        s.entries = listing.entries;
-                        s.selected = if s.entries.is_empty() {
-                            None
-                        } else {
-                            Some(0)
-                        };
-                    }
-                    state.borrow().panel.raw().scroll_to_with_x_and_y(0., 0.);
-                    draw(&state);
-                },
-                Err(e) => {
-                    let s = state.borrow();
-                    s.rows.ref_clear();
-                    s.rows.ref_push(el("pre").classes(&["merman_error"]).text(&e));
-                },
+    fn panel_detach(&self) {
+        self.0.borrow_mut().attached = None;
+        return;
+    }
+
+    fn panel_path(&self) -> String {
+        return self.0.borrow().dir.clone();
+    }
+
+    fn panel_parent(&self) -> Option<String> {
+        return self.0.borrow().parent.clone();
+    }
+
+    fn panel_selection(&self) -> Option<(bool, String)> {
+        let s = self.0.borrow();
+        return s.selected.map(|i| (s.entries[i].dir, s.entries[i].path.clone()));
+    }
+
+    fn panel_focusable(&self) -> bool {
+        return true;
+    }
+
+    fn panel_focused(&self, focused: bool) {
+        let mut s = self.0.borrow_mut();
+        if focused {
+            if s.selected.is_some() || s.entries.is_empty() {
+                return;
             }
-        });
-        self.0.borrow_mut().request = Some(request);
+            s.selected = Some(s.remembered.unwrap_or(0));
+        } else {
+            if s.selected.is_none() {
+                return;
+            }
+            s.selected = None;
+        }
+        draw(&s);
+        return;
     }
 
-    pub fn filesystem_key(&self, e: &KeyboardEvent) -> PanelKey {
+    fn panel_key(&self, e: &KeyboardEvent) -> PanelResult {
         let Some(stroke) =
             panel_key_stroke(e, DirectionConvert::new(SpecDirection::Right, SpecDirection::Down)) else {
-                return PanelKey::Ignored;
+                return PanelResult::Ignored;
             };
         let resolved = {
             let mut s = self.0.borrow_mut();
@@ -164,60 +173,67 @@ impl FilesystemPanel {
             resolved
         };
         let action = match resolved {
-            KeyResolve::Unbound => return PanelKey::Ignored,
-            KeyResolve::Pending => return PanelKey::Used,
+            KeyResolve::Unbound => return PanelResult::Ignored,
+            KeyResolve::Pending => return PanelResult::Used,
             KeyResolve::Action(a) => a,
         };
-        let (count, selected, parent) = {
+        let (count, selected) = {
             let s = self.0.borrow();
-            (s.entries.len(), s.selected, s.parent.clone())
+            (s.entries.len(), s.selected)
         };
-        let select = |new: usize| -> PanelKey {
-            if Some(new) == selected {
-                return PanelKey::Used;
-            }
-            self.0.borrow_mut().selected = Some(new);
-            draw(&self.0);
-            return PanelKey::Used;
-        };
-        match action {
-            Action::Exit => {
-                let Some(parent) = parent else {
-                    return PanelKey::Unused(action);
-                };
-                self.filesystem_show(&parent);
-                return PanelKey::Used;
-            },
-            _ => { },
+        if count == 0 {
+            return PanelResult::Unused(action);
         }
         let Some(selected) = selected else {
-            return PanelKey::Unused(action);
+            match action {
+                Action::NextElement |
+                Action::SelectNext |
+                Action::PreviousElement |
+                Action::SelectPrevious |
+                Action::FirstElement => return self.filesystem_select(
+                    0,
+                ),
+                Action::LastElement => return self.filesystem_select(count - 1),
+                _ => return PanelResult::Unused(action),
+            }
         };
         match action {
-            Action::Enter => {
-                let (dir, path, on_open) = {
-                    let s = self.0.borrow();
-                    let entry = &s.entries[selected];
-                    (entry.dir, entry.path.clone(), s.on_open.clone())
-                };
-                if dir {
-                    self.filesystem_show(&path);
-                } else {
-                    on_open(&path);
-                }
-                return PanelKey::Used;
-            },
-            Action::NextElement | Action::SelectNext => return select((selected + 1) % count),
-            Action::PreviousElement | Action::SelectPrevious => return select((selected + count - 1) % count),
-            Action::FirstElement => return select(0),
-            Action::LastElement => return select(count - 1),
+            Action::NextElement | Action::SelectNext => return self.filesystem_select((selected + 1) % count),
+            Action::PreviousElement | Action::SelectPrevious => return self.filesystem_select(
+                (selected + count - 1) % count,
+            ),
+            Action::FirstElement => return self.filesystem_select(0),
+            Action::LastElement => return self.filesystem_select(count - 1),
             Action::Copy => {
                 let path = self.0.borrow().entries[selected].path.clone();
                 let _ = window().navigator().clipboard().write_text(&path);
-                return PanelKey::Used;
+                return PanelResult::Used;
             },
-            Action::Exit => unreachable!(),
-            _ => return PanelKey::Unused(action),
+            _ => return PanelResult::Unused(action),
         }
+    }
+
+    fn panel_mouse(&self, e: &MouseEvent) -> PanelResult {
+        if e.button() != 0 {
+            return PanelResult::Ignored;
+        }
+        let Some(target) = e.target().and_then(|t| t.dyn_into::<Element>().ok()) else {
+            return PanelResult::Ignored;
+        };
+        let Some(row) = target.closest(".merman_row").ok().flatten() else {
+            return PanelResult::Ignored;
+        };
+        let index = {
+            let s = self.0.borrow();
+            let Some((_, rows)) = s.attached.as_ref() else {
+                return PanelResult::Ignored;
+            };
+            let children = rows.raw().children();
+            (0 .. children.length()).find(|i| children.item(*i).is_some_and(|c| c.is_same_node(Some(&row))))
+        };
+        let Some(index) = index else {
+            return PanelResult::Ignored;
+        };
+        return self.filesystem_select(index as usize);
     }
 }

@@ -1,11 +1,16 @@
 use crate::client::client_send;
 use crate::panels::code::CodePanel;
+use crate::panels::error::ErrorPanel;
 use crate::panels::filesystem::FilesystemPanel;
-use crate::panels::PanelKey;
+use crate::panels::{
+    Panel,
+    PanelResult,
+};
 use futures::channel::oneshot::Receiver;
 use gloo_events::EventListener;
 use gloo_utils::document;
 use merman3_api::{
+    ReqList,
     ReqOpen,
     ReqStart,
 };
@@ -28,6 +33,7 @@ use std::cell::{
     Cell,
     RefCell,
 };
+use std::collections::HashMap;
 use std::rc::{
     Rc,
     Weak,
@@ -39,112 +45,234 @@ use web_sys::{
     MouseEvent,
 };
 
-#[derive(Clone, Copy, PartialEq)]
-enum Focus {
-    Filesystem,
-    Code,
-}
-
 struct Editor {
     keys: Keymap,
-    panels: El,
-    filesystem: RefCell<Option<FilesystemPanel>>,
-    code: RefCell<Option<CodePanel>>,
-    right: RefCell<Option<El>>,
-    focus: Cell<Focus>,
-    request: RefCell<Option<Receiver<()>>>,
+    element: El,
+    panels: RefCell<Vec<Rc<dyn Panel>>>,
+    shown: RefCell<Vec<(Rc<dyn Panel>, El)>>,
+    focus: Cell<usize>,
+    focus_next: Cell<bool>,
+    selections: RefCell<HashMap<String, String>>,
+    child_request: RefCell<Option<Receiver<()>>>,
+    parent_request: RefCell<Option<Receiver<()>>>,
 }
 
-fn editor_right(editor: &Rc<Editor>, element: El) {
-    let current = editor.right.borrow().as_ref().map(|e| e.ptr_id());
-    if current == Some(element.ptr_id()) {
+async fn editor_list(editor: &Editor, dir: String, select: Option<String>) -> Rc<dyn Panel> {
+    let keys = editor.keys.clone();
+    let select = select.or_else(|| editor.selections.borrow().get(&dir).cloned());
+    match client_send(ReqList { dir: dir.clone() }).await {
+        Ok(listing) => return Rc::new(FilesystemPanel::filesystem_new(keys, listing, select)),
+        Err(e) => return Rc::new(ErrorPanel::error_new(dir, &e)),
+    }
+}
+
+fn panel_same(a: &Rc<dyn Panel>, b: &Rc<dyn Panel>) -> bool {
+    return std::ptr::addr_eq(Rc::as_ptr(a), Rc::as_ptr(b));
+}
+
+fn editor_index(editor: &Editor, panel: &Rc<dyn Panel>) -> Option<usize> {
+    return editor.panels.borrow().iter().position(|p| panel_same(p, panel));
+}
+
+fn editor_show(editor: &Rc<Editor>) {
+    let panels = editor.panels.borrow();
+    let wanted = &panels[panels.len().saturating_sub(2)..];
+    let mut shown = editor.shown.borrow_mut();
+    let mut i = 0;
+    while i < shown.len() {
+        if wanted.iter().any(|w| panel_same(w, &shown[i].0)) {
+            i += 1;
+            continue;
+        }
+        editor.element.ref_splice(i, 1, vec![]);
+        let (panel, _) = shown.remove(i);
+        panel.panel_detach();
+    }
+    for (i, panel) in wanted.iter().enumerate() {
+        if shown.iter().any(|(p, _)| panel_same(p, panel)) {
+            continue;
+        }
+        let element = panel.panel_attach();
+        element.ref_on("mousedown", {
+            let editor: Weak<Editor> = Rc::downgrade(editor);
+            let panel = panel.clone();
+            move |e| {
+                let e: &MouseEvent = e.dyn_ref().unwrap();
+                let Some(editor) = editor.upgrade() else {
+                    return;
+                };
+                let Some(index) = editor_index(&editor, &panel) else {
+                    return;
+                };
+                if e.button() == 0 {
+                    editor_focus(&editor, index);
+                }
+                if editor_result(&editor, index, panel.panel_mouse(e)) {
+                    e.prevent_default();
+                }
+            }
+        });
+        editor.element.ref_splice(i, 0, vec![element.clone()]);
+        shown.insert(i, (panel.clone(), element));
+    }
+    for (panel, element) in shown.iter() {
+        let focused = panels.get(editor.focus.get()).is_some_and(|f| panel_same(panel, f));
+        element.ref_modify_classes(&[("merman_panel_focus", focused)]);
+        if focused {
+            element.raw().scroll_into_view();
+        }
+    }
+    return;
+}
+
+fn editor_focus(editor: &Rc<Editor>, index: usize) {
+    editor.focus.set(index);
+    editor.focus_next.set(false);
+    let count = editor.panels.borrow().len();
+    editor_splice(editor, (index + 2).min(count), count.saturating_sub(index + 2), vec![]);
+    let (panel, child) = {
+        let panels = editor.panels.borrow();
+        (panels[index].clone(), panels.get(index + 1).cloned())
+    };
+    if let Some(child) = child {
+        child.panel_focused(false);
+    }
+    panel.panel_focused(true);
+    editor_show(editor);
+    editor_sync(editor, index);
+    return;
+}
+
+fn editor_splice(editor: &Rc<Editor>, offset: usize, remove: usize, add: Vec<Rc<dyn Panel>>) {
+    let focus = editor.focus.get();
+    if focus >= offset + remove {
+        editor.focus.set(focus - remove + add.len());
+    }
+    editor.panels.borrow_mut().splice(offset .. offset + remove, add);
+    editor_show(editor);
+    return;
+}
+
+fn editor_sync(editor: &Rc<Editor>, index: usize) {
+    let panel = editor.panels.borrow()[index].clone();
+    let count = editor.panels.borrow().len();
+    let Some((dir, path)) = panel.panel_selection() else {
+        editor_splice(editor, index + 1, count - index - 1, vec![]);
+        return;
+    };
+    *editor.child_request.borrow_mut() = None;
+    let current = editor.panels.borrow().get(index + 1).map(|p| p.panel_path());
+    if current.as_deref() == Some(path.as_str()) {
         return;
     }
-    let replace = current.is_some();
-    editor.panels.ref_splice(1, if replace {
-        1
-    } else {
-        0
-    }, vec![element.clone()]);
-    *editor.right.borrow_mut() = Some(element);
-}
-
-fn editor_focus(editor: &Rc<Editor>, focus: Focus) {
-    editor.focus.set(focus);
-    if let Some(filesystem) = editor.filesystem.borrow().as_ref() {
-        filesystem.filesystem_element().ref_modify_classes(&[("merman_panel_focus", focus == Focus::Filesystem)]);
-    }
-    if let Some(right) = editor.right.borrow().as_ref() {
-        right.ref_modify_classes(&[("merman_panel_focus", focus == Focus::Code)]);
-    }
-}
-
-fn editor_open(editor: &Rc<Editor>, path: &str) {
-    let path = path.to_string();
+    editor_splice(editor, index + 1, count - index - 1, vec![]);
+    editor.selections.borrow_mut().insert(panel.panel_path(), path.clone());
     let request = spawn_rooted({
-        let editor = editor.clone();
+        let keys = editor.keys.clone();
+        let editor: Weak<Editor> = Rc::downgrade(editor);
         async move {
-            let opened = match client_send(ReqOpen { path: path }).await {
-                Ok(opened) => opened,
-                Err(e) => {
-                    editor_right(&editor, el("pre").classes(&["merman_panel", "merman_error"]).text(&e));
-                    editor_focus(&editor, Focus::Code);
+            let child: Rc<dyn Panel> = if dir {
+                let Some(editor) = editor.upgrade() else {
                     return;
-                },
-            };
-            let built = (|| -> Result<_, String> {
-                let spec: SpecSyntax =
-                    serde_json::from_str(&opened.syntax).map_err(|e| format!("Error parsing syntax JSON: {}", e))?;
-                let syntax = Rc::new(Syntax::syntax_resolve(spec).map_err(|e| format!("Syntax errors:\n{}", e))?);
-                let value: serde_json::Value =
-                    serde_json::from_str(&opened.source).map_err(|e| format!("Error parsing source JSON: {}", e))?;
-                let document =
-                    Rc::new(
-                        match_document(
-                            &syntax,
-                            &value,
-                        ).map_err(|e| format!("Source doesn't match syntax:\n{}", e.mismatch_format()))?,
-                    );
-                return Ok((syntax, document));
-            })();
-            let (syntax, document) = match built {
-                Ok(v) => v,
-                Err(e) => {
-                    editor_right(&editor, el("pre").classes(&["merman_panel", "merman_error"]).text(&e));
-                    editor_focus(&editor, Focus::Code);
-                    return;
-                },
-            };
-            let element = {
-                let mut code = editor.code.borrow_mut();
-                match code.as_ref() {
-                    Some(code) => {
-                        code.code_set(syntax, document);
-                        code.code_element()
-                    },
-                    None => {
-                        let panel = CodePanel::code_new(editor.keys.clone(), syntax, document);
-                        let element = panel.code_element();
-                        element.ref_on("mousedown", {
-                            let editor = editor.clone();
-                            move |e| {
-                                let e: &MouseEvent = e.dyn_ref().unwrap();
-                                if e.button() != 0 {
-                                    return;
-                                }
-                                editor_focus(&editor, Focus::Code);
-                            }
-                        });
-                        *code = Some(panel);
-                        element
-                    },
+                };
+                editor_list(&editor, path, None).await
+            } else {
+                let built = match client_send(ReqOpen { path: path.clone() }).await {
+                    Ok(opened) => (|| -> Result<_, String> {
+                        let spec: SpecSyntax =
+                            serde_json::from_str(
+                                &opened.syntax,
+                            ).map_err(|e| format!("Error parsing syntax JSON: {}", e))?;
+                        let syntax =
+                            Rc::new(Syntax::syntax_resolve(spec).map_err(|e| format!("Syntax errors:\n{}", e))?);
+                        let value: serde_json::Value =
+                            serde_json::from_str(
+                                &opened.source,
+                            ).map_err(|e| format!("Error parsing source JSON: {}", e))?;
+                        let document =
+                            Rc::new(
+                                match_document(
+                                    &syntax,
+                                    &value,
+                                ).map_err(|e| format!("Source doesn't match syntax:\n{}", e.mismatch_format()))?,
+                            );
+                        return Ok((syntax, document));
+                    })(),
+                    Err(e) => Err(e),
+                };
+                match built {
+                    Ok((syntax, document)) => Rc::new(CodePanel::code_new(keys, path, syntax, document)),
+                    Err(e) => Rc::new(ErrorPanel::error_new(path, &e)),
                 }
             };
-            editor_right(&editor, element);
-            editor_focus(&editor, Focus::Code);
+            let Some(editor) = editor.upgrade() else {
+                return;
+            };
+            let Some(index) = editor_index(&editor, &panel) else {
+                return;
+            };
+            let jump = editor.focus.get() == index && editor.focus_next.get() && child.panel_focusable();
+            let count = editor.panels.borrow().len();
+            editor_splice(&editor, index + 1, count - index - 1, vec![child]);
+            if jump {
+                editor_focus(&editor, index + 1);
+            }
         }
     });
-    *editor.request.borrow_mut() = Some(request);
+    *editor.child_request.borrow_mut() = Some(request);
+    return;
+}
+
+fn editor_result(editor: &Rc<Editor>, index: usize, result: PanelResult) -> bool {
+    let action = match result {
+        PanelResult::Ignored => return false,
+        PanelResult::Used => return true,
+        PanelResult::Selected => {
+            editor_sync(editor, index);
+            return true;
+        },
+        PanelResult::Unused(action) => action,
+    };
+    match action {
+        Action::Enter => {
+            let child = editor.panels.borrow().get(index + 1).cloned();
+            match child {
+                Some(child) => {
+                    if child.panel_focusable() {
+                        editor_focus(editor, index + 1);
+                    }
+                },
+                None => editor.focus_next.set(true),
+            }
+        },
+        Action::Exit => {
+            if index > 0 {
+                editor_focus(editor, index - 1);
+                return true;
+            }
+            let panel = editor.panels.borrow()[0].clone();
+            let Some(parent) = panel.panel_parent() else {
+                return true;
+            };
+            let request = spawn_rooted({
+                let editor: Weak<Editor> = Rc::downgrade(editor);
+                async move {
+                    let Some(editor) = editor.upgrade() else {
+                        return;
+                    };
+                    let parent = editor_list(&editor, parent, Some(panel.panel_path())).await;
+                    if editor_index(&editor, &panel) != Some(0) {
+                        return;
+                    }
+                    editor_splice(&editor, 0, 0, vec![parent]);
+                    editor_focus(&editor, 0);
+                }
+            });
+            *editor.parent_request.borrow_mut() = Some(request);
+        },
+        _ => { },
+    }
+    return true;
 }
 
 #[wasm_bindgen]
@@ -173,79 +301,35 @@ pub fn start_editor() {
             },
         };
         let editor = Rc::new(Editor {
-            keys: keys.clone(),
-            panels: el("div").classes(&["merman_panels"]),
-            filesystem: RefCell::new(None),
-            code: RefCell::new(None),
-            right: RefCell::new(None),
-            focus: Cell::new(Focus::Filesystem),
-            request: RefCell::new(None),
+            keys: keys,
+            element: el("div").classes(&["merman_panels"]),
+            panels: RefCell::new(vec![]),
+            shown: RefCell::new(vec![]),
+            focus: Cell::new(0),
+            focus_next: Cell::new(false),
+            selections: RefCell::new(HashMap::new()),
+            child_request: RefCell::new(None),
+            parent_request: RefCell::new(None),
         });
-        let filesystem = FilesystemPanel::filesystem_new(keys, {
-            let editor: Weak<Editor> = Rc::downgrade(&editor);
-            move |path| {
-                let Some(editor) = editor.upgrade() else {
-                    return;
-                };
-                editor_open(&editor, path);
-            }
-        });
-        let element = filesystem.filesystem_element();
-        element.ref_on("mousedown", {
-            let editor = editor.clone();
-            move |e| {
-                let e: &MouseEvent = e.dyn_ref().unwrap();
-                if e.button() != 0 {
-                    return;
-                }
-                editor_focus(&editor, Focus::Filesystem);
-            }
-        });
-        editor.panels.ref_push(element);
-        *editor.filesystem.borrow_mut() = Some(filesystem);
-        editor.panels.ref_own(|_| EventListener::new(&document(), "keydown", {
+        let root = editor_list(&editor, start.dir, start.file.clone()).await;
+        editor.element.ref_own(|_| EventListener::new(&document(), "keydown", {
             let editor = editor.clone();
             move |e| {
                 let e: &KeyboardEvent = e.dyn_ref().unwrap();
-                let editor = &editor;
-                let focus = editor.focus.get();
-                let handled = match focus {
-                    Focus::Filesystem => {
-                        let filesystem = editor.filesystem.borrow();
-                        match filesystem.as_ref() {
-                            Some(filesystem) => filesystem.filesystem_key(e),
-                            None => PanelKey::Ignored,
-                        }
-                    },
-                    Focus::Code => {
-                        let code = editor.code.borrow();
-                        match code.as_ref() {
-                            Some(code) => code.code_key(e),
-                            None => PanelKey::Ignored,
-                        }
-                    },
+                let index = editor.focus.get();
+                let panel = editor.panels.borrow().get(index).cloned();
+                let Some(panel) = panel else {
+                    return;
                 };
-                match handled {
-                    PanelKey::Ignored => return,
-                    PanelKey::Used => {
-                        e.prevent_default();
-                        return;
-                    },
-                    PanelKey::Unused(action) => {
-                        e.prevent_default();
-                        if focus == Focus::Code && action == Action::Exit {
-                            editor_focus(editor, Focus::Filesystem);
-                        }
-                    },
+                if editor_result(&editor, index, panel.panel_key(e)) {
+                    e.prevent_default();
                 }
             }
         }));
-        set_root(vec![editor.panels.clone()]);
-        editor.filesystem.borrow().as_ref().unwrap().filesystem_show(&start.dir);
-        editor_focus(&editor, Focus::Filesystem);
-        if let Some(file) = &start.file {
-            editor_open(&editor, file);
-        }
+        set_root(vec![editor.element.clone()]);
+        editor_splice(&editor, 0, 0, vec![root]);
+        editor_focus(&editor, 0);
+        editor.focus_next.set(start.file.is_some());
         set_root_non_dom(editor);
     });
 }

@@ -6,7 +6,8 @@ use crate::panels::code::display::{
 };
 use crate::panels::{
     panel_key_stroke,
-    PanelKey,
+    Panel,
+    PanelResult,
 };
 use gloo_render::{
     request_animation_frame,
@@ -31,7 +32,10 @@ use rooting::{
     el,
     El,
 };
-use std::cell::RefCell;
+use std::cell::{
+    Cell,
+    RefCell,
+};
 use std::collections::HashMap;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
@@ -58,6 +62,7 @@ struct State {
     document: Rc<Document>,
     keys: Keymap,
     context: Option<Context>,
+    focused: bool,
     panel: El,
     host: El,
     shift: El,
@@ -97,10 +102,15 @@ impl State {
             widths: HashMap::new(),
             metrics: HashMap::new(),
         };
-        self.context = Some(Context::context_new(self.syntax.clone(), self.document.clone(), ContextConfig {
+        let mut ctx = Context::context_new(self.syntax.clone(), self.document.clone(), ContextConfig {
             keys: self.keys.clone(),
             ..ContextConfig::default()
-        }, Box::new(display), Box::new(EnvironmentWeb), converse, transverse));
+        }, Box::new(display), Box::new(EnvironmentWeb), converse, transverse);
+        if self.focused {
+            let root = ctx.root_visual;
+            ctx.visual_select_into_any_child(root);
+        }
+        self.context = Some(ctx);
     }
 }
 
@@ -158,18 +168,39 @@ fn after_context(state: &Rc<RefCell<State>>) {
     }
 }
 
-pub struct CodePanel(Rc<RefCell<State>>);
+pub struct CodePanel {
+    keys: Keymap,
+    path: String,
+    syntax: Rc<Syntax>,
+    document: Rc<Document>,
+    focused: Cell<bool>,
+    attached: RefCell<Option<Rc<RefCell<State>>>>,
+}
 
 impl CodePanel {
-    pub fn code_new(keys: Keymap, syntax: Rc<Syntax>, document: Rc<Document>) -> CodePanel {
+    pub fn code_new(keys: Keymap, path: String, syntax: Rc<Syntax>, document: Rc<Document>) -> CodePanel {
+        return CodePanel {
+            keys: keys,
+            path: path,
+            syntax: syntax,
+            document: document,
+            focused: Cell::new(false),
+            attached: RefCell::new(None),
+        };
+    }
+}
+
+impl Panel for CodePanel {
+    fn panel_attach(&self) -> El {
         let shift = display_el("merman_origin");
         let host = el("div").classes(&["merman"]).push(shift.clone());
         let panel = el("div").classes(&["merman_panel", "merman_panel_code"]).push(host.clone());
         let state = Rc::new(RefCell::new(State {
-            syntax: syntax,
-            document: document,
-            keys: keys,
+            syntax: self.syntax.clone(),
+            document: self.document.clone(),
+            keys: self.keys.clone(),
             context: None,
+            focused: self.focused.get(),
             panel: panel.clone(),
             host: host.clone(),
             shift: shift,
@@ -180,7 +211,6 @@ impl CodePanel {
             hover_raf: None,
             timer: None,
         }));
-        let out = CodePanel(state.clone());
         host.ref_on_resize({
             let state = state.clone();
             move |_, inline_size, block_size| {
@@ -277,45 +307,73 @@ impl CodePanel {
                 });
             }
         });
-        return out;
+        *self.attached.borrow_mut() = Some(state);
+        return panel;
     }
 
-    pub fn code_element(&self) -> El {
-        return self.0.borrow().panel.clone();
+    fn panel_detach(&self) {
+        *self.attached.borrow_mut() = None;
+        return;
     }
 
-    pub fn code_set(&self, syntax: Rc<Syntax>, document: Rc<Document>) {
-        {
-            let mut s = self.0.borrow_mut();
-            s.syntax = syntax;
-            s.document = document;
-            s.context = None;
-            s.origin = (0., 0.);
-            s.shift.ref_clear();
-        }
-        self.0.borrow_mut().lay_out();
-        after_context(&self.0);
+    fn panel_path(&self) -> String {
+        return self.path.clone();
     }
 
-    pub fn code_key(&self, e: &KeyboardEvent) -> PanelKey {
-        let convert = self.0.borrow().convert();
+    fn panel_parent(&self) -> Option<String> {
+        return None;
+    }
+
+    fn panel_selection(&self) -> Option<(bool, String)> {
+        return None;
+    }
+
+    fn panel_focusable(&self) -> bool {
+        return true;
+    }
+
+    fn panel_focused(&self, focused: bool) {
+        self.focused.set(focused);
+        let Some(state) = self.attached.borrow().clone() else {
+            return;
+        };
+        state.borrow_mut().focused = focused;
+        with_context(&state, |ctx| {
+            if !focused {
+                ctx.clear_cursor();
+                return;
+            }
+            if ctx.cursor.is_some() {
+                return;
+            }
+            let root = ctx.root_visual;
+            ctx.visual_select_into_any_child(root);
+        });
+        return;
+    }
+
+    fn panel_key(&self, e: &KeyboardEvent) -> PanelResult {
+        let Some(state) = self.attached.borrow().clone() else {
+            return PanelResult::Ignored;
+        };
+        let convert = state.borrow().convert();
         let Some(stroke) = panel_key_stroke(e, convert) else {
-            return PanelKey::Ignored;
+            return PanelResult::Ignored;
         };
         let resolved = {
-            let mut s = self.0.borrow_mut();
+            let mut s = state.borrow_mut();
             match s.context.as_mut() {
                 Some(ctx) => ctx.key_resolve(stroke),
-                None => return PanelKey::Ignored,
+                None => return PanelResult::Ignored,
             }
         };
         let action = match resolved {
-            KeyResolve::Unbound => return PanelKey::Ignored,
-            KeyResolve::Pending => return PanelKey::Used,
+            KeyResolve::Unbound => return PanelResult::Ignored,
+            KeyResolve::Pending => return PanelResult::Used,
             KeyResolve::Action(a) => a,
         };
         let handled = {
-            let mut s = self.0.borrow_mut();
+            let mut s = state.borrow_mut();
             let ctx = s.context.as_mut().unwrap();
             let handled = ctx.key_action(action);
             if handled {
@@ -323,10 +381,14 @@ impl CodePanel {
             }
             handled
         };
-        after_context(&self.0);
+        after_context(&state);
         if handled {
-            return PanelKey::Used;
+            return PanelResult::Used;
         }
-        return PanelKey::Unused(action);
+        return PanelResult::Unused(action);
+    }
+
+    fn panel_mouse(&self, _e: &MouseEvent) -> PanelResult {
+        return PanelResult::Ignored;
     }
 }

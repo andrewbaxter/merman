@@ -1,5 +1,8 @@
 use crate::panels::code::CodePanel;
-use crate::panels::PanelKey;
+use crate::panels::{
+    Panel,
+    PanelResult,
+};
 use gloo_events::EventListener;
 use gloo_utils::document;
 use merman3_core::keys::{
@@ -52,14 +55,14 @@ pub fn start_demo() {
                     &value,
                 ).map_err(|e| format!("Source doesn't match syntax:\n{}", e.mismatch_format()))?,
             );
-        let panel = Rc::new(CodePanel::code_new(keys, syntax, document_));
-        let element = panel.code_element();
+        let panel = Rc::new(CodePanel::code_new(keys, String::new(), syntax, document_));
+        let element = panel.panel_attach();
         element.ref_classes(&["merman_panel_focus"]);
         element.ref_own(|_| EventListener::new(&document(), "keydown", {
             let panel = panel.clone();
             move |e| {
                 let e: &KeyboardEvent = e.dyn_ref().unwrap();
-                if let PanelKey::Ignored = panel.code_key(e) {
+                if let PanelResult::Ignored = panel.panel_key(e) {
                     return;
                 }
                 e.prevent_default();

@@ -9,8 +9,10 @@ body { background: #222222; }
 .merman_panels { display: flex; align-items: stretch; height: 100vh; }
 .merman_panel { overflow: auto; position: relative; box-sizing: border-box; }
 
-/* The filesystem panel gets a third of the row and the code panel two thirds,
-   which at the narrowest width that fits both is exactly their minimums. */
+/* Each panel shows the selection of the one to its left, and only the last two
+   are shown. A filesystem panel gets a third of the row and a code panel two
+   thirds, which at the narrowest width that fits one of each is exactly their
+   minimums. */
 .merman_panel_filesystem { flex: 1 1 0; min-width: 10cm; background: #2b2b2b; }
 .merman_panel_code, pre.merman_panel { flex: 2 1 0; min-width: 20cm; }
 
@@ -19,8 +21,8 @@ body { background: #222222; }
    already the coordinate merman wants. */
 .merman_panel_code { overflow: hidden; }
 
-/* Below the two minimums together there's no room for both, so only the panel
-   being used is shown and it takes the whole row. */
+/* Below the two minimums together there's no room for a listing beside a file, so
+   only the panel being used is shown and it takes the whole row. */
 @media (max-width: 30cm) {
   .merman_panel { min-width: 0; }
   .merman_panel:not(.merman_panel_focus) { display: none; }

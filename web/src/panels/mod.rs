@@ -1,4 +1,5 @@
 pub mod code;
+pub mod error;
 pub mod filesystem;
 
 use merman3_core::direction::DirectionConvert;
@@ -8,12 +9,29 @@ use merman3_core::keys::{
     KeyStroke,
 };
 use merman3_core::spec::SpecDirection;
-use web_sys::KeyboardEvent;
+use rooting::El;
+use web_sys::{
+    KeyboardEvent,
+    MouseEvent,
+};
 
-pub enum PanelKey {
+pub enum PanelResult {
     Ignored,
     Used,
     Unused(Action),
+    Selected,
+}
+
+pub trait Panel {
+    fn panel_attach(&self) -> El;
+    fn panel_detach(&self);
+    fn panel_path(&self) -> String;
+    fn panel_parent(&self) -> Option<String>;
+    fn panel_selection(&self) -> Option<(bool, String)>;
+    fn panel_focusable(&self) -> bool;
+    fn panel_focused(&self, focused: bool);
+    fn panel_key(&self, e: &KeyboardEvent) -> PanelResult;
+    fn panel_mouse(&self, e: &MouseEvent) -> PanelResult;
 }
 
 pub fn panel_key_stroke(e: &KeyboardEvent, convert: DirectionConvert) -> Option<KeyStroke> {
