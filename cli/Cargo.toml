@@ -15,10 +15,15 @@ serde_json = { version = "1", features = ["preserve_order"] }
 htwrap = "0.15"
 http = "1"
 http-body-util = "0.1"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "process", "io-util", "sync", "time"] }
 loga = "0.5"
 open = "5"
 serde = { version = "1", features = ["derive"] }
 directories = "6"
 tao = "0.37"
 wry = "0.57"
+notify = "8"
+futures = "0.3"
+hyper-tungstenite = "0.17"
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }

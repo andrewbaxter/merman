@@ -88,6 +88,43 @@ fn sub_array_and_id_round_trip() {
     let document = load_document(&syntax, source);
     let written = serialize_atom(&syntax, &document, document.root);
     assert_eq!(serde_json::to_string(&written).unwrap(), source);
+    assert_eq!(document.document_atom(document.root).unique_id, None);
+}
+
+#[test]
+fn unique_id_is_captured_separately_from_plain_ids() {
+    let syntax = load_syntax(r##"{
+      "background": "#333333",
+      "display_unit": "px",
+      "font_size": 16,
+      "groups": [{"id": "any", "members": ["word"]}],
+      "root": {
+        "back": {
+          "fixed_array": [
+            {"id": {"unique": true}},
+            {"fixed_string": "call"},
+            {"sub_array": {"id": "args", "element": "word"}}
+          ]
+        },
+        "front": [
+          {"symbol": {"text": {"text": "call("}}},
+          {"array": {"field": "args", "separator": [{"text": {"text": ", "}}]}},
+          {"symbol": {"text": {"text": ")"}}}
+        ]
+      },
+      "types": [
+        {
+          "id": "word",
+          "back": {"string": {"id": "text"}},
+          "front": [{"primitive": {"field": "text"}}]
+        }
+      ]
+    }"##);
+    let source = r#"[7,"call","a","b","c"]"#;
+    let document = load_document(&syntax, source);
+    assert_eq!(document.document_atom(document.root).unique_id, Some(7));
+    let written = serialize_atom(&syntax, &document, document.root);
+    assert_eq!(serde_json::to_string(&written).unwrap(), source);
 }
 
 #[test]

@@ -111,6 +111,8 @@ impl<'a> Matcher<'a> {
         self.atoms.push(Atom {
             type_: type_id,
             back_ids: vec![],
+            unique_id: None,
+            path: path.to_string(),
             fields: HashMap::new(),
             parent: None,
         });
@@ -343,6 +345,8 @@ impl<'a> Matcher<'a> {
                                 let id = mark;
                                 self.atoms.push(Atom {
                                     back_ids: vec![],
+                                    unique_id: None,
+                                    path: path.to_string(),
                                     type_: t,
                                     fields: HashMap::new(),
                                     parent: None,
@@ -418,7 +422,7 @@ impl<'a> Matcher<'a> {
             SpecBack::SubArray(_) | SpecBack::FixedSubArray(_) => {
                 return Err(Mismatch::leaf(path, "sub arrays are only valid inside an array".to_string()));
             },
-            SpecBack::Id(_) => {
+            SpecBack::Id(id) => {
                 let Value::Number(n) = value else {
                     return Err(Mismatch::leaf(path, format!("expected an integer id, got {}", describe(value))));
                 };
@@ -426,6 +430,9 @@ impl<'a> Matcher<'a> {
                     return Err(Mismatch::leaf(path, format!("expected an integer id, got {}", describe(value))));
                 };
                 self.atoms[owner].back_ids.push(n);
+                if id.unique {
+                    self.atoms[owner].unique_id = Some(n);
+                }
                 return Ok(());
             },
             SpecBack::FixedRecord(entries) => {

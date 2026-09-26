@@ -8,10 +8,7 @@ use crate::context::{
     TextBorderId,
     VisualId,
 };
-use crate::document::{
-    AtomId,
-    Field,
-};
+use crate::document::AtomId;
 use crate::serialize::{
     serialize_atom,
     serialize_pair,
@@ -1062,42 +1059,72 @@ impl Context {
     }
 
     pub fn syntax_locate(&self, path: &[String]) -> Option<Located> {
-        let mut at = Located::Atom(self.document.root);
-        let mut i = 0;
-        while i < path.len() {
-            match at {
-                Located::Atom(a) => {
-                    if path[i] != "named" || i + 1 >= path.len() {
-                        return None;
-                    }
-                    let field = path[i + 1].clone();
-                    if !self.document.document_atom(a).fields.contains_key(&field) {
-                        return None;
-                    }
-                    i += 2;
-                    at = Located::Field(a, field);
-                },
-                Located::Field(a, ref field) => match self.document.document_atom(a).fields.get(field).unwrap() {
-                    Field::Array(elements) => {
-                        let Ok(index) = path[i].parse::<usize>() else {
-                            return None;
-                        };
-                        if index >= elements.len() {
-                            return None;
-                        }
-                        i += 1;
-                        at = Located::Atom(elements[index]);
-                    },
-                    Field::Atom(child) => {
-                        at = Located::Atom(*child);
-                    },
-                    Field::Primitive(_) => {
-                        return Some(at);
-                    },
-                },
+        return self.document.document_locate(self.document.root, path);
+    }
+
+    pub fn cursor_locator(&self) -> Option<(Option<i64>, Vec<String>)> {
+        let path = self.cursor_syntax_path(self.cursor?);
+        for end in (0 ..= path.len()).rev() {
+            let Some(Located::Atom(a)) = self.syntax_locate(&path[..end]) else {
+                continue;
+            };
+            if let Some(id) = self.document.document_atom(a).unique_id {
+                return Some((Some(id), path[end..].to_vec()));
             }
         }
-        return Some(at);
+        return Some((None, path));
+    }
+
+    pub fn cursor_select_syntax_path(&mut self, path: &[String]) -> bool {
+        let mut end = path.len();
+        loop {
+            let selected = 'select: {
+                let Some(located) = self.syntax_locate(&path[..end]) else {
+                    break 'select false;
+                };
+                match located {
+                    Located::Atom(a) => {
+                        let Some(parent) = &self.document.document_atom(a).parent else {
+                            break 'select false;
+                        };
+                        if self.atom_visual[parent.atom].is_none() {
+                            break 'select false;
+                        }
+                        break 'select self.atom_parent_select_field(a);
+                    },
+                    Located::Field(a, field) => {
+                        let Some(visual) = self.atom_visual[a] else {
+                            break 'select false;
+                        };
+                        let Some((index, child)) =
+                            self
+                                .visual_atom(visual)
+                                .selectable
+                                .iter()
+                                .enumerate()
+                                .find_map(|(i, (f, v))| (*f == field).then_some((i, *v))) else {
+                                break 'select false;
+                            };
+                        if let VisualKind::Primitive(p) = &self.visuals[child].kind {
+                            let len = p.value.len();
+                            let offset =
+                                path[..end].last().and_then(|o| o.parse::<usize>().ok()).unwrap_or(len).min(len);
+                            self.primitive_select(child, true, offset, offset);
+                            break 'select true;
+                        }
+                        self.atom_select(visual, index);
+                        break 'select true;
+                    },
+                }
+            };
+            if selected {
+                return true;
+            }
+            if end == 0 {
+                return false;
+            }
+            end -= 1;
+        }
     }
 
     pub fn cursor_copy(&mut self) {

@@ -63,6 +63,7 @@ struct State {
     keys: Keymap,
     context: Option<Context>,
     focused: bool,
+    select: Option<Vec<String>>,
     panel: El,
     host: El,
     shift: El,
@@ -107,11 +108,20 @@ impl State {
             ..ContextConfig::default()
         }, Box::new(display), Box::new(EnvironmentWeb), converse, transverse);
         if self.focused {
-            let root = ctx.root_visual;
-            ctx.visual_select_into_any_child(root);
+            select_initial(&mut ctx, &mut self.select);
         }
         self.context = Some(ctx);
     }
+}
+
+fn select_initial(ctx: &mut Context, select: &mut Option<Vec<String>>) {
+    if let Some(path) = select.take() {
+        if ctx.cursor_select_syntax_path(&path) {
+            return;
+        }
+    }
+    let root = ctx.root_visual;
+    ctx.visual_select_into_any_child(root);
 }
 
 fn with_context(state: &Rc<RefCell<State>>, f: impl FnOnce(&mut Context)) {
@@ -174,17 +184,25 @@ pub struct CodePanel {
     syntax: Rc<Syntax>,
     document: Rc<Document>,
     focused: Cell<bool>,
+    select: RefCell<Option<Vec<String>>>,
     attached: RefCell<Option<Rc<RefCell<State>>>>,
 }
 
 impl CodePanel {
-    pub fn code_new(keys: Keymap, path: String, syntax: Rc<Syntax>, document: Rc<Document>) -> CodePanel {
+    pub fn code_new(
+        keys: Keymap,
+        path: String,
+        syntax: Rc<Syntax>,
+        document: Rc<Document>,
+        select: Option<Vec<String>>,
+    ) -> CodePanel {
         return CodePanel {
             keys: keys,
             path: path,
             syntax: syntax,
             document: document,
             focused: Cell::new(false),
+            select: RefCell::new(select),
             attached: RefCell::new(None),
         };
     }
@@ -201,6 +219,7 @@ impl Panel for CodePanel {
             keys: self.keys.clone(),
             context: None,
             focused: self.focused.get(),
+            select: self.select.borrow_mut().take(),
             panel: panel.clone(),
             host: host.clone(),
             shift: shift,
@@ -337,18 +356,19 @@ impl Panel for CodePanel {
         let Some(state) = self.attached.borrow().clone() else {
             return;
         };
-        state.borrow_mut().focused = focused;
-        with_context(&state, |ctx| {
-            if !focused {
-                ctx.clear_cursor();
-                return;
+        {
+            let mut s = state.borrow_mut();
+            s.focused = focused;
+            let State { context, select, .. } = &mut *s;
+            if let Some(ctx) = context.as_mut() {
+                if !focused {
+                    ctx.clear_cursor();
+                } else if ctx.cursor.is_none() {
+                    select_initial(ctx, select);
+                }
             }
-            if ctx.cursor.is_some() {
-                return;
-            }
-            let root = ctx.root_visual;
-            ctx.visual_select_into_any_child(root);
-        });
+        }
+        after_context(&state);
         return;
     }
 
@@ -390,5 +410,38 @@ impl Panel for CodePanel {
 
     fn panel_mouse(&self, _e: &MouseEvent) -> PanelResult {
         return PanelResult::Ignored;
+    }
+
+    fn panel_changed(&self, path: &str) -> Option<bool> {
+        if path == self.path {
+            return Some(false);
+        }
+        return None;
+    }
+
+    fn panel_cursor_path(&self) -> Option<Vec<String>> {
+        let Some(state) = self.attached.borrow().clone() else {
+            return self.select.borrow().clone();
+        };
+        let s = state.borrow();
+        match s.context.as_ref() {
+            Some(ctx) => return ctx.cursor.map(|c| ctx.cursor_syntax_path(c)),
+            None => return s.select.clone(),
+        }
+    }
+
+    fn panel_reference(&self) -> Option<String> {
+        let state = self.attached.borrow().clone()?;
+        let s = state.borrow();
+        let (id, path) = s.context.as_ref()?.cursor_locator()?;
+        let mut out = format!("{}#", self.path);
+        if let Some(id) = id {
+            out.push_str(&id.to_string());
+        }
+        for segment in path {
+            out.push('/');
+            out.push_str(&segment);
+        }
+        return Some(out);
     }
 }

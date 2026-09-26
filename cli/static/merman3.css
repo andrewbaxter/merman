@@ -6,7 +6,8 @@
 html, body { margin: 0; padding: 0; height: 100%; }
 body { background: #222222; }
 
-.merman_panels { display: flex; align-items: stretch; height: 100vh; }
+.merman_root { display: flex; align-items: stretch; height: 100vh; }
+.merman_panels { display: flex; align-items: stretch; flex: 1 1 0; min-width: 0; }
 .merman_panel { overflow: auto; position: relative; box-sizing: border-box; }
 
 /* Each panel shows the selection of the one to its left, and only the last two
@@ -73,3 +74,28 @@ body { background: #222222; }
   font-family: monospace;
   white-space: pre-wrap;
 }
+
+/* A column of status icons at the left edge, as in merman2, and the Claude pane at the
+   right edge. Both stay put while the panels between them come and go. */
+.merman_status { flex: none; width: 24px; padding-top: 8px; display: flex; flex-direction: column; align-items: center; background: #1a1a1a; }
+.merman_status_icon { font-family: "Material Icons"; font-size: 18px; line-height: 1; color: #e0c060; cursor: pointer; }
+.merman_status_icon[hidden] { display: none; }
+
+.merman_ai { flex: none; width: 14cm; display: flex; flex-direction: column; border-left: 1px solid #444444; background: #2b2b2b; color: #cacaca; font-family: monospace; font-size: 12px; }
+.merman_ai[hidden] { display: none; }
+.merman_ai button { font: inherit; color: #cacaca; background: #3a3a3a; border: 1px solid #555555; border-radius: 3px; padding: 2px 8px; cursor: pointer; }
+.merman_ai button:hover { border-color: #888888; }
+.merman_ai_header { display: flex; align-items: center; gap: 6px; padding: 6px; border-bottom: 1px solid #444444; }
+.merman_ai_title { flex: 1 1 0; color: #ffffff; }
+.merman_ai_log { flex: 1 1 0; overflow: auto; padding: 6px; }
+.merman_ai_older { display: block; margin: 0 auto 8px; }
+.merman_ai_older[hidden] { display: none; }
+.merman_ai_msg { margin-bottom: 8px; }
+.merman_ai_time { color: #767676; margin-right: 6px; }
+.merman_ai_text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.merman_ai_user .merman_ai_text { color: #ffffff; }
+.merman_ai_tool .merman_ai_text { color: #99aabb; }
+.merman_ai_system .merman_ai_text { color: #ff8080; }
+.merman_ai_compose { display: flex; align-items: flex-end; gap: 6px; padding: 6px; border-top: 1px solid #444444; }
+.merman_ai_input { flex: 1 1 0; min-height: 3em; max-height: 12em; overflow: auto; padding: 4px; border: 1px solid #555555; border-radius: 3px; white-space: pre-wrap; outline: none; }
+.merman_ai_input:focus { border-color: #ffffff; }

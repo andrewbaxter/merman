@@ -1,3 +1,4 @@
+use crate::ai::Ai;
 use crate::client::client_send;
 use crate::panels::code::CodePanel;
 use crate::panels::error::ErrorPanel;
@@ -8,11 +9,19 @@ use crate::panels::{
 };
 use futures::channel::oneshot::Receiver;
 use gloo_events::EventListener;
-use gloo_utils::document;
+use gloo_timers::callback::Timeout;
+use gloo_utils::{
+    document,
+    window,
+};
 use merman3_api::{
+    Event,
     ReqList,
     ReqOpen,
     ReqStart,
+    WsClient,
+    WsServer,
+    WS_PATH,
 };
 use merman3_core::keys::{
     Action,
@@ -41,12 +50,17 @@ use std::rc::{
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{
+    Element,
     KeyboardEvent,
+    MessageEvent,
     MouseEvent,
+    WebSocket,
 };
 
 struct Editor {
     keys: Keymap,
+    dir: String,
+    ai: Rc<Ai>,
     element: El,
     panels: RefCell<Vec<Rc<dyn Panel>>>,
     shown: RefCell<Vec<(Rc<dyn Panel>, El)>>,
@@ -55,6 +69,121 @@ struct Editor {
     selections: RefCell<HashMap<String, String>>,
     child_request: RefCell<Option<Receiver<()>>>,
     parent_request: RefCell<Option<Receiver<()>>>,
+    changed: RefCell<Vec<String>>,
+    changed_timer: RefCell<Option<Timeout>>,
+    reloads: RefCell<HashMap<String, Receiver<()>>>,
+    socket: RefCell<Option<(WebSocket, Vec<EventListener>)>>,
+    last_seq: Cell<Option<u64>>,
+    reconnect: RefCell<Option<Timeout>>,
+}
+
+fn editor_schedule_reload(editor: &Rc<Editor>) {
+    let timer = Timeout::new(100, {
+        let editor = editor.clone();
+        move || {
+            *editor.changed_timer.borrow_mut() = None;
+            let paths = std::mem::take(&mut *editor.changed.borrow_mut());
+            let panels = editor.panels.borrow().clone();
+            for panel in panels {
+                let Some(dir) = paths.iter().find_map(|p| panel.panel_changed(p)) else {
+                    continue;
+                };
+                let path = panel.panel_path();
+                let request = spawn_rooted({
+                    let editor: Weak<Editor> = Rc::downgrade(&editor);
+                    let path = path.clone();
+                    async move {
+                        let Some(editor) = editor.upgrade() else {
+                            return;
+                        };
+                        let replacement = if dir {
+                            let select = panel.panel_selection().map(|(_, p)| p);
+                            editor_list(&editor, path, select).await
+                        } else {
+                            editor_open(editor.keys.clone(), path, panel.panel_cursor_path()).await
+                        };
+                        let Some(index) = editor_index(&editor, &panel) else {
+                            return;
+                        };
+                        let focused = editor.focus.get() == index;
+                        editor_splice(&editor, index, 1, vec![replacement.clone()]);
+                        if !focused {
+                            return;
+                        }
+                        if replacement.panel_focusable() || index == 0 {
+                            editor_focus(&editor, index);
+                        } else {
+                            editor_focus(&editor, index - 1);
+                        }
+                    }
+                });
+                editor.reloads.borrow_mut().insert(path, request);
+            }
+        }
+    });
+    *editor.changed_timer.borrow_mut() = Some(timer);
+    return;
+}
+
+fn editor_connect(editor: &Rc<Editor>) {
+    let location = window().location();
+    let scheme = if location.protocol().unwrap() == "https:" {
+        "wss"
+    } else {
+        "ws"
+    };
+    let socket = WebSocket::new(&format!("{}://{}{}", scheme, location.host().unwrap(), WS_PATH)).unwrap();
+    let open = EventListener::new(&socket, "open", {
+        let editor = editor.clone();
+        let socket = socket.clone();
+        move |_| {
+            socket
+                .send_with_str(&serde_json::to_string(&WsClient { since: editor.last_seq.get() }).unwrap())
+                .unwrap();
+        }
+    });
+    let message = EventListener::new(&socket, "message", {
+        let editor = editor.clone();
+        move |e| {
+            let e: &MessageEvent = e.dyn_ref().unwrap();
+            let data = e.data().as_string().unwrap();
+            let event = match serde_json::from_str::<WsServer>(&data).unwrap() {
+                WsServer::Gap => {
+                    editor.ai.ai_load();
+                    let paths = editor.panels.borrow().iter().map(|p| p.panel_path()).collect::<Vec<_>>();
+                    editor.changed.borrow_mut().extend(paths);
+                    editor_schedule_reload(&editor);
+                    return;
+                },
+                WsServer::Event { seq, event } => {
+                    if editor.last_seq.get().is_some_and(|last| seq <= last) {
+                        return;
+                    }
+                    editor.last_seq.set(Some(seq));
+                    event
+                },
+            };
+            match event {
+                Event::FileChanged { path } => {
+                    editor.changed.borrow_mut().push(path);
+                    editor_schedule_reload(&editor);
+                },
+                Event::Ai { message } => editor.ai.ai_message(message),
+                Event::AiStatus { status } => editor.ai.ai_status(status),
+            }
+        }
+    });
+    let close = EventListener::new(&socket, "close", {
+        let editor = editor.clone();
+        move |_| {
+            *editor.reconnect.borrow_mut() = Some(Timeout::new(1000, {
+                let editor = editor.clone();
+                move || editor_connect(&editor)
+            }));
+        }
+    });
+    *editor.socket.borrow_mut() = Some((socket, vec![open, message, close]));
+    return;
 }
 
 async fn editor_list(editor: &Editor, dir: String, select: Option<String>) -> Rc<dyn Panel> {
@@ -62,7 +191,32 @@ async fn editor_list(editor: &Editor, dir: String, select: Option<String>) -> Rc
     let select = select.or_else(|| editor.selections.borrow().get(&dir).cloned());
     match client_send(ReqList { dir: dir.clone() }).await {
         Ok(listing) => return Rc::new(FilesystemPanel::filesystem_new(keys, listing, select)),
-        Err(e) => return Rc::new(ErrorPanel::error_new(dir, &e)),
+        Err(e) => return Rc::new(ErrorPanel::error_new(dir, true, &e)),
+    }
+}
+
+async fn editor_open(keys: Keymap, path: String, select: Option<Vec<String>>) -> Rc<dyn Panel> {
+    let built = match client_send(ReqOpen { path: path.clone() }).await {
+        Ok(opened) => (|| -> Result<_, String> {
+            let spec: SpecSyntax =
+                serde_json::from_str(&opened.syntax).map_err(|e| format!("Error parsing syntax JSON: {}", e))?;
+            let syntax = Rc::new(Syntax::syntax_resolve(spec).map_err(|e| format!("Syntax errors:\n{}", e))?);
+            let value: serde_json::Value =
+                serde_json::from_str(&opened.source).map_err(|e| format!("Error parsing source JSON: {}", e))?;
+            let document =
+                Rc::new(
+                    match_document(
+                        &syntax,
+                        &value,
+                    ).map_err(|e| format!("Source doesn't match syntax:\n{}", e.mismatch_format()))?,
+                );
+            return Ok((syntax, document));
+        })(),
+        Err(e) => Err(e),
+    };
+    match built {
+        Ok((syntax, document)) => return Rc::new(CodePanel::code_new(keys, path, syntax, document, select)),
+        Err(e) => return Rc::new(ErrorPanel::error_new(path, false, &e)),
     }
 }
 
@@ -177,33 +331,7 @@ fn editor_sync(editor: &Rc<Editor>, index: usize) {
                 };
                 editor_list(&editor, path, None).await
             } else {
-                let built = match client_send(ReqOpen { path: path.clone() }).await {
-                    Ok(opened) => (|| -> Result<_, String> {
-                        let spec: SpecSyntax =
-                            serde_json::from_str(
-                                &opened.syntax,
-                            ).map_err(|e| format!("Error parsing syntax JSON: {}", e))?;
-                        let syntax =
-                            Rc::new(Syntax::syntax_resolve(spec).map_err(|e| format!("Syntax errors:\n{}", e))?);
-                        let value: serde_json::Value =
-                            serde_json::from_str(
-                                &opened.source,
-                            ).map_err(|e| format!("Error parsing source JSON: {}", e))?;
-                        let document =
-                            Rc::new(
-                                match_document(
-                                    &syntax,
-                                    &value,
-                                ).map_err(|e| format!("Source doesn't match syntax:\n{}", e.mismatch_format()))?,
-                            );
-                        return Ok((syntax, document));
-                    })(),
-                    Err(e) => Err(e),
-                };
-                match built {
-                    Ok((syntax, document)) => Rc::new(CodePanel::code_new(keys, path, syntax, document)),
-                    Err(e) => Rc::new(ErrorPanel::error_new(path, &e)),
-                }
+                editor_open(keys, path, None).await
             };
             let Some(editor) = editor.upgrade() else {
                 return;
@@ -243,6 +371,15 @@ fn editor_result(editor: &Rc<Editor>, index: usize, result: PanelResult) -> bool
                     }
                 },
                 None => editor.focus_next.set(true),
+            }
+        },
+        Action::AiOpen => editor.ai.ai_open(),
+        Action::AiOpenReference => {
+            editor.ai.ai_open();
+            let reference = editor.panels.borrow()[index].panel_reference();
+            if let Some(reference) = reference {
+                let prefix = format!("{}/", editor.dir);
+                editor.ai.ai_append(&format!("{} ", reference.strip_prefix(&prefix).unwrap_or(&reference)));
             }
         },
         Action::Exit => {
@@ -300,8 +437,11 @@ pub fn start_editor() {
                 return;
             },
         };
+        let ai = Ai::ai_new();
         let editor = Rc::new(Editor {
             keys: keys,
+            dir: start.dir.clone(),
+            ai: ai.clone(),
             element: el("div").classes(&["merman_panels"]),
             panels: RefCell::new(vec![]),
             shown: RefCell::new(vec![]),
@@ -310,12 +450,26 @@ pub fn start_editor() {
             selections: RefCell::new(HashMap::new()),
             child_request: RefCell::new(None),
             parent_request: RefCell::new(None),
+            changed: RefCell::new(vec![]),
+            changed_timer: RefCell::new(None),
+            reloads: RefCell::new(HashMap::new()),
+            socket: RefCell::new(None),
+            last_seq: Cell::new(None),
+            reconnect: RefCell::new(None),
         });
         let root = editor_list(&editor, start.dir, start.file.clone()).await;
         editor.element.ref_own(|_| EventListener::new(&document(), "keydown", {
             let editor = editor.clone();
             move |e| {
                 let e: &KeyboardEvent = e.dyn_ref().unwrap();
+                let typing =
+                    e
+                        .target()
+                        .and_then(|t| t.dyn_into::<Element>().ok())
+                        .is_some_and(|t| t.closest(".merman_ai").ok().flatten().is_some());
+                if typing {
+                    return;
+                }
                 let index = editor.focus.get();
                 let panel = editor.panels.borrow().get(index).cloned();
                 let Some(panel) = panel else {
@@ -326,7 +480,16 @@ pub fn start_editor() {
                 }
             }
         }));
-        set_root(vec![editor.element.clone()]);
+        editor_connect(&editor);
+        set_root(
+            vec![
+                el("div")
+                    .classes(&["merman_root"])
+                    .push(ai.status.clone())
+                    .push(editor.element.clone())
+                    .push(ai.element.clone()),
+            ],
+        );
         editor_splice(&editor, 0, 0, vec![root]);
         editor_focus(&editor, 0);
         editor.focus_next.set(start.file.is_some());

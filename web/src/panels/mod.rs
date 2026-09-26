@@ -32,6 +32,17 @@ pub trait Panel {
     fn panel_focused(&self, focused: bool);
     fn panel_key(&self, e: &KeyboardEvent) -> PanelResult;
     fn panel_mouse(&self, e: &MouseEvent) -> PanelResult;
+    fn panel_changed(&self, path: &str) -> Option<bool>;
+    fn panel_cursor_path(&self) -> Option<Vec<String>>;
+    fn panel_reference(&self) -> Option<String>;
+}
+
+pub fn panel_path_parent(path: &str) -> Option<&str> {
+    let (parent, _) = path.rsplit_once('/')?;
+    if parent.is_empty() {
+        return Some("/");
+    }
+    return Some(parent);
 }
 
 pub fn panel_key_stroke(e: &KeyboardEvent, convert: DirectionConvert) -> Option<KeyStroke> {

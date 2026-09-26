@@ -333,7 +333,10 @@ pub struct SpecBackEntry {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
-pub struct SpecBackId {}
+pub struct SpecBackId {
+    #[serde(default)]
+    pub unique: bool,
+}
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]

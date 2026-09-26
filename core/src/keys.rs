@@ -18,6 +18,8 @@ pub enum Action {
     Enter,
     Exit,
     Copy,
+    AiOpen,
+    AiOpenReference,
     Window,
     NextElement,
     PreviousElement,
@@ -559,11 +561,13 @@ const fn ctrl_shift(key: KeyName) -> KeyStroke {
     };
 }
 
-pub const ACTIONS: [(Action, &str); 55] =
+pub const ACTIONS: [(Action, &str); 57] =
     [
         (Action::Enter, "enter"),
         (Action::Exit, "exit"),
         (Action::Copy, "copy"),
+        (Action::AiOpen, "ai_open"),
+        (Action::AiOpenReference, "ai_open_reference"),
         (Action::Window, "window"),
         (Action::NextElement, "next_element"),
         (Action::PreviousElement, "previous_element"),
@@ -739,10 +743,19 @@ fn section_resolve(spec: &SpecSection, defaults: &[(Action, &[&[KeyStroke]])], e
 impl Keymap {
     pub fn keymap_resolve(spec: &SpecKeys) -> Result<Keymap, MultiError> {
         let mut errors = MultiError::default();
-        let common = section_resolve(&spec.common, &[(Action::Copy, &[&[ctrl(KeyName::Char('c'))], &[KeyStroke {
-            meta: true,
-            ..KeyStroke::key_stroke_new(KeyName::Char('c'))
-        }]])], &mut errors);
+        let common =
+            section_resolve(
+                &spec.common,
+                &[
+                    (Action::Copy, &[&[ctrl(KeyName::Char('c'))], &[KeyStroke {
+                        meta: true,
+                        ..KeyStroke::key_stroke_new(KeyName::Char('c'))
+                    }]]),
+                    (Action::AiOpen, &[&[ctrl_shift(KeyName::Char('a'))]]),
+                    (Action::AiOpenReference, &[&[ctrl_shift(KeyName::Char('r'))]]),
+                ],
+                &mut errors,
+            );
         let atom =
             section_resolve(
                 &spec.atom,

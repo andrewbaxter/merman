@@ -1,5 +1,6 @@
 use crate::panels::{
     panel_key_stroke,
+    panel_path_parent,
     Panel,
     PanelResult,
 };
@@ -235,5 +236,21 @@ impl Panel for FilesystemPanel {
             return PanelResult::Ignored;
         };
         return self.filesystem_select(index as usize);
+    }
+
+    fn panel_changed(&self, path: &str) -> Option<bool> {
+        let s = self.0.borrow();
+        if path == s.dir || panel_path_parent(path) == Some(s.dir.as_str()) {
+            return Some(true);
+        }
+        return None;
+    }
+
+    fn panel_cursor_path(&self) -> Option<Vec<String>> {
+        return None;
+    }
+
+    fn panel_reference(&self) -> Option<String> {
+        return self.panel_selection().map(|(_, path)| path);
     }
 }

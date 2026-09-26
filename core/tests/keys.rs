@@ -170,6 +170,29 @@ fn moves_through_text_by_glyph_and_word() {
 }
 
 #[test]
+fn a_syntax_path_is_selected_or_its_nearest_ancestor() {
+    let (mut ctx, _display, _environment) = json_context(Keymap::default());
+    for key in ['j', 'l', 'l', 'l'] {
+        press_char(&mut ctx, key);
+    }
+    let text = path(&ctx);
+    assert_eq!(text, vec!["named", "value", "named", "entries", "0", "named", "key", "1"]);
+    ctx.clear_cursor();
+    assert!(ctx.cursor_select_syntax_path(&text));
+    settle(&mut ctx);
+    assert_eq!(path(&ctx), text);
+    let element = ["named", "value", "named", "entries", "1"].map(str::to_string);
+    assert!(ctx.cursor_select_syntax_path(&element));
+    settle(&mut ctx);
+    assert_eq!(path(&ctx), element);
+    let missing = ["named", "value", "named", "entries", "7", "named", "key"].map(str::to_string);
+    assert!(ctx.cursor_select_syntax_path(&missing));
+    settle(&mut ctx);
+    assert_eq!(path(&ctx), vec!["named", "value", "named", "entries"]);
+    assert!(!ctx.cursor_select_syntax_path(&[]), "the root has no parent field to select");
+}
+
+#[test]
 fn configured_bindings_replace_the_defaults() {
     let keys = SpecKeys {
         atom: HashMap::from(

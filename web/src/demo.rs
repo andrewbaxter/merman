@@ -55,7 +55,7 @@ pub fn start_demo() {
                     &value,
                 ).map_err(|e| format!("Source doesn't match syntax:\n{}", e.mismatch_format()))?,
             );
-        let panel = Rc::new(CodePanel::code_new(keys, String::new(), syntax, document_));
+        let panel = Rc::new(CodePanel::code_new(keys, String::new(), syntax, document_, None));
         let element = panel.panel_attach();
         element.ref_classes(&["merman_panel_focus"]);
         element.ref_own(|_| EventListener::new(&document(), "keydown", {
