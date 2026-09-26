@@ -1,46 +1,39 @@
-use crate::panels::{
-    panel_key_stroke,
-    panel_path_parent,
-    Panel,
-    PanelResult,
+use {
+    crate::panels::{
+        Panel,
+        PanelResult,
+        panel_key_stroke,
+        panel_path_parent,
+    },
+    gloo_utils::window,
+    merman_api::{
+        ListEntry,
+        RespList,
+    },
+    merman_core::{
+        cursor::CursorKind,
+        direction::DirectionConvert,
+        keys::{
+            Action,
+            KeyResolve,
+            KeyStroke,
+            Keymap,
+        },
+        spec::SpecDirection,
+    },
+    rooting::{
+        El,
+        el,
+    },
+    std::cell::RefCell,
+    wasm_bindgen::JsCast,
+    web_sys::{
+        Element,
+        HtmlElement,
+        KeyboardEvent,
+        MouseEvent,
+    },
 };
-use gloo_utils::window;
-use merman3_api::{
-    ListEntry,
-    RespList,
-};
-use merman3_core::direction::DirectionConvert;
-use merman3_core::cursor::CursorKind;
-use merman3_core::keys::{
-    Action,
-    KeyResolve,
-    KeyStroke,
-    Keymap,
-};
-use merman3_core::spec::SpecDirection;
-use rooting::{
-    el,
-    El,
-};
-use std::cell::RefCell;
-use wasm_bindgen::JsCast;
-use web_sys::{
-    Element,
-    HtmlElement,
-    KeyboardEvent,
-    MouseEvent,
-};
-
-struct State {
-    keys: Keymap,
-    pending: Vec<KeyStroke>,
-    dir: String,
-    parent: Option<String>,
-    entries: Vec<ListEntry>,
-    selected: Option<usize>,
-    remembered: Option<usize>,
-    attached: Option<(El, El)>,
-}
 
 fn draw(s: &State) {
     let Some((panel, rows)) = s.attached.as_ref() else {
@@ -122,22 +115,21 @@ impl Panel for FilesystemPanel {
         return panel;
     }
 
+    fn panel_changed(&self, path: &str) -> Option<bool> {
+        let s = self.0.borrow();
+        if path == s.dir || panel_path_parent(path) == Some(s.dir.as_str()) {
+            return Some(true);
+        }
+        return None;
+    }
+
+    fn panel_cursor_reference(&self) -> Option<String> {
+        return None;
+    }
+
     fn panel_detach(&self) {
         self.0.borrow_mut().attached = None;
         return;
-    }
-
-    fn panel_path(&self) -> String {
-        return self.0.borrow().dir.clone();
-    }
-
-    fn panel_parent(&self) -> Option<String> {
-        return self.0.borrow().parent.clone();
-    }
-
-    fn panel_selection(&self) -> Option<(bool, String)> {
-        let s = self.0.borrow();
-        return s.selected.map(|i| (s.entries[i].dir, s.entries[i].path.clone()));
     }
 
     fn panel_focusable(&self) -> bool {
@@ -238,19 +230,31 @@ impl Panel for FilesystemPanel {
         return self.filesystem_select(index as usize);
     }
 
-    fn panel_changed(&self, path: &str) -> Option<bool> {
-        let s = self.0.borrow();
-        if path == s.dir || panel_path_parent(path) == Some(s.dir.as_str()) {
-            return Some(true);
-        }
-        return None;
+    fn panel_parent(&self) -> Option<String> {
+        return self.0.borrow().parent.clone();
     }
 
-    fn panel_cursor_path(&self) -> Option<Vec<String>> {
-        return None;
+    fn panel_path(&self) -> String {
+        return self.0.borrow().dir.clone();
     }
 
     fn panel_reference(&self) -> Option<String> {
         return self.panel_selection().map(|(_, path)| path);
     }
+
+    fn panel_selection(&self) -> Option<(bool, String)> {
+        let s = self.0.borrow();
+        return s.selected.map(|i| (s.entries[i].dir, s.entries[i].path.clone()));
+    }
+}
+
+struct State {
+    attached: Option<(El, El)>,
+    dir: String,
+    entries: Vec<ListEntry>,
+    keys: Keymap,
+    parent: Option<String>,
+    pending: Vec<KeyStroke>,
+    remembered: Option<usize>,
+    selected: Option<usize>,
 }

@@ -1,5 +1,5 @@
 [package]
-name = "merman3_api"
+name = "merman_api"
 edition.workspace = true
 version.workspace = true
 

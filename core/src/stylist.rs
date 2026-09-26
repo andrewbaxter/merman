@@ -1,21 +1,25 @@
-use crate::spec::SpecObbox;
-use crate::syntax::{
-    Style,
-    StyleId,
-    Syntax,
+use {
+    crate::{
+        spec::SpecObbox,
+        syntax::{
+            Style,
+            StyleId,
+            Syntax,
+        },
+    },
+    std::rc::Rc,
 };
-use std::rc::Rc;
+
+pub trait Stylist {
+    fn style_empty(&self, style: StyleId) -> Style;
+    fn style_obbox(&self, type_: ObboxType) -> SpecObbox;
+    fn style_text(&self, style: StyleId) -> Style;
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ObboxType {
-    Hover,
     Cursor,
-}
-
-pub trait Stylist {
-    fn style_text(&self, style: StyleId) -> Style;
-    fn style_empty(&self, style: StyleId) -> Style;
-    fn style_obbox(&self, type_: ObboxType) -> SpecObbox;
+    Hover,
 }
 
 pub struct StylistDirect {
@@ -23,10 +27,6 @@ pub struct StylistDirect {
 }
 
 impl Stylist for StylistDirect {
-    fn style_text(&self, style: StyleId) -> Style {
-        return self.syntax.syntax_style(style).clone();
-    }
-
     fn style_empty(&self, style: StyleId) -> Style {
         return self.syntax.syntax_style(style).clone();
     }
@@ -36,5 +36,9 @@ impl Stylist for StylistDirect {
             ObboxType::Hover => return self.syntax.spec_root.hover.clone(),
             ObboxType::Cursor => return self.syntax.spec_root.cursor.clone(),
         }
+    }
+
+    fn style_text(&self, style: StyleId) -> Style {
+        return self.syntax.syntax_style(style).clone();
     }
 }

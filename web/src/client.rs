@@ -1,19 +1,21 @@
-use glove::Resp;
-use gloo_utils::window;
-use merman3_api::api::ReqTrait;
-use merman3_api::API_PATH;
-use wasm_bindgen::JsCast;
-use wasm_bindgen::JsValue;
-use wasm_bindgen_futures::JsFuture;
-use web_sys::{
-    Request,
-    RequestInit,
-    Response,
+use {
+    gloo_utils::window,
+    glove::Resp,
+    merman_api::{
+        API_PATH,
+        api::ReqTrait,
+    },
+    wasm_bindgen::{
+        JsCast,
+        JsValue,
+    },
+    wasm_bindgen_futures::JsFuture,
+    web_sys::{
+        Request,
+        RequestInit,
+        Response,
+    },
 };
-
-fn js_error(context: &str, e: JsValue) -> String {
-    return format!("{}: {:?}", context, e);
-}
 
 pub async fn client_send<I: ReqTrait>(req: I) -> Result<I::Resp, String> {
     let init = RequestInit::new();
@@ -42,4 +44,8 @@ pub async fn client_send<I: ReqTrait>(req: I) -> Result<I::Resp, String> {
         Ok(Resp::Err(e)) => return Err(e),
         Err(e) => return Err(format!("Error parsing the api response: {}\nBody: {}", e, body)),
     }
+}
+
+fn js_error(context: &str, e: JsValue) -> String {
+    return format!("{}: {:?}", context, e);
 }

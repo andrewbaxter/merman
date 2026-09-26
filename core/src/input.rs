@@ -1,69 +1,25 @@
-use crate::context::{
-    Context,
-    VisualId,
+use crate::{
+    context::{
+        Context,
+        VisualId,
+    },
+    cursor::{
+        Cursor,
+        DragSelect,
+        Located,
+        RangeLoc,
+    },
+    document::Field,
+    keys::{
+        Action,
+        KeyResolve,
+        KeyStroke,
+    },
+    syntax::Front,
+    visual::VisualKind,
 };
-use crate::cursor::{
-    Cursor,
-    DragSelect,
-    Located,
-    RangeLoc,
-};
-use crate::document::Field;
-use crate::keys::{
-    Action,
-    KeyResolve,
-    KeyStroke,
-};
-use crate::syntax::Front;
-use crate::visual::VisualKind;
 
 impl Context {
-    pub fn mouse_button(&mut self, press: bool) -> bool {
-        let handled = if !press {
-            if self.drag_select.is_some() {
-                self.drag_select = None;
-                true
-            } else {
-                false
-            }
-        } else if let Some(h) = self.hover {
-            let path = self.hoverable_syntax_path(h);
-            self.hoverable_select(h);
-            self.drag_select = Some(DragSelect {
-                start: path,
-                end: None,
-            });
-            true
-        } else if let Some(c) = self.cursor {
-            let path = self.cursor_syntax_path(c);
-            self.drag_select = Some(DragSelect {
-                start: path,
-                end: None,
-            });
-            true
-        } else {
-            false
-        };
-        if handled {
-            self.input_flush();
-        }
-        self.clear_hover();
-        return handled;
-    }
-
-    pub fn input_flush(&mut self) {
-        self.flush_iteration(100);
-    }
-
-    pub fn key_copy(&mut self) {
-        if self.cursor.is_none() {
-            return;
-        }
-        self.cursor_copy();
-        self.input_flush();
-        self.clear_hover();
-    }
-
     pub fn hover_changed(&mut self) {
         let Some(h) = self.hover else {
             return;
@@ -150,17 +106,55 @@ impl Context {
             },
         }
     }
+
+    pub fn input_flush(&mut self) {
+        self.flush_iteration(100);
+    }
+
+    pub fn key_copy(&mut self) {
+        if self.cursor.is_none() {
+            return;
+        }
+        self.cursor_copy();
+        self.input_flush();
+        self.clear_hover();
+    }
+
+    pub fn mouse_button(&mut self, press: bool) -> bool {
+        let handled = if !press {
+            if self.drag_select.is_some() {
+                self.drag_select = None;
+                true
+            } else {
+                false
+            }
+        } else if let Some(h) = self.hover {
+            let path = self.hoverable_syntax_path(h);
+            self.hoverable_select(h);
+            self.drag_select = Some(DragSelect {
+                start: path,
+                end: None,
+            });
+            true
+        } else if let Some(c) = self.cursor {
+            let path = self.cursor_syntax_path(c);
+            self.drag_select = Some(DragSelect {
+                start: path,
+                end: None,
+            });
+            true
+        } else {
+            false
+        };
+        if handled {
+            self.input_flush();
+        }
+        self.clear_hover();
+        return handled;
+    }
 }
 
 impl Context {
-    pub fn key_resolve(&mut self, stroke: KeyStroke) -> KeyResolve {
-        let mut pending = std::mem::take(&mut self.key_pending);
-        let cursor = self.cursor.map(|c| self.cursor_get(c).cursor_kind());
-        let resolved = self.config.keys.keymap_read(&mut pending, stroke, cursor);
-        self.key_pending = pending;
-        return resolved;
-    }
-
     pub fn key_action(&mut self, action: Action) -> bool {
         match action {
             Action::ClearWindow => {
@@ -528,6 +522,22 @@ impl Context {
         }
     }
 
+    pub fn key_resolve(&mut self, stroke: KeyStroke) -> KeyResolve {
+        let mut pending = std::mem::take(&mut self.key_pending);
+        let cursor = self.cursor.map(|c| self.cursor_get(c).cursor_kind());
+        let resolved = self.config.keys.keymap_read(&mut pending, stroke, cursor);
+        self.key_pending = pending;
+        return resolved;
+    }
+
+    fn primitive_line_at(&self, visual: VisualId, offset: usize) -> Option<usize> {
+        let count = self.visual_primitive(visual).lines.len();
+        if count == 0 {
+            return None;
+        }
+        return Some(self.primitive_find_containing(visual, offset).min(count - 1));
+    }
+
     fn primitive_line_bounds(&self, visual: VisualId, offset: usize) -> (usize, usize) {
         let Some(index) = self.primitive_line_at(visual, offset) else {
             return (0, 0);
@@ -554,13 +564,5 @@ impl Context {
         }
         let to = &lines[index - 1];
         return to.offset + column.min(to.text.len());
-    }
-
-    fn primitive_line_at(&self, visual: VisualId, offset: usize) -> Option<usize> {
-        let count = self.visual_primitive(visual).lines.len();
-        if count == 0 {
-            return None;
-        }
-        return Some(self.primitive_find_containing(visual, offset).min(count - 1));
     }
 }

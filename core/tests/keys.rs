@@ -1,85 +1,74 @@
 mod common;
 
-use common::{
-    build,
-    load_document,
-    load_syntax,
-    render_text,
-    settle,
+use {
+    common::{
+        build,
+        load_document,
+        load_syntax,
+        render_text,
+        settle,
+    },
+    merman_core::{
+        context::{
+            Context,
+            Vector,
+        },
+        direction::{
+            DirectionConvert,
+            DirectionKey,
+        },
+        display::DisplayTest,
+        environment::EnvironmentTest,
+        error::ErrorKind,
+        keys::{
+            Action,
+            KeyName,
+            KeyResolve,
+            KeyStroke,
+            Keymap,
+            SpecBinding,
+            SpecKeys,
+        },
+        reference::Reference,
+        spec::SpecDirection,
+    },
+    std::collections::HashMap,
 };
-use merman3_core::context::{
-    Context,
-    Vector,
-};
-use merman3_core::display::DisplayTest;
-use merman3_core::error::ErrorKind;
-use merman3_core::keys::Action;
-use merman3_core::environment::EnvironmentTest;
-use merman3_core::direction::{
-    DirectionConvert,
-    DirectionKey,
-};
-use merman3_core::keys::{
-    KeyName,
-    KeyResolve,
-    SpecBinding,
-    KeyStroke,
-    Keymap,
-    SpecKeys,
-};
-use merman3_core::spec::SpecDirection;
-use std::collections::HashMap;
 
 const SOURCE: &str = r#"{"a": 1, "b": [true, null]}"#;
 const UNIT: f64 = 12. * 0.6;
 
-fn json_context(keys: Keymap) -> (Context, DisplayTest, EnvironmentTest) {
-    let syntax = load_syntax(include_str!("../../syntaxes/json.json"));
-    let document = load_document(&syntax, SOURCE);
-    let (mut ctx, display, environment) = build(syntax, document, 600., 600.);
-    ctx.config.keys = keys;
+#[test]
+fn a_reference_is_selected_or_its_nearest_ancestor() {
+    let (mut ctx, _display, _environment) = json_context(Keymap::default());
+    for key in ['j', 'l', 'l', 'l'] {
+        press_char(&mut ctx, key);
+    }
+    let text = ctx.cursor_reference().unwrap();
+    assert_eq!(text.reference_format(), "#.a[1:1]");
+    ctx.clear_cursor();
+    assert!(ctx.cursor_select_reference(&text), "a key has no path of its own, so its entry's value is selected");
     settle(&mut ctx);
-    return (ctx, display, environment);
-}
-
-fn press(ctx: &mut Context, key: KeyName, shift: bool) -> bool {
-    return press_mods(ctx, key, shift, false);
-}
-
-fn press_mods(ctx: &mut Context, key: KeyName, shift: bool, alt: bool) -> bool {
-    return press_all(ctx, key, false, shift, alt);
-}
-
-fn press_all(ctx: &mut Context, key: KeyName, ctrl: bool, shift: bool, alt: bool) -> bool {
-    let mut stroke = KeyStroke::key_stroke_new(key);
-    stroke.ctrl = ctrl;
-    stroke.shift = shift;
-    stroke.alt = alt;
-    let handled = match ctx.key_resolve(stroke) {
-        KeyResolve::Unbound => false,
-        KeyResolve::Pending => true,
-        KeyResolve::Action(action) => {
-            let handled = ctx.key_action(action);
-            if handled {
-                ctx.input_flush();
-            }
-            handled
-        },
-    };
-    settle(ctx);
-    return handled;
-}
-
-fn press_char(ctx: &mut Context, c: char) -> bool {
-    return press(ctx, KeyName::Char(c), false);
-}
-
-fn parse_binding(json: &str) -> SpecBinding {
-    return serde_json::from_str(json).unwrap();
-}
-
-fn path(ctx: &Context) -> Vec<String> {
-    return ctx.cursor_syntax_path(ctx.cursor.expect("nothing is selected"));
+    assert_eq!(path(&ctx), vec!["named", "value", "named", "entries", "0", "named", "value", "named", "value", "1"]);
+    let element = Reference::reference_parse("#.b[1]").unwrap();
+    assert!(ctx.cursor_select_reference(&element));
+    settle(&mut ctx);
+    assert_eq!(
+        path(&ctx),
+        vec!["named", "value", "named", "entries", "1", "named", "value", "named", "elements", "1"]
+    );
+    assert_eq!(ctx.cursor_reference().unwrap().reference_format(), "#.b[1]");
+    let missing = Reference::reference_parse("#.b[7].nothing").unwrap();
+    assert!(ctx.cursor_select_reference(&missing));
+    settle(&mut ctx);
+    assert_eq!(ctx.cursor_reference().unwrap().reference_format(), "#.b");
+    let both = Reference::reference_parse("#.b[0:2]").unwrap();
+    assert!(ctx.cursor_select_reference(&both));
+    settle(&mut ctx);
+    assert_eq!(ctx.cursor_reference().unwrap().reference_format(), "#.b[0:2]");
+    assert!(ctx.cursor_select_reference(&Reference::reference_parse("#.").unwrap()));
+    settle(&mut ctx);
+    assert_eq!(ctx.cursor_reference().unwrap().reference_format(), "#.");
 }
 
 #[test]
@@ -96,11 +85,86 @@ fn arrows_follow_the_layout_direction() {
 }
 
 #[test]
+fn bad_bindings_are_rejected_when_read() {
+    for (
+        bad,
+        message,
+    ) in [
+        (r#"{"key": "nope"}"#, "unknown key `nope`"),
+        (r#"{"key": "j", "control": true}"#, "unknown field `control`"),
+        (r#"{"ctrl": true}"#, "missing field `key`"),
+    ] {
+        let e = serde_json::from_str::<SpecBinding>(bad).err().expect("should fail");
+        assert!(e.to_string().contains(message), "{} -> {}", bad, e);
+    }
+}
+
+#[test]
+fn configured_bindings_replace_the_defaults() {
+    let keys = SpecKeys {
+        atom: HashMap::from(
+            [
+                ("next_element".to_string(), vec![parse_binding(r#"{"key": "n"}"#)]),
+                ("enter".to_string(), vec![parse_binding(r#"[{"key": "g"}, {"key": "l"}]"#)]),
+            ],
+        ),
+        ..SpecKeys::default()
+    };
+    let (mut ctx, _display, _environment) = json_context(Keymap::keymap_resolve(&keys).unwrap());
+    assert!(press_char(&mut ctx, 'n'));
+    assert_eq!(path(&ctx), vec!["named", "value"]);
+    assert!(!press_char(&mut ctx, 'j'), "`j` was replaced by `n`");
+    assert!(press_char(&mut ctx, 'g'));
+    assert_eq!(path(&ctx), vec!["named", "value"]);
+    assert!(press_char(&mut ctx, 'l'));
+    assert_eq!(path(&ctx), vec!["named", "value", "named", "entries", "0"]);
+}
+
+#[test]
 fn first_press_selects_the_root() {
     let (mut ctx, _display, _environment) = json_context(Keymap::default());
     assert!(ctx.cursor.is_none());
     assert!(press(&mut ctx, KeyName::Next, false));
     assert_eq!(path(&ctx), vec!["named", "value"]);
+}
+
+#[test]
+fn function_keys_and_insert_can_be_bound() {
+    for (
+        text,
+        want,
+    ) in [("f1", KeyName::Function(1)), ("f24", KeyName::Function(24)), ("insert", KeyName::Insert)] {
+        let binding = parse_binding(&format!(r#"{{"key": {:?}}}"#, text));
+        let SpecBinding::Stroke(stroke) = binding else {
+            panic!("expected a single stroke");
+        };
+        assert_eq!(stroke.key, want);
+        assert_eq!(serde_json::to_string(&stroke.key).unwrap(), format!("{:?}", text));
+    }
+}
+
+#[test]
+fn hover_resolves_during_the_move() {
+    let (mut ctx, display, _environment) = json_context(Keymap::default());
+    assert_eq!(render_text(&display, UNIT), vec!["{a: 1, b: [true, null]}".to_string()]);
+    let rows = display.display_test_rows();
+    let row = &rows[0];
+    let brick = row.bricks.iter().find(|b| b.text == "true").unwrap();
+    let pad = ctx.syntax.spec_root.pad.converse_start;
+    ctx.mouse_moved(Vector::new(brick.converse + 1. + pad, row.transverse + 1.));
+    settle(&mut ctx);
+    assert!(ctx.hover.is_some());
+    ctx.mouse_exited();
+    assert!(ctx.hover.is_none());
+}
+
+fn json_context(keys: Keymap) -> (Context, DisplayTest, EnvironmentTest) {
+    let syntax = load_syntax(include_str!("../../syntaxes/json.json"));
+    let document = load_document(&syntax, SOURCE);
+    let (mut ctx, display, environment) = build(syntax, document, 600., 600.);
+    ctx.config.keys = keys;
+    settle(&mut ctx);
+    return (ctx, display, environment);
 }
 
 #[test]
@@ -130,24 +194,6 @@ fn moves_through_an_array_and_into_atoms() {
 }
 
 #[test]
-fn selects_a_range_of_elements_and_copies_it() {
-    let (mut ctx, _display, environment) = json_context(Keymap::default());
-    for key in ['j', 'l', 'j', 'l', 'j', 'l'] {
-        press_char(&mut ctx, key);
-    }
-    assert_eq!(
-        path(&ctx),
-        vec!["named", "value", "named", "entries", "1", "named", "value", "named", "elements", "0"]
-    );
-    assert!(press(&mut ctx, KeyName::Char('j'), true), "select_next");
-    press_char(&mut ctx, 'c');
-    assert_eq!(environment.0.borrow_mut().clipboard.take().unwrap(), "[\n  true,\n  null\n]");
-    assert!(press(&mut ctx, KeyName::Char('k'), true), "select_previous shrinks the far end");
-    press_char(&mut ctx, 'c');
-    assert_eq!(environment.0.borrow_mut().clipboard.take().unwrap(), "[\n  true\n]");
-}
-
-#[test]
 fn moves_through_text_by_glyph_and_word() {
     let (mut ctx, _display, environment) = json_context(Keymap::default());
     for key in ['j', 'l', 'l', 'l'] {
@@ -169,119 +215,62 @@ fn moves_through_text_by_glyph_and_word() {
     assert_eq!(path(&ctx), vec!["named", "value", "named", "entries", "0", "named", "key"]);
 }
 
+fn parse_binding(json: &str) -> SpecBinding {
+    return serde_json::from_str(json).unwrap();
+}
+
+fn path(ctx: &Context) -> Vec<String> {
+    return ctx.cursor_syntax_path(ctx.cursor.expect("nothing is selected"));
+}
+
+fn press(ctx: &mut Context, key: KeyName, shift: bool) -> bool {
+    return press_mods(ctx, key, shift, false);
+}
+
+fn press_all(ctx: &mut Context, key: KeyName, ctrl: bool, shift: bool, alt: bool) -> bool {
+    let mut stroke = KeyStroke::key_stroke_new(key);
+    stroke.ctrl = ctrl;
+    stroke.shift = shift;
+    stroke.alt = alt;
+    let handled = match ctx.key_resolve(stroke) {
+        KeyResolve::Unbound => false,
+        KeyResolve::Pending => true,
+        KeyResolve::Action(action) => {
+            let handled = ctx.key_action(action);
+            if handled {
+                ctx.input_flush();
+            }
+            handled
+        },
+    };
+    settle(ctx);
+    return handled;
+}
+
+fn press_char(ctx: &mut Context, c: char) -> bool {
+    return press(ctx, KeyName::Char(c), false);
+}
+
+fn press_mods(ctx: &mut Context, key: KeyName, shift: bool, alt: bool) -> bool {
+    return press_all(ctx, key, false, shift, alt);
+}
+
 #[test]
-fn a_syntax_path_is_selected_or_its_nearest_ancestor() {
-    let (mut ctx, _display, _environment) = json_context(Keymap::default());
-    for key in ['j', 'l', 'l', 'l'] {
+fn selects_a_range_of_elements_and_copies_it() {
+    let (mut ctx, _display, environment) = json_context(Keymap::default());
+    for key in ['j', 'l', 'j', 'l', 'j', 'l'] {
         press_char(&mut ctx, key);
     }
-    let text = path(&ctx);
-    assert_eq!(text, vec!["named", "value", "named", "entries", "0", "named", "key", "1"]);
-    ctx.clear_cursor();
-    assert!(ctx.cursor_select_syntax_path(&text));
-    settle(&mut ctx);
-    assert_eq!(path(&ctx), text);
-    let element = ["named", "value", "named", "entries", "1"].map(str::to_string);
-    assert!(ctx.cursor_select_syntax_path(&element));
-    settle(&mut ctx);
-    assert_eq!(path(&ctx), element);
-    let missing = ["named", "value", "named", "entries", "7", "named", "key"].map(str::to_string);
-    assert!(ctx.cursor_select_syntax_path(&missing));
-    settle(&mut ctx);
-    assert_eq!(path(&ctx), vec!["named", "value", "named", "entries"]);
-    assert!(!ctx.cursor_select_syntax_path(&[]), "the root has no parent field to select");
-}
-
-#[test]
-fn configured_bindings_replace_the_defaults() {
-    let keys = SpecKeys {
-        atom: HashMap::from(
-            [
-                ("next_element".to_string(), vec![parse_binding(r#"{"key": "n"}"#)]),
-                ("enter".to_string(), vec![parse_binding(r#"[{"key": "g"}, {"key": "l"}]"#)]),
-            ],
-        ),
-        ..SpecKeys::default()
-    };
-    let (mut ctx, _display, _environment) = json_context(Keymap::keymap_resolve(&keys).unwrap());
-    assert!(press_char(&mut ctx, 'n'));
-    assert_eq!(path(&ctx), vec!["named", "value"]);
-    assert!(!press_char(&mut ctx, 'j'), "`j` was replaced by `n`");
-    assert!(press_char(&mut ctx, 'g'));
-    assert_eq!(path(&ctx), vec!["named", "value"]);
-    assert!(press_char(&mut ctx, 'l'));
-    assert_eq!(path(&ctx), vec!["named", "value", "named", "entries", "0"]);
-}
-
-#[test]
-fn unusable_bindings_are_reported() {
-    let bad = SpecKeys {
-        array: HashMap::from(
-            [
-                ("nxt".to_string(), vec![parse_binding(r#"{"key": "n"}"#)]),
-                ("next_element".to_string(), vec![parse_binding(r#"{"key": "escape"}"#)]),
-                ("previous_element".to_string(), vec![parse_binding(r#"{"key": "escape"}"#)]),
-                ("copy".to_string(), vec![parse_binding(r#"{"key": "g"}"#)]),
-                ("first_element".to_string(), vec![parse_binding(r#"[{"key": "g"}, {"key": "g"}]"#)]),
-            ],
-        ),
-        ..SpecKeys::default()
-    };
-    let errors = Keymap::keymap_resolve(&bad).err().expect("should fail");
-    assert_eq!(errors.0.len(), 3, "{}", errors);
-    let kinds = errors.0.iter().map(|e| &e.kind).collect::<Vec<_>>();
-    assert!(
-        kinds.iter().any(|k| matches!(k, ErrorKind::UnknownAction { action, .. } if action == "nxt")),
-        "{}",
-        errors
+    assert_eq!(
+        path(&ctx),
+        vec!["named", "value", "named", "entries", "1", "named", "value", "named", "elements", "0"]
     );
-    assert!(kinds.iter().any(|k| matches!(k, ErrorKind::AmbiguousKeyBinding { .. })), "{}", errors);
-    assert!(kinds.iter().any(|k| matches!(k, ErrorKind::ShadowedKeyBinding { .. })), "{}", errors);
-}
-
-#[test]
-fn bad_bindings_are_rejected_when_read() {
-    for (
-        bad,
-        message,
-    ) in [
-        (r#"{"key": "nope"}"#, "unknown key `nope`"),
-        (r#"{"key": "j", "control": true}"#, "unknown field `control`"),
-        (r#"{"ctrl": true}"#, "missing field `key`"),
-    ] {
-        let e = serde_json::from_str::<SpecBinding>(bad).err().expect("should fail");
-        assert!(e.to_string().contains(message), "{} -> {}", bad, e);
-    }
-}
-
-#[test]
-fn hover_resolves_during_the_move() {
-    let (mut ctx, display, _environment) = json_context(Keymap::default());
-    assert_eq!(render_text(&display, UNIT), vec!["{a: 1, b: [true, null]}".to_string()]);
-    let rows = display.display_test_rows();
-    let row = &rows[0];
-    let brick = row.bricks.iter().find(|b| b.text == "true").unwrap();
-    let pad = ctx.syntax.spec_root.pad.converse_start;
-    ctx.mouse_moved(Vector::new(brick.converse + 1. + pad, row.transverse + 1.));
-    settle(&mut ctx);
-    assert!(ctx.hover.is_some());
-    ctx.mouse_exited();
-    assert!(ctx.hover.is_none());
-}
-
-#[test]
-fn function_keys_and_insert_can_be_bound() {
-    for (
-        text,
-        want,
-    ) in [("f1", KeyName::Function(1)), ("f24", KeyName::Function(24)), ("insert", KeyName::Insert)] {
-        let binding = parse_binding(&format!(r#"{{"key": {:?}}}"#, text));
-        let SpecBinding::Stroke(stroke) = binding else {
-            panic!("expected a single stroke");
-        };
-        assert_eq!(stroke.key, want);
-        assert_eq!(serde_json::to_string(&stroke.key).unwrap(), format!("{:?}", text));
-    }
+    assert!(press(&mut ctx, KeyName::Char('j'), true), "select_next");
+    press_char(&mut ctx, 'c');
+    assert_eq!(environment.0.borrow_mut().clipboard.take().unwrap(), "[\n  true,\n  null\n]");
+    assert!(press(&mut ctx, KeyName::Char('k'), true), "select_previous shrinks the far end");
+    press_char(&mut ctx, 'c');
+    assert_eq!(environment.0.borrow_mut().clipboard.take().unwrap(), "[\n  true\n]");
 }
 
 #[test]
@@ -343,4 +332,30 @@ fn the_common_section_can_bind_the_context_actions() {
     assert!(ctx.cursor.is_none(), "scrolling does not select anything");
     assert!(press(&mut ctx, KeyName::PageUp, false), "scroll_previous_alot");
     assert!(ctx.scroll > start, "a page back overshoots the start, got {}", ctx.scroll);
+}
+
+#[test]
+fn unusable_bindings_are_reported() {
+    let bad = SpecKeys {
+        array: HashMap::from(
+            [
+                ("nxt".to_string(), vec![parse_binding(r#"{"key": "n"}"#)]),
+                ("next_element".to_string(), vec![parse_binding(r#"{"key": "escape"}"#)]),
+                ("previous_element".to_string(), vec![parse_binding(r#"{"key": "escape"}"#)]),
+                ("copy".to_string(), vec![parse_binding(r#"{"key": "g"}"#)]),
+                ("first_element".to_string(), vec![parse_binding(r#"[{"key": "g"}, {"key": "g"}]"#)]),
+            ],
+        ),
+        ..SpecKeys::default()
+    };
+    let errors = Keymap::keymap_resolve(&bad).err().expect("should fail");
+    assert_eq!(errors.0.len(), 3, "{}", errors);
+    let kinds = errors.0.iter().map(|e| &e.kind).collect::<Vec<_>>();
+    assert!(
+        kinds.iter().any(|k| matches!(k, ErrorKind::UnknownAction { action, .. } if action == "nxt")),
+        "{}",
+        errors
+    );
+    assert!(kinds.iter().any(|k| matches!(k, ErrorKind::AmbiguousKeyBinding { .. })), "{}", errors);
+    assert!(kinds.iter().any(|k| matches!(k, ErrorKind::ShadowedKeyBinding { .. })), "{}", errors);
 }

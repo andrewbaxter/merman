@@ -1,21 +1,24 @@
 mod common;
 
-use common::{
-    build,
-    load_document,
-    load_syntax,
-    render_text,
-    settle,
+use {
+    common::{
+        build,
+        load_document,
+        load_syntax,
+        render_text,
+        settle,
+    },
+    merman_core::{
+        context::{
+            Context,
+            ContextConfig,
+        },
+        display::DisplayTest,
+        environment::EnvironmentTest,
+        keys::Action,
+    },
 };
-use merman3_core::context::{
-    Context,
-    ContextConfig,
-};
-use merman3_core::display::DisplayTest;
-use merman3_core::environment::EnvironmentTest;
-use merman3_core::keys::Action;
 
-const UNIT: f64 = 12. * 0.6;
 const SYNTAX: &str = r##"{
   "background": "#333333",
   "display_unit": "px",
@@ -43,6 +46,13 @@ const SYNTAX: &str = r##"{
     }
   ]
 }"##;
+const UNIT: f64 = 12. * 0.6;
+
+#[test]
+fn ellipsize_threshold_bounds_the_window() {
+    assert_eq!(windowed(2), vec!["((...))".to_string()]);
+    assert_eq!(windowed(3), vec!["(((...)))".to_string()]);
+}
 
 fn nest(depth: usize) -> String {
     if depth == 0 {
@@ -51,32 +61,30 @@ fn nest(depth: usize) -> String {
     return format!(r#"{{"nest": {}}}"#, nest(depth - 1));
 }
 
-fn windowed(threshold: i64) -> Vec<String> {
+#[test]
+fn the_window_actions_move_it_out_and_clear_it() {
     let syntax = load_syntax(SYNTAX);
     let document = load_document(&syntax, &format!(r#"{{"v": {}}}"#, nest(4)));
     let display = DisplayTest::default();
     let mut ctx = Context::context_new(syntax, document, ContextConfig {
-        ellipsize_threshold: threshold,
+        ellipsize_threshold: 2,
         start_windowed: true,
         ..ContextConfig::default()
     }, Box::new(display.clone()), Box::new(EnvironmentTest::default()), 600., 600.);
     settle(&mut ctx);
-    return render_text(&display, UNIT);
-}
-
-#[test]
-fn unwindowed_shows_the_whole_document() {
-    let syntax = load_syntax(SYNTAX);
-    let document = load_document(&syntax, &format!(r#"{{"v": {}}}"#, nest(4)));
-    let (mut ctx, display, _environment) = build(syntax, document, 600., 600.);
+    for _ in 0 .. 4 {
+        ctx.key_action(Action::Enter);
+        settle(&mut ctx);
+    }
+    let inner = ctx.window_atom;
+    assert!(inner > 0, "diving moved the window in");
+    assert!(ctx.key_action(Action::WindowTowardsRoot));
+    settle(&mut ctx);
+    assert!(ctx.window_atom < inner, "the window moved back out");
+    assert!(ctx.key_action(Action::ClearWindow));
     settle(&mut ctx);
     assert_eq!(render_text(&display, UNIT), vec!["((((x))))".to_string()]);
-}
-
-#[test]
-fn ellipsize_threshold_bounds_the_window() {
-    assert_eq!(windowed(2), vec!["((...))".to_string()]);
-    assert_eq!(windowed(3), vec!["(((...)))".to_string()]);
+    assert!(!ctx.key_action(Action::ClearWindow), "there is no window left to clear");
 }
 
 #[test]
@@ -111,27 +119,23 @@ fn the_window_follows_the_cursor() {
 }
 
 #[test]
-fn the_window_actions_move_it_out_and_clear_it() {
+fn unwindowed_shows_the_whole_document() {
+    let syntax = load_syntax(SYNTAX);
+    let document = load_document(&syntax, &format!(r#"{{"v": {}}}"#, nest(4)));
+    let (mut ctx, display, _environment) = build(syntax, document, 600., 600.);
+    settle(&mut ctx);
+    assert_eq!(render_text(&display, UNIT), vec!["((((x))))".to_string()]);
+}
+
+fn windowed(threshold: i64) -> Vec<String> {
     let syntax = load_syntax(SYNTAX);
     let document = load_document(&syntax, &format!(r#"{{"v": {}}}"#, nest(4)));
     let display = DisplayTest::default();
     let mut ctx = Context::context_new(syntax, document, ContextConfig {
-        ellipsize_threshold: 2,
+        ellipsize_threshold: threshold,
         start_windowed: true,
         ..ContextConfig::default()
     }, Box::new(display.clone()), Box::new(EnvironmentTest::default()), 600., 600.);
     settle(&mut ctx);
-    for _ in 0 .. 4 {
-        ctx.key_action(Action::Enter);
-        settle(&mut ctx);
-    }
-    let inner = ctx.window_atom;
-    assert!(inner > 0, "diving moved the window in");
-    assert!(ctx.key_action(Action::WindowTowardsRoot));
-    settle(&mut ctx);
-    assert!(ctx.window_atom < inner, "the window moved back out");
-    assert!(ctx.key_action(Action::ClearWindow));
-    settle(&mut ctx);
-    assert_eq!(render_text(&display, UNIT), vec!["((((x))))".to_string()]);
-    assert!(!ctx.key_action(Action::ClearWindow), "there is no window left to clear");
+    return render_text(&display, UNIT);
 }

@@ -2,6 +2,12 @@
 //! tests use a fixed-width fake.
 use unicode_segmentation::UnicodeSegmentation;
 
+#[derive(Debug, Clone, Copy)]
+pub struct FontMetrics {
+    pub ascent: f64,
+    pub descent: f64,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct FontSpec {
     pub family: String,
@@ -13,12 +19,6 @@ impl FontSpec {
     pub fn font_css(&self) -> String {
         return format!("{}px {}", self.size, self.family);
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct FontMetrics {
-    pub ascent: f64,
-    pub descent: f64,
 }
 
 pub fn measure_index_at_converse<

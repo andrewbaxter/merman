@@ -2,47 +2,36 @@ pub mod code;
 pub mod error;
 pub mod filesystem;
 
-use merman3_core::direction::DirectionConvert;
-use merman3_core::keys::{
-    Action,
-    KeyName,
-    KeyStroke,
+use {
+    merman_core::{
+        direction::DirectionConvert,
+        keys::{
+            Action,
+            KeyName,
+            KeyStroke,
+        },
+        spec::SpecDirection,
+    },
+    rooting::El,
+    web_sys::{
+        KeyboardEvent,
+        MouseEvent,
+    },
 };
-use merman3_core::spec::SpecDirection;
-use rooting::El;
-use web_sys::{
-    KeyboardEvent,
-    MouseEvent,
-};
-
-pub enum PanelResult {
-    Ignored,
-    Used,
-    Unused(Action),
-    Selected,
-}
 
 pub trait Panel {
     fn panel_attach(&self) -> El;
+    fn panel_changed(&self, path: &str) -> Option<bool>;
+    fn panel_cursor_reference(&self) -> Option<String>;
     fn panel_detach(&self);
-    fn panel_path(&self) -> String;
-    fn panel_parent(&self) -> Option<String>;
-    fn panel_selection(&self) -> Option<(bool, String)>;
     fn panel_focusable(&self) -> bool;
     fn panel_focused(&self, focused: bool);
     fn panel_key(&self, e: &KeyboardEvent) -> PanelResult;
     fn panel_mouse(&self, e: &MouseEvent) -> PanelResult;
-    fn panel_changed(&self, path: &str) -> Option<bool>;
-    fn panel_cursor_path(&self) -> Option<Vec<String>>;
+    fn panel_parent(&self) -> Option<String>;
+    fn panel_path(&self) -> String;
     fn panel_reference(&self) -> Option<String>;
-}
-
-pub fn panel_path_parent(path: &str) -> Option<&str> {
-    let (parent, _) = path.rsplit_once('/')?;
-    if parent.is_empty() {
-        return Some("/");
-    }
-    return Some(parent);
+    fn panel_selection(&self) -> Option<(bool, String)>;
 }
 
 pub fn panel_key_stroke(e: &KeyboardEvent, convert: DirectionConvert) -> Option<KeyStroke> {
@@ -164,4 +153,19 @@ pub fn panel_key_stroke(e: &KeyboardEvent, convert: DirectionConvert) -> Option<
         },
     };
     return stroke(name);
+}
+
+pub fn panel_path_parent(path: &str) -> Option<&str> {
+    let (parent, _) = path.rsplit_once('/')?;
+    if parent.is_empty() {
+        return Some("/");
+    }
+    return Some(parent);
+}
+
+pub enum PanelResult {
+    Ignored,
+    Selected,
+    Unused(Action),
+    Used,
 }

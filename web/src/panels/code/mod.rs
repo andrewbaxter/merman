@@ -1,139 +1,56 @@
 mod display;
 
-use crate::panels::code::display::{
-    display_el,
-    DisplayWeb,
+use {
+    crate::panels::{
+        Panel,
+        PanelResult,
+        code::display::{
+            DisplayWeb,
+            display_el,
+        },
+        panel_key_stroke,
+    },
+    gloo_render::{
+        AnimationFrame,
+        request_animation_frame,
+    },
+    gloo_timers::callback::Timeout,
+    gloo_utils::window,
+    merman_core::{
+        context::{
+            Context,
+            ContextConfig,
+            Vector,
+        },
+        direction::DirectionConvert,
+        document::Document,
+        environment::Environment,
+        keys::{
+            KeyResolve,
+            Keymap,
+        },
+        reference::Reference,
+        syntax::Syntax,
+    },
+    rooting::{
+        El,
+        el,
+    },
+    std::{
+        cell::{
+            Cell,
+            RefCell,
+        },
+        collections::HashMap,
+        rc::Rc,
+    },
+    wasm_bindgen::JsCast,
+    web_sys::{
+        KeyboardEvent,
+        MouseEvent,
+        WheelEvent,
+    },
 };
-use crate::panels::{
-    panel_key_stroke,
-    Panel,
-    PanelResult,
-};
-use gloo_render::{
-    request_animation_frame,
-    AnimationFrame,
-};
-use gloo_timers::callback::Timeout;
-use gloo_utils::window;
-use merman3_core::context::{
-    Context,
-    ContextConfig,
-    Vector,
-};
-use merman3_core::direction::DirectionConvert;
-use merman3_core::document::Document;
-use merman3_core::environment::Environment;
-use merman3_core::keys::{
-    KeyResolve,
-    Keymap,
-};
-use merman3_core::syntax::Syntax;
-use rooting::{
-    el,
-    El,
-};
-use std::cell::{
-    Cell,
-    RefCell,
-};
-use std::collections::HashMap;
-use std::rc::Rc;
-use wasm_bindgen::JsCast;
-use web_sys::{
-    KeyboardEvent,
-    MouseEvent,
-    WheelEvent,
-};
-
-struct EnvironmentWeb;
-
-impl Environment for EnvironmentWeb {
-    fn environment_now_ms(&mut self) -> f64 {
-        return js_sys::Date::now();
-    }
-
-    fn environment_clipboard_set(&mut self, text: &str) {
-        let _ = window().navigator().clipboard().write_text(text);
-    }
-}
-
-struct State {
-    syntax: Rc<Syntax>,
-    document: Rc<Document>,
-    keys: Keymap,
-    context: Option<Context>,
-    focused: bool,
-    select: Option<Vec<String>>,
-    panel: El,
-    host: El,
-    shift: El,
-    origin: (f64, f64),
-    host_size: Option<(f64, f64)>,
-    panel_size: Option<(f64, f64)>,
-    hover_point: Option<Vector>,
-    hover_raf: Option<AnimationFrame>,
-    timer: Option<Timeout>,
-}
-
-impl State {
-    fn convert(&self) -> DirectionConvert {
-        return self.syntax.spec_root.convert;
-    }
-
-    fn lay_out(&mut self) {
-        let (Some(host), Some(panel)) = (self.host_size, self.panel_size) else {
-            return;
-        };
-        let convert = self.convert();
-        let converse = convert.direction_convert_span(host.0, host.1).0;
-        let transverse = convert.direction_convert_span(panel.0, panel.1).1;
-        if let Some(ctx) = self.context.as_mut() {
-            ctx.context_resize(converse, transverse);
-            return;
-        }
-        let measure = el("canvas").classes(&["merman_measure"]);
-        self.host.ref_push(measure.clone());
-        let display = DisplayWeb {
-            convert: convert,
-            root: self.shift.clone(),
-            background: self.panel.clone(),
-            nodes: vec![],
-            measure: measure,
-            measure_font: String::new(),
-            widths: HashMap::new(),
-            metrics: HashMap::new(),
-        };
-        let mut ctx = Context::context_new(self.syntax.clone(), self.document.clone(), ContextConfig {
-            keys: self.keys.clone(),
-            ..ContextConfig::default()
-        }, Box::new(display), Box::new(EnvironmentWeb), converse, transverse);
-        if self.focused {
-            select_initial(&mut ctx, &mut self.select);
-        }
-        self.context = Some(ctx);
-    }
-}
-
-fn select_initial(ctx: &mut Context, select: &mut Option<Vec<String>>) {
-    if let Some(path) = select.take() {
-        if ctx.cursor_select_syntax_path(&path) {
-            return;
-        }
-    }
-    let root = ctx.root_visual;
-    ctx.visual_select_into_any_child(root);
-}
-
-fn with_context(state: &Rc<RefCell<State>>, f: impl FnOnce(&mut Context)) {
-    {
-        let mut s = state.borrow_mut();
-        let Some(ctx) = s.context.as_mut() else {
-            return;
-        };
-        f(ctx);
-    }
-    after_context(state);
-}
 
 fn after_context(state: &Rc<RefCell<State>>) {
     {
@@ -179,13 +96,13 @@ fn after_context(state: &Rc<RefCell<State>>) {
 }
 
 pub struct CodePanel {
-    keys: Keymap,
-    path: String,
-    syntax: Rc<Syntax>,
+    attached: RefCell<Option<Rc<RefCell<State>>>>,
     document: Rc<Document>,
     focused: Cell<bool>,
-    select: RefCell<Option<Vec<String>>>,
-    attached: RefCell<Option<Rc<RefCell<State>>>>,
+    keys: Keymap,
+    path: String,
+    select: RefCell<Option<String>>,
+    syntax: Rc<Syntax>,
 }
 
 impl CodePanel {
@@ -194,7 +111,7 @@ impl CodePanel {
         path: String,
         syntax: Rc<Syntax>,
         document: Rc<Document>,
-        select: Option<Vec<String>>,
+        select: Option<String>,
     ) -> CodePanel {
         return CodePanel {
             keys: keys,
@@ -330,21 +247,27 @@ impl Panel for CodePanel {
         return panel;
     }
 
+    fn panel_changed(&self, path: &str) -> Option<bool> {
+        if path == self.path {
+            return Some(false);
+        }
+        return None;
+    }
+
+    fn panel_cursor_reference(&self) -> Option<String> {
+        let Some(state) = self.attached.borrow().clone() else {
+            return self.select.borrow().clone();
+        };
+        let s = state.borrow();
+        match s.context.as_ref() {
+            Some(ctx) => return ctx.cursor_reference().map(|r| r.reference_format()),
+            None => return s.select.clone(),
+        }
+    }
+
     fn panel_detach(&self) {
         *self.attached.borrow_mut() = None;
         return;
-    }
-
-    fn panel_path(&self) -> String {
-        return self.path.clone();
-    }
-
-    fn panel_parent(&self) -> Option<String> {
-        return None;
-    }
-
-    fn panel_selection(&self) -> Option<(bool, String)> {
-        return None;
     }
 
     fn panel_focusable(&self) -> bool {
@@ -412,36 +335,110 @@ impl Panel for CodePanel {
         return PanelResult::Ignored;
     }
 
-    fn panel_changed(&self, path: &str) -> Option<bool> {
-        if path == self.path {
-            return Some(false);
-        }
+    fn panel_parent(&self) -> Option<String> {
         return None;
     }
 
-    fn panel_cursor_path(&self) -> Option<Vec<String>> {
-        let Some(state) = self.attached.borrow().clone() else {
-            return self.select.borrow().clone();
-        };
-        let s = state.borrow();
-        match s.context.as_ref() {
-            Some(ctx) => return ctx.cursor.map(|c| ctx.cursor_syntax_path(c)),
-            None => return s.select.clone(),
-        }
+    fn panel_path(&self) -> String {
+        return self.path.clone();
     }
 
     fn panel_reference(&self) -> Option<String> {
-        let state = self.attached.borrow().clone()?;
-        let s = state.borrow();
-        let (id, path) = s.context.as_ref()?.cursor_locator()?;
-        let mut out = format!("{}#", self.path);
-        if let Some(id) = id {
-            out.push_str(&id.to_string());
-        }
-        for segment in path {
-            out.push('/');
-            out.push_str(&segment);
-        }
-        return Some(out);
+        return Some(format!("{}{}", self.path, self.panel_cursor_reference()?));
     }
+
+    fn panel_selection(&self) -> Option<(bool, String)> {
+        return None;
+    }
+}
+struct EnvironmentWeb;
+
+impl Environment for EnvironmentWeb {
+    fn environment_clipboard_set(&mut self, text: &str) {
+        let _ = window().navigator().clipboard().write_text(text);
+    }
+
+    fn environment_now_ms(&mut self) -> f64 {
+        return js_sys::Date::now();
+    }
+}
+
+fn select_initial(ctx: &mut Context, select: &mut Option<String>) {
+    if let Some(text) = select.take() {
+        if let Ok(reference) = Reference::reference_parse(&text) {
+            if ctx.cursor_select_reference(&reference) {
+                return;
+            }
+        }
+    }
+    let root = ctx.root_visual;
+    ctx.visual_select_into_any_child(root);
+}
+
+struct State {
+    context: Option<Context>,
+    document: Rc<Document>,
+    focused: bool,
+    host: El,
+    host_size: Option<(f64, f64)>,
+    hover_point: Option<Vector>,
+    hover_raf: Option<AnimationFrame>,
+    keys: Keymap,
+    origin: (f64, f64),
+    panel: El,
+    panel_size: Option<(f64, f64)>,
+    select: Option<String>,
+    shift: El,
+    syntax: Rc<Syntax>,
+    timer: Option<Timeout>,
+}
+
+impl State {
+    fn convert(&self) -> DirectionConvert {
+        return self.syntax.spec_root.convert;
+    }
+
+    fn lay_out(&mut self) {
+        let (Some(host), Some(panel)) = (self.host_size, self.panel_size) else {
+            return;
+        };
+        let convert = self.convert();
+        let converse = convert.direction_convert_span(host.0, host.1).0;
+        let transverse = convert.direction_convert_span(panel.0, panel.1).1;
+        if let Some(ctx) = self.context.as_mut() {
+            ctx.context_resize(converse, transverse);
+            return;
+        }
+        let measure = el("canvas").classes(&["merman_measure"]);
+        self.host.ref_push(measure.clone());
+        let display = DisplayWeb {
+            convert: convert,
+            root: self.shift.clone(),
+            background: self.panel.clone(),
+            nodes: vec![],
+            measure: measure,
+            measure_font: String::new(),
+            widths: HashMap::new(),
+            metrics: HashMap::new(),
+        };
+        let mut ctx = Context::context_new(self.syntax.clone(), self.document.clone(), ContextConfig {
+            keys: self.keys.clone(),
+            ..ContextConfig::default()
+        }, Box::new(display), Box::new(EnvironmentWeb), converse, transverse);
+        if self.focused {
+            select_initial(&mut ctx, &mut self.select);
+        }
+        self.context = Some(ctx);
+    }
+}
+
+fn with_context(state: &Rc<RefCell<State>>, f: impl FnOnce(&mut Context)) {
+    {
+        let mut s = state.borrow_mut();
+        let Some(ctx) = s.context.as_mut() else {
+            return;
+        };
+        f(ctx);
+    }
+    after_context(state);
 }

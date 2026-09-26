@@ -1,8 +1,10 @@
-use merman3_core::direction::{
-    DirectionConvert,
-    UnconvertAxis,
+use merman_core::{
+    direction::{
+        DirectionConvert,
+        UnconvertAxis,
+    },
+    spec::SpecDirection::*,
 };
-use merman3_core::spec::SpecDirection::*;
 
 #[test]
 fn unconvert_places_boxes_per_direction() {

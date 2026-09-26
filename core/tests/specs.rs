@@ -1,15 +1,51 @@
 mod common;
 
-use common::{
-    build,
-    load_document,
-    load_syntax,
-    render_text,
-    settle,
+use {
+    common::{
+        build,
+        load_document,
+        load_syntax,
+        render_text,
+        settle,
+    },
+    merman_core::serialize::serialize_atom,
 };
-use merman3_core::serialize::serialize_atom;
 
-const UNIT: f64 = 12. * 0.6;
+const AS_ATOM_SYNTAX: &str = r##"{
+  "background": "#333333",
+  "display_unit": "px",
+  "font_size": 16,
+  "groups": [{"id": "any", "members": ["word"]}],
+  "root": {
+    "back": {
+      "fixed_record": [
+        {"key": "only", "value": {"array": {"id": "only", "element": "word"}}}
+      ]
+    },
+    "front": [
+      {"symbol": {"text": {"text": "<"}}},
+      {"array_as_atom": {"field": "only"}},
+      {"symbol": {"text": {"text": ">"}}}
+    ]
+  },
+  "types": [
+    {
+      "id": "word",
+      "back": {"string": {"id": "text"}},
+      "front": [{"primitive": {"field": "text"}}]
+    }
+  ]
+}"##;
+const DISCARD_SYNTAX: &str = r##"{
+  "background": "#333333",
+  "display_unit": "px",
+  "font_size": 16,
+  "root": {
+    "back": {"fixed_record": [{"key": "ignored"}, {"key": "kept", "value": {"string": {"id": "text"}}}]},
+    "front": [{"primitive": {"field": "text"}}]
+  },
+  "types": []
+}"##;
 const SYNTAX: &str = r##"{
   "background": "#333333",
   "display_unit": "px",
@@ -37,39 +73,35 @@ const SYNTAX: &str = r##"{
     }
   ]
 }"##;
-const AS_ATOM_SYNTAX: &str = r##"{
-  "background": "#333333",
-  "display_unit": "px",
-  "font_size": 16,
-  "groups": [{"id": "any", "members": ["word"]}],
-  "root": {
-    "back": {
-      "fixed_record": [
-        {"key": "only", "value": {"array": {"id": "only", "element": "word"}}}
-      ]
-    },
-    "front": [
-      {"symbol": {"text": {"text": "<"}}},
-      {"array_as_atom": {"field": "only"}},
-      {"symbol": {"text": {"text": ">"}}}
-    ]
-  },
-  "types": [
-    {
-      "id": "word",
-      "back": {"string": {"id": "text"}},
-      "front": [{"primitive": {"field": "text"}}]
-    }
-  ]
-}"##;
+const UNIT: f64 = 12. * 0.6;
 
 #[test]
-fn sub_array_splices_into_the_enclosing_array() {
-    let syntax = load_syntax(SYNTAX);
-    let document = load_document(&syntax, r#"[7, "call", "a", "b", "c"]"#);
+fn a_valueless_entry_is_read_and_left_out_when_written() {
+    let syntax = load_syntax(DISCARD_SYNTAX);
+    let document = load_document(&syntax, r#"{"ignored": {"anything": [1, 2]}, "kept": "hi"}"#);
+    let (mut ctx, display, _environment) = build(syntax.clone(), document.clone(), 600., 600.);
+    settle(&mut ctx);
+    assert_eq!(render_text(&display, UNIT), vec!["hi".to_string()]);
+    let written = serialize_atom(&syntax, &document, document.root);
+    assert_eq!(serde_json::to_string(&written).unwrap(), r#"{"kept":"hi"}"#);
+}
+
+#[test]
+fn array_as_atom_shows_the_first_element() {
+    let syntax = load_syntax(AS_ATOM_SYNTAX);
+    let document = load_document(&syntax, r#"{"only": ["x"]}"#);
     let (mut ctx, display, _environment) = build(syntax, document, 600., 600.);
     settle(&mut ctx);
-    assert_eq!(render_text(&display, UNIT), vec!["call(a, b, c)".to_string()]);
+    assert_eq!(render_text(&display, UNIT), vec!["<x>".to_string()]);
+}
+
+#[test]
+fn array_as_atom_tolerates_an_empty_array() {
+    let syntax = load_syntax(AS_ATOM_SYNTAX);
+    let document = load_document(&syntax, r#"{"only": []}"#);
+    let (mut ctx, display, _environment) = build(syntax, document, 600., 600.);
+    settle(&mut ctx);
+    assert_eq!(render_text(&display, UNIT), vec!["<>".to_string()]);
 }
 
 #[test]
@@ -89,6 +121,40 @@ fn sub_array_and_id_round_trip() {
     let written = serialize_atom(&syntax, &document, document.root);
     assert_eq!(serde_json::to_string(&written).unwrap(), source);
     assert_eq!(document.document_atom(document.root).unique_id, None);
+}
+
+#[test]
+fn sub_array_splices_into_the_enclosing_array() {
+    let syntax = load_syntax(SYNTAX);
+    let document = load_document(&syntax, r#"[7, "call", "a", "b", "c"]"#);
+    let (mut ctx, display, _environment) = build(syntax, document, 600., 600.);
+    settle(&mut ctx);
+    assert_eq!(render_text(&display, UNIT), vec!["call(a, b, c)".to_string()]);
+}
+
+#[test]
+fn two_sub_arrays_in_one_array_are_rejected() {
+    let spec: merman_core::spec::SpecSyntax = serde_json::from_str(r##"{
+      "background": "#000",
+      "display_unit": "px",
+      "groups": [{"id": "any", "members": ["word"]}],
+      "root": {
+        "back": {
+          "fixed_array": [
+            {"sub_array": {"id": "a", "element": "word"}},
+            {"sub_array": {"id": "b", "element": "word"}}
+          ]
+        },
+        "front": []
+      },
+      "types": [{"id": "word", "back": {"string": {"id": "text"}}, "front": []}]
+    }"##).unwrap();
+    let errors = merman_core::syntax::Syntax::syntax_resolve(spec).err().expect("should not resolve");
+    assert!(
+        errors.0.iter().any(|e| e.kind == merman_core::error::ErrorKind::ArrayMultipleAtoms),
+        "expected an ambiguity error, got {}",
+        errors
+    );
 }
 
 #[test]
@@ -125,69 +191,4 @@ fn unique_id_is_captured_separately_from_plain_ids() {
     assert_eq!(document.document_atom(document.root).unique_id, Some(7));
     let written = serialize_atom(&syntax, &document, document.root);
     assert_eq!(serde_json::to_string(&written).unwrap(), source);
-}
-
-#[test]
-fn array_as_atom_shows_the_first_element() {
-    let syntax = load_syntax(AS_ATOM_SYNTAX);
-    let document = load_document(&syntax, r#"{"only": ["x"]}"#);
-    let (mut ctx, display, _environment) = build(syntax, document, 600., 600.);
-    settle(&mut ctx);
-    assert_eq!(render_text(&display, UNIT), vec!["<x>".to_string()]);
-}
-
-#[test]
-fn array_as_atom_tolerates_an_empty_array() {
-    let syntax = load_syntax(AS_ATOM_SYNTAX);
-    let document = load_document(&syntax, r#"{"only": []}"#);
-    let (mut ctx, display, _environment) = build(syntax, document, 600., 600.);
-    settle(&mut ctx);
-    assert_eq!(render_text(&display, UNIT), vec!["<>".to_string()]);
-}
-
-#[test]
-fn two_sub_arrays_in_one_array_are_rejected() {
-    let spec: merman3_core::spec::SpecSyntax = serde_json::from_str(r##"{
-      "background": "#000",
-      "display_unit": "px",
-      "groups": [{"id": "any", "members": ["word"]}],
-      "root": {
-        "back": {
-          "fixed_array": [
-            {"sub_array": {"id": "a", "element": "word"}},
-            {"sub_array": {"id": "b", "element": "word"}}
-          ]
-        },
-        "front": []
-      },
-      "types": [{"id": "word", "back": {"string": {"id": "text"}}, "front": []}]
-    }"##).unwrap();
-    let errors = merman3_core::syntax::Syntax::syntax_resolve(spec).err().expect("should not resolve");
-    assert!(
-        errors.0.iter().any(|e| e.kind == merman3_core::error::ErrorKind::ArrayMultipleAtoms),
-        "expected an ambiguity error, got {}",
-        errors
-    );
-}
-
-const DISCARD_SYNTAX: &str = r##"{
-  "background": "#333333",
-  "display_unit": "px",
-  "font_size": 16,
-  "root": {
-    "back": {"fixed_record": [{"key": "ignored"}, {"key": "kept", "value": {"string": {"id": "text"}}}]},
-    "front": [{"primitive": {"field": "text"}}]
-  },
-  "types": []
-}"##;
-
-#[test]
-fn a_valueless_entry_is_read_and_left_out_when_written() {
-    let syntax = load_syntax(DISCARD_SYNTAX);
-    let document = load_document(&syntax, r#"{"ignored": {"anything": [1, 2]}, "kept": "hi"}"#);
-    let (mut ctx, display, _environment) = build(syntax.clone(), document.clone(), 600., 600.);
-    settle(&mut ctx);
-    assert_eq!(render_text(&display, UNIT), vec!["hi".to_string()]);
-    let written = serialize_atom(&syntax, &document, document.root);
-    assert_eq!(serde_json::to_string(&written).unwrap(), r#"{"kept":"hi"}"#);
 }

@@ -1,125 +1,134 @@
-use aargvark::{
-    vark,
-    Aargvark,
-};
-use htwrap::htserve::handler::{
-    Handler,
-    HandlerArgs,
-};
-use htwrap::htserve::responses::{
-    body_full,
-    response_200_html,
-    response_400,
-    response_404,
-    Body,
-};
-use futures::{
-    SinkExt,
-    StreamExt,
-};
-use http::header::CONTENT_TYPE;
-use http::Response;
-use http_body_util::BodyExt;
-use hyper::body::Incoming;
-use hyper::service::service_fn;
-use hyper::Request;
-use hyper_tungstenite::tungstenite::Message;
-use hyper_util::rt::TokioIo;
-use loga::{
-    ea,
-    ResultContext,
-};
-use merman3_api::api::{
-    Req,
-    ServerReq,
-    ServerResp,
-};
-use merman3_api::{
-    AiMessage,
-    AiRole,
-    AiStatus,
-    ListEntry,
-    RespAiClear,
-    RespAiHistory,
-    RespAiSend,
-    RespList,
-    RespOpen,
-    RespStart,
-    WsClient,
-    WsServer,
-    API_PATH,
-    WS_PATH,
-};
-use merman3_core::cursor::Located;
-use merman3_core::document::Document;
-use merman3_core::keys::Keymap;
-use merman3_core::matcher::match_document;
-use merman3_core::serialize::serialize_atom;
-use merman3_core::spec::SpecSyntax;
-use merman3_core::syntax::Syntax;
-use notify::{
-    EventKind,
-    RecursiveMode,
-    Watcher,
-};
-use std::path::{
-    Path,
-    PathBuf,
-};
-use std::process::exit;
-use std::process::Stdio;
-use std::sync::Arc;
-use std::time::Duration;
-use tao::event::{
-    Event,
-    WindowEvent,
-};
-use tao::event_loop::{
-    ControlFlow,
-    EventLoop,
-};
-use tao::window::WindowBuilder;
-use tokio::io::{
-    AsyncBufReadExt,
-    AsyncReadExt,
-    AsyncWriteExt,
-    BufReader,
-};
-use tokio::process::Command;
-use tokio::sync::broadcast;
-use wry::WebViewBuilder;
-
 mod ai;
-mod config;
 mod events;
 
-#[derive(Aargvark)]
-struct Locate {
-    file: PathBuf,
-    reference: String,
-}
+use {
+    aargvark::{
+        Aargvark,
+        vark,
+    },
+    foyer::DeviceBuilder,
+    futures::{
+        SinkExt,
+        StreamExt,
+    },
+    http::{
+        Response,
+        header::CONTENT_TYPE,
+    },
+    http_body_util::BodyExt,
+    htwrap::htserve::{
+        handler::{
+            Handler,
+            HandlerArgs,
+        },
+        responses::{
+            Body,
+            body_full,
+            response_200_html,
+            response_400,
+            response_404,
+        },
+    },
+    hyper::{
+        Request,
+        body::Incoming,
+        service::service_fn,
+    },
+    hyper_tungstenite::tungstenite::Message,
+    hyper_util::rt::TokioIo,
+    loga::{
+        ResultContext,
+        ea,
+    },
+    merman::{
+        config,
+        load_document,
+    },
+    merman_api::{
+        API_PATH,
+        AiMessage,
+        AiRole,
+        AiSessionInfo,
+        AiStatus,
+        ListEntry,
+        RespAiClear,
+        RespAiHistory,
+        RespAiResume,
+        RespAiSend,
+        RespAiSessions,
+        RespList,
+        RespLocationSet,
+        RespOpen,
+        RespStart,
+        WS_PATH,
+        WsClient,
+        WsServer,
+        api::{
+            Req,
+            ServerReq,
+            ServerResp,
+        },
+    },
+    merman_core::keys::Keymap,
+    notify::{
+        EventKind,
+        RecursiveMode,
+        Watcher,
+    },
+    std::{
+        path::{
+            Path,
+            PathBuf,
+        },
+        process::exit,
+        sync::Arc,
+    },
+    tao::{
+        event::{
+            Event,
+            WindowEvent,
+        },
+        event_loop::{
+            ControlFlow,
+            EventLoop,
+        },
+        window::WindowBuilder,
+    },
+    tokio::{
+        io::AsyncWriteExt,
+        sync::broadcast,
+    },
+    wry::WebViewBuilder,
+};
 
 /// View a JSON source file using a merman3 syntax definition.
 #[derive(Aargvark)]
 struct Args {
-    /// Path to the source JSON to view
-    source: Option<PathBuf>,
     browser: Option<()>,
-    /// Port to listen on; a free port is chosen if unspecified
-    port: Option<u16>,
     /// Don't open the page in a browser
     no_open: Option<()>,
-    locate: Option<Locate>,
+    port: Option<u16>,
+    source: Option<PathBuf>,
+}
+
+fn display(path: &Path) -> String {
+    return path.to_string_lossy().into_owned();
+}
+
+/// Make JSON safe to embed in a `<script>` element.
+fn embed_json(json: &str) -> String {
+    return json.replace("</", "<\\/").replace("<!--", "<\\u0021--");
 }
 
 struct HandlerRoot {
-    html: Vec<u8>,
+    ai: Arc<ai::Ai>,
     config: config::Config,
     dir: PathBuf,
-    file: Option<PathBuf>,
-    keys: String,
     events: Arc<events::Events>,
-    ai: Arc<ai::Ai>,
+    file: Option<PathBuf>,
+    html: Vec<u8>,
+    keys: String,
+    locations: foyer::HybridCache<String, String>,
 }
 
 impl HandlerRoot {
@@ -135,18 +144,6 @@ impl HandlerRoot {
         }
         return Ok(path);
     }
-}
-
-fn response_bytes(data: &'static [u8], content_type: &str) -> Response<Body> {
-    return Response::builder()
-        .status(200)
-        .header(CONTENT_TYPE, content_type)
-        .body(body_full(data.to_vec()))
-        .unwrap();
-}
-
-fn display(path: &Path) -> String {
-    return path.to_string_lossy().into_owned();
 }
 
 #[htwrap::htserve::handler::async_trait::async_trait]
@@ -219,9 +216,16 @@ impl Handler<Body> for HandlerRoot {
                         },
                         dir: display(&dir),
                         entries: dirs,
+                        location: None,
                     });
                 })() {
-                    Ok(v) => respond(v),
+                    Ok(mut v) => match self.locations.get(&v.dir).await {
+                        Ok(cached) => {
+                            v.location = cached.map(|e| e.value().clone());
+                            respond(v)
+                        },
+                        Err(e) => ServerResp::err(format!("Error reading the location cache: {}", e)),
+                    },
                     Err(e) => ServerResp::err(e.to_string()),
                 },
                 ServerReq::AiSend(respond, req) => {
@@ -248,230 +252,7 @@ impl Handler<Body> for HandlerRoot {
                             return Ok(());
                         }
                         if state.session.is_none() {
-                            std::fs::create_dir_all(
-                                &ai.logs,
-                            ).context_with("Error creating the transcript directory", ea!(path = ai.logs.display()))?;
-                            let log = ai.logs.join(format!("{}.jsonl", ai::now_ms()));
-                            let home =
-                                directories::BaseDirs::new()
-                                    .context("Error finding the home directory")?
-                                    .home_dir()
-                                    .to_path_buf();
-                            let mut cmd = Command::new("bwrap");
-                            cmd.args(
-                                [
-                                    "--unshare-all",
-                                    "--share-net",
-                                    "--die-with-parent",
-                                    "--proc",
-                                    "/proc",
-                                    "--dev",
-                                    "/dev",
-                                    "--tmpfs",
-                                    "/tmp",
-                                ],
-                            );
-                            let mut bound: Vec<PathBuf> = vec![];
-                            let mut bind_ro = |cmd: &mut Command, path: &Path| {
-                                if bound.iter().any(|b| path.starts_with(b)) || !path.exists() {
-                                    return;
-                                }
-                                cmd.arg("--ro-bind").arg(path).arg(path);
-                                bound.push(path.to_path_buf());
-                            };
-                            for root in [
-                                "/nix",
-                                "/usr",
-                                "/lib",
-                                "/lib64",
-                                "/bin",
-                                "/sbin",
-                                "/etc",
-                                "/opt",
-                                "/run/current-system",
-                            ] {
-                                bind_ro(&mut cmd, Path::new(root));
-                            }
-                            let exe_dir =
-                                std::env::current_exe()
-                                    .context("Error finding the editor's own binary")?
-                                    .parent()
-                                    .context("The editor's own binary has no directory")?
-                                    .to_path_buf();
-                            let mut path_dirs = vec![exe_dir];
-                            path_dirs.extend(std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()));
-                            for dir in &path_dirs {
-                                if let Ok(dir) = std::fs::canonicalize(dir) {
-                                    bind_ro(&mut cmd, &dir);
-                                }
-                            }
-                            cmd.arg("--dir").arg(&home);
-                            bind_ro(&mut cmd, &home.join(".claude"));
-                            bind_ro(&mut cmd, &home.join(".claude.json"));
-                            cmd.arg("--bind").arg(&ai.dir).arg(&ai.dir).arg("--chdir").arg(&ai.dir);
-                            cmd.arg("--setenv").arg("HOME").arg(&home);
-                            cmd
-                                .arg("--setenv")
-                                .arg("PATH")
-                                .arg(std::env::join_paths(&path_dirs).context("Error building the sandbox PATH")?);
-                            cmd.arg("--setenv").arg("TERM").arg("dumb");
-                            cmd.args(
-                                [
-                                    "--",
-                                    "claude",
-                                    "-p",
-                                    "--input-format",
-                                    "stream-json",
-                                    "--output-format",
-                                    "stream-json",
-                                    "--verbose",
-                                    "--permission-mode",
-                                    "bypassPermissions",
-                                    "--no-session-persistence",
-                                    "--append-system-prompt",
-                                    "The user is editing this project's syntax tree files in the merman3 editor. They may \
-                                    refer to locations as FILE#ID or FILE#ID/PATH (PATH is a syntax path like \
-                                    named/field/2 below the element with that id) or FILE#/PATH from the root. Run \
-                                    `merman3 --locate FILE REF` (REF is the part from `#` on, or a JSON pointer like \
-                                    /v1/expr) to print the element's JSON pointer, id and value. Every syntax element \
-                                    carries its id at `id.value` in the file.",
-                                ],
-                            );
-                            cmd
-                                .stdin(Stdio::piped())
-                                .stdout(Stdio::piped())
-                                .stderr(Stdio::piped())
-                                .kill_on_drop(true);
-                            let mut child = cmd.spawn().context("Error starting claude in the sandbox")?;
-                            let stdin = child.stdin.take().unwrap();
-                            let stdout = child.stdout.take().unwrap();
-                            let mut stderr = child.stderr.take().unwrap();
-                            let reader = tokio::spawn({
-                                let ai = ai.clone();
-                                let log = log.clone();
-                                async move {
-                                    let stderr_task = tokio::spawn(async move {
-                                        let mut out = String::new();
-                                        _ = stderr.read_to_string(&mut out).await;
-                                        return out;
-                                    });
-                                    let mut lines = BufReader::new(stdout).lines();
-                                    while let Ok(Some(line)) = lines.next_line().await {
-                                        let value = match serde_json::from_str::<serde_json::Value>(&line) {
-                                            Ok(v) => v,
-                                            Err(e) => {
-                                                _ =
-                                                    ai::ai_message(
-                                                        &log,
-                                                        &ai.events,
-                                                        AiRole::System,
-                                                        format!("Unreadable output from claude ({}): {}", e, line),
-                                                    );
-                                                continue;
-                                            },
-                                        };
-                                        match value["type"].as_str() {
-                                            Some("assistant") => {
-                                                let Some(blocks) = value["message"]["content"].as_array() else {
-                                                    continue;
-                                                };
-                                                for block in blocks {
-                                                    match block["type"].as_str() {
-                                                        Some("text") => {
-                                                            let text = block["text"].as_str().unwrap_or_default();
-                                                            if text.is_empty() {
-                                                                continue;
-                                                            }
-                                                            _ =
-                                                                ai::ai_message(
-                                                                    &log,
-                                                                    &ai.events,
-                                                                    AiRole::Assistant,
-                                                                    text.to_string(),
-                                                                );
-                                                        },
-                                                        Some("tool_use") => {
-                                                            _ =
-                                                                ai::ai_message(
-                                                                    &log,
-                                                                    &ai.events,
-                                                                    AiRole::Tool,
-                                                                    format!(
-                                                                        "{} {}",
-                                                                        block["name"].as_str().unwrap_or_default(),
-                                                                        serde_json::to_string(&block["input"]).unwrap()
-                                                                    ),
-                                                                );
-                                                        },
-                                                        _ => { },
-                                                    }
-                                                }
-                                            },
-                                            Some("control_response") => {
-                                                let response = &value["response"];
-                                                if response["subtype"].as_str() == Some("error") {
-                                                    _ =
-                                                        ai::ai_message(
-                                                            &log,
-                                                            &ai.events,
-                                                            AiRole::System,
-                                                            format!(
-                                                                "Claude rejected the request: {}",
-                                                                response["error"].as_str().unwrap_or_default()
-                                                            ),
-                                                        );
-                                                }
-                                            },
-                                            Some("result") => {
-                                                if value["is_error"].as_bool() == Some(true) {
-                                                    _ =
-                                                        ai::ai_message(
-                                                            &log,
-                                                            &ai.events,
-                                                            AiRole::System,
-                                                            value["result"]
-                                                                .as_str()
-                                                                .unwrap_or("Claude reported an error")
-                                                                .to_string(),
-                                                        );
-                                                }
-                                                let mut state = ai.state.lock().await;
-                                                ai::ai_status_set(&mut state, &ai.events, AiStatus::Waiting);
-                                            },
-                                            _ => { },
-                                        }
-                                    }
-                                    let stderr = stderr_task.await.unwrap_or_default();
-                                    let mut state = ai.state.lock().await;
-                                    let Some(mut session) = state.session.take() else {
-                                        return;
-                                    };
-                                    let status =
-                                        match tokio::time::timeout(
-                                            Duration::from_secs(2),
-                                            session.child.wait(),
-                                        ).await {
-                                            Ok(Ok(status)) => status.to_string(),
-                                            _ => {
-                                                _ = session.child.kill().await;
-                                                "killed".to_string()
-                                            },
-                                        };
-                                    let stderr = stderr.trim();
-                                    _ = ai::ai_message(&log, &ai.events, AiRole::System, if stderr.is_empty() {
-                                        format!("Claude exited ({})", status)
-                                    } else {
-                                        format!("Claude exited ({}):\n{}", status, stderr)
-                                    });
-                                    ai::ai_status_set(&mut state, &ai.events, AiStatus::Off);
-                                }
-                            });
-                            state.session = Some(ai::AiSession {
-                                child: child,
-                                stdin: stdin,
-                                log: log,
-                                reader: reader,
-                            });
+                            state.session = Some(ai::ai_spawn(ai, uuid::Uuid::new_v4().to_string(), false)?);
                         }
                         let session = state.session.as_mut().unwrap();
                         ai::ai_message(&session.log, &ai.events, AiRole::User, req.text.clone())?;
@@ -531,7 +312,99 @@ impl Handler<Body> for HandlerRoot {
                         Err(e) => ServerResp::err(e.to_string()),
                     }
                 },
-                ServerReq::Open(respond, req) => match (|| -> Result<RespOpen, loga::Error> {
+                ServerReq::AiSessions(respond, _) => match (|| -> Result<RespAiSessions, loga::Error> {
+                    let mut sessions = vec![];
+                    let entries = match std::fs::read_dir(&self.ai.logs) {
+                        Ok(entries) => entries,
+                        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                            return Ok(RespAiSessions { sessions: sessions });
+                        },
+                        Err(e) => {
+                            return Err(
+                                loga::err_with(
+                                    format!("Error reading the transcript directory: {}", e),
+                                    ea!(path = self.ai.logs.display()),
+                                ),
+                            );
+                        },
+                    };
+                    for entry in entries {
+                        let entry = entry.context("Error reading the transcript directory")?;
+                        let path = entry.path();
+                        let Some(id) =
+                            path
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .and_then(|n| n.strip_suffix(".jsonl")) else {
+                                continue;
+                            };
+                        let text =
+                            std::fs::read_to_string(
+                                &path,
+                            ).context_with("Error reading a transcript", ea!(path = path.display()))?;
+                        let mut first = None;
+                        let mut last_time = 0;
+                        let mut count = 0;
+                        for line in text.lines() {
+                            let message =
+                                serde_json::from_str::<AiMessage>(
+                                    line,
+                                ).context_with("Error parsing a transcript", ea!(path = path.display()))?;
+                            count += 1;
+                            if message.role == AiRole::User {
+                                if first.is_none() {
+                                    first = Some(message.text.clone());
+                                }
+                                last_time = message.time;
+                            }
+                        }
+                        let Some(first) = first else {
+                            continue;
+                        };
+                        sessions.push(AiSessionInfo {
+                            id: id.to_string(),
+                            first: first,
+                            last_time: last_time,
+                            messages: count,
+                        });
+                    }
+                    sessions.sort_by(|a, b| b.last_time.cmp(&a.last_time));
+                    return Ok(RespAiSessions { sessions: sessions });
+                })() {
+                    Ok(v) => respond(v),
+                    Err(e) => ServerResp::err(e.to_string()),
+                },
+                ServerReq::AiResume(respond, req) => {
+                    let result: Result<(), loga::Error> = async {
+                        let id =
+                            uuid::Uuid::parse_str(&req.id)
+                                .context_with("Session ids are uuids", ea!(id = req.id))?
+                                .to_string();
+                        if !self.ai.logs.join(format!("{}.jsonl", id)).is_file() {
+                            return Err(loga::err_with("There is no transcript for this session", ea!(id = id)));
+                        }
+                        let mut state = self.ai.state.lock().await;
+                        if let Some(mut session) = state.session.take() {
+                            session.reader.abort();
+                            _ = session.child.kill().await;
+                        }
+                        state.session = Some(ai::ai_spawn(&self.ai, id, true)?);
+                        ai::ai_status_set(&mut state, &self.ai.events, AiStatus::Waiting);
+                        return Ok(());
+                    }.await;
+                    match result {
+                        Ok(()) => respond(RespAiResume {}),
+                        Err(e) => ServerResp::err(e.to_string()),
+                    }
+                },
+                ServerReq::LocationSet(respond, req) => match self.dir_contains(Path::new(&req.path)) {
+                    Ok(path) => {
+                        self.locations.insert(display(&path), req.location);
+                        respond(RespLocationSet {})
+                    },
+                    Err(e) => ServerResp::err(e.to_string()),
+                },
+                ServerReq::Open(respond, req) => match (|| -> Result<(RespOpen, String), loga::Error> {
                     let path = self.dir_contains(Path::new(&req.path))?;
                     let Some(mapping) = self.config.config_mapping(&path) else {
                         let mut known = self.config.extensions.keys().cloned().collect::<Vec<_>>();
@@ -558,12 +431,19 @@ impl Handler<Body> for HandlerRoot {
                         std::fs::read_to_string(
                             &path,
                         ).context_with("Error reading file", ea!(path = path.display()))?;
-                    return Ok(RespOpen {
+                    return Ok((RespOpen {
                         syntax: syntax,
                         source: source,
-                    });
+                        location: None,
+                    }, display(&path)));
                 })() {
-                    Ok(v) => respond(v),
+                    Ok((mut v, path)) => match self.locations.get(&path).await {
+                        Ok(cached) => {
+                            v.location = cached.map(|e| e.value().clone());
+                            respond(v)
+                        },
+                        Err(e) => ServerResp::err(format!("Error reading the location cache: {}", e)),
+                    },
                     Err(e) => ServerResp::err(e.to_string()),
                 },
             };
@@ -575,10 +455,10 @@ impl Handler<Body> for HandlerRoot {
         }
         return match args.subpath {
             "" => response_200_html(self.html.clone()),
-            "/merman3.css" => response_bytes(include_bytes!("../static/merman3.css"), "text/css"),
-            "/merman3_web.js" => response_bytes(include_bytes!("../static/merman3_web.js"), "text/javascript"),
-            "/merman3_web_bg.wasm" => response_bytes(
-                include_bytes!("../static/merman3_web_bg.wasm"),
+            "/merman.css" => response_bytes(include_bytes!("../static/merman.css"), "text/css"),
+            "/merman_web.js" => response_bytes(include_bytes!("../static/merman_web.js"), "text/javascript"),
+            "/merman_web_bg.wasm" => response_bytes(
+                include_bytes!("../static/merman_web_bg.wasm"),
                 "application/wasm",
             ),
             "/MaterialIcons-Regular.ttf" => response_bytes(
@@ -590,76 +470,11 @@ impl Handler<Body> for HandlerRoot {
     }
 }
 
-/// Make JSON safe to embed in a `<script>` element.
-fn embed_json(json: &str) -> String {
-    return json.replace("</", "<\\/").replace("<!--", "<\\u0021--");
-}
-
-fn load_document(config: &config::Config, source: &Path) -> Result<(String, Syntax, String, Document), loga::Error> {
-    let Some(mapping) = config.config_mapping(source) else {
-        let mut known = config.extensions.keys().cloned().collect::<Vec<_>>();
-        known.sort();
-        return Err(
-            loga::err_with(
-                "No syntax is configured for this file's extension",
-                ea!(
-                    source = source.display(),
-                    configured_extensions = known.join(", "),
-                    config_files = config.config_files()
-                ),
-            ),
-        );
-    };
-    let syntax_path = &mapping.syntax;
-    let syntax_text =
-        std::fs::read_to_string(
-            syntax_path,
-        ).context_with(
-            "Error reading the syntax configured for this file",
-            ea!(syntax = syntax_path.display(), config = mapping.config.display()),
-        )?;
-    let spec =
-        serde_json::from_str::<SpecSyntax>(
-            &syntax_text,
-        ).context_with("Error parsing syntax", ea!(syntax = syntax_path.display()))?;
-    let syntax = match Syntax::syntax_resolve(spec) {
-        Ok(s) => s,
-        Err(errors) => {
-            return Err(
-                loga::agg_err_with(
-                    "Errors in syntax",
-                    errors.0.into_iter().map(|e| loga::err(e.to_string())).collect(),
-                    ea!(syntax = syntax_path.display()),
-                ),
-            );
-        },
-    };
-    let source_text =
-        std::fs::read_to_string(source).context_with("Error reading file", ea!(path = source.display()))?;
-    let value =
-        serde_json::from_str::<serde_json::Value>(
-            &source_text,
-        ).context_with("Error parsing source", ea!(source = source.display()))?;
-    let document = match match_document(&syntax, &value) {
-        Ok(d) => d,
-        Err(e) => {
-            return Err(
-                loga::err_with(
-                    format!("Source doesn't match syntax:\n{}", e.mismatch_format()),
-                    ea!(source = source.display(), syntax = syntax_path.display()),
-                ),
-            );
-        },
-    };
-    return Ok((syntax_text, syntax, source_text, document));
-}
-
 fn main() {
     match (|| -> Result<(), loga::Error> {
         let args = vark::<Args>();
         let cwd = std::env::current_dir().context("Error getting the working directory")?;
-        let source =
-            args.source.or_else(|| args.locate.as_ref().map(|l| l.file.clone())).unwrap_or_else(|| cwd.clone());
+        let source = args.source.unwrap_or_else(|| cwd.clone());
         let source_abs = std::fs::canonicalize(&source).unwrap_or_else(|_| source.clone());
         let file = if source_abs.is_dir() {
             None
@@ -670,68 +485,7 @@ fn main() {
             Some(file) => file.parent().unwrap_or(&cwd).to_path_buf(),
             None => source_abs.clone(),
         };
-        let config = {
-            let mut extensions = std::collections::HashMap::new();
-            let mut keys = config::SpecKeys::default();
-            let mut sources = vec![];
-            let dirs = {
-                let mut out = vec![];
-                let mut add = |dir: PathBuf| {
-                    if !out.contains(&dir) {
-                        out.push(dir);
-                    }
-                };
-                for ancestor in dir.ancestors() {
-                    add(ancestor.to_path_buf());
-                }
-                for ancestor in cwd.ancestors() {
-                    add(ancestor.to_path_buf());
-                }
-                if let Some(dirs) = directories::BaseDirs::new() {
-                    let config_dir = dirs.config_dir();
-                    add(config_dir.join("merman"));
-                    add(config_dir.to_path_buf());
-                }
-                out
-            };
-            for dir in dirs {
-                for name in ["merman.json", ".merman.json"] {
-                    let path = dir.join(name);
-                    if !path.is_file() {
-                        continue;
-                    }
-                    let spec = (|| -> Result<config::SpecConfig, loga::Error> {
-                        let text = std::fs::read_to_string(&path).context("Error reading config file")?;
-                        return Ok(serde_json::from_str(&text).context("Error parsing config file")?);
-                    })().context_with("Error loading config", ea!(path = path.display()))?;
-                    for (ext, syntax) in spec.extensions {
-                        extensions.entry(config::normalize_ext(&ext)).or_insert_with(|| config::Mapping {
-                            syntax: dir.join(syntax),
-                            config: path.clone(),
-                        });
-                    }
-                    for (
-                        into,
-                        from,
-                    ) in [
-                        (&mut keys.common, spec.keys.common),
-                        (&mut keys.atom, spec.keys.atom),
-                        (&mut keys.array, spec.keys.array),
-                        (&mut keys.primitive, spec.keys.primitive),
-                    ] {
-                        for (action, bindings) in from {
-                            into.entry(action).or_insert(bindings);
-                        }
-                    }
-                    sources.push(path);
-                }
-            }
-            config::Config {
-                extensions: extensions,
-                keys: keys,
-                sources: sources,
-            }
-        };
+        let config = config::config_load(&dir, &cwd)?;
         if let Err(errors) = Keymap::keymap_resolve(&config.keys) {
             return Err(
                 loga::agg_err_with(
@@ -740,63 +494,6 @@ fn main() {
                     ea!(config_files = config.config_files()),
                 ),
             );
-        }
-        if let Some(locate) = &args.locate {
-            let (_, syntax, _, document) = load_document(&config, &source_abs)?;
-            let reference = &locate.reference;
-            let located = if let Some(rest) = reference.strip_prefix('#') {
-                let (id, path) = match rest.find('/') {
-                    Some(i) => (&rest[..i], &rest[i + 1..]),
-                    None => (rest, ""),
-                };
-                let from = if id.is_empty() {
-                    document.root
-                } else {
-                    let id = id.parse::<i64>().context_with("The id after # must be an integer", ea!(id = id))?;
-                    document
-                        .atoms
-                        .iter()
-                        .position(|a| a.unique_id == Some(id))
-                        .context_with("No element has this id", ea!(id = id))?
-                };
-                let path = if path.is_empty() {
-                    vec![]
-                } else {
-                    path.split('/').map(str::to_string).collect::<Vec<_>>()
-                };
-                document
-                    .document_locate(from, &path)
-                    .context_with("The path doesn't resolve", ea!(reference = reference))?
-            } else if reference.starts_with('/') || reference.is_empty() {
-                let (atom, _) =
-                    document
-                        .atoms
-                        .iter()
-                        .enumerate()
-                        .filter(|(_, a)| *reference == a.path || reference.starts_with(&format!("{}/", a.path)))
-                        .max_by_key(|(_, a)| a.path.len())
-                        .context_with("No element is at this pointer", ea!(reference = reference))?;
-                Located::Atom(atom)
-            } else {
-                return Err(
-                    loga::err_with(
-                        "A reference must start with # (an element id) or / (a JSON pointer)",
-                        ea!(reference = reference),
-                    ),
-                );
-            };
-            let (atom, field) = match located {
-                Located::Atom(a) => (a, None),
-                Located::Field(a, f) => (a, Some(f)),
-            };
-            let a = document.document_atom(atom);
-            println!("{}", serde_json::to_string_pretty(&serde_json::json!({
-                "pointer": a.path,
-                "id": a.unique_id,
-                "field": field,
-                "value": serialize_atom(&syntax, &document, atom)
-            })).unwrap());
-            return Ok(());
         }
         let keys_text = serde_json::to_string(&config.keys).unwrap();
         let demo = args.browser.is_some();
@@ -836,25 +533,39 @@ fn main() {
                     return;
                 }
                 for path in event.paths {
-                    events.events_publish(merman3_api::Event::FileChanged { path: display(&path) });
+                    events.events_publish(merman_api::Event::FileChanged { path: display(&path) });
                 }
             }
         }).context("Error creating file watcher")?;
         watcher
             .watch(&dir, RecursiveMode::Recursive)
             .context_with("Error watching directory", ea!(dir = dir.display()))?;
-        let logs =
-            directories::BaseDirs::new()
-                .context("Error finding the home directory")?
-                .data_local_dir()
-                .join("merman3")
-                .join("ai")
-                .join(dir.to_string_lossy().chars().map(|c| {
-                    if c.is_ascii_alphanumeric() || "._-".contains(c) {
-                        return c.to_string();
-                    }
-                    return format!("%{:02X}", c as u32);
-                }).collect::<String>());
+        let rt =
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .context("Error starting async runtime")?;
+        let base_dirs = directories::BaseDirs::new().context("Error finding the home directory")?;
+        let locations_dir = base_dirs.cache_dir().join("merman").join("locations");
+        std::fs::create_dir_all(
+            &locations_dir,
+        ).context_with("Error creating the location cache directory", ea!(path = locations_dir.display()))?;
+        let locations = rt.block_on(async {
+            let device = foyer::FsDeviceBuilder::new(&locations_dir).with_capacity(64 << 20).build()?;
+            return foyer::HybridCacheBuilder::new()
+                .with_policy(foyer::HybridCachePolicy::WriteOnInsertion)
+                .memory(4 << 20)
+                .storage()
+                .with_engine_config(foyer::BlockEngineConfig::new(device))
+                .build()
+                .await;
+        }).context_with("Error opening the location cache", ea!(path = locations_dir.display()))?;
+        let logs = base_dirs.data_local_dir().join("merman").join("ai").join(dir.to_string_lossy().chars().map(|c| {
+            if c.is_ascii_alphanumeric() || "._-".contains(c) {
+                return c.to_string();
+            }
+            return format!("%{:02X}", c as u32);
+        }).collect::<String>());
         let ai = Arc::new(ai::Ai {
             dir: dir.clone(),
             logs: logs,
@@ -872,13 +583,9 @@ fn main() {
             keys: keys_text,
             events: events,
             ai: ai,
+            locations: locations,
         });
         let log = loga::Log::new_root(loga::INFO);
-        let rt =
-            tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .context("Error starting async runtime")?;
         let listener =
             rt
                 .block_on(tokio::net::TcpListener::bind(("127.0.0.1", args.port.unwrap_or(0))))
@@ -1037,7 +744,7 @@ fn main() {
         rt.spawn(serve);
         let title =
             format!(
-                "{} - merman3",
+                "{} - merman",
                 source_abs
                     .file_name()
                     .map(|n| n.to_string_lossy().into_owned())
@@ -1062,8 +769,10 @@ fn main() {
             let _webview = builder.build(&window).context("Error creating webview")?;
             #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "ios", target_os = "android")))]
             let _webview = {
-                use tao::platform::unix::WindowExtUnix;
-                use wry::WebViewBuilderExtUnix;
+                use {
+                    tao::platform::unix::WindowExtUnix,
+                    wry::WebViewBuilderExtUnix,
+                };
 
                 let vbox = window.default_vbox().context("Window has no gtk container to put the webview in")?;
                 builder.build_gtk(vbox).context("Error creating webview")?
@@ -1082,4 +791,12 @@ fn main() {
             exit(1);
         },
     }
+}
+
+fn response_bytes(data: &'static [u8], content_type: &str) -> Response<Body> {
+    return Response::builder()
+        .status(200)
+        .header(CONTENT_TYPE, content_type)
+        .body(body_full(data.to_vec()))
+        .unwrap();
 }

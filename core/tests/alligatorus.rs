@@ -1,85 +1,22 @@
 mod common;
 
-use common::{
-    build,
-    load_document,
-    load_syntax,
-    render_text,
-    settle,
+use {
+    common::{
+        build,
+        load_document,
+        load_syntax,
+        render_text,
+        settle,
+    },
+    merman_core::{
+        context::Vector,
+        keys::Action,
+    },
+    std::time::Instant,
 };
-use merman3_core::context::Vector;
-use merman3_core::keys::Action;
-use std::time::Instant;
-
-#[test]
-fn lays_out_synth_module() {
-    let syntax = load_syntax(include_str!("../../syntaxes/alligatorus.json"));
-    let doc = load_document(&syntax, include_str!("data/synth-midi-sine.at"));
-    let unit = syntax.syntax_style(0).font.size * 0.6;
-    let edge_chars = 100.;
-    let pad = syntax.spec_root.pad.converse_start + syntax.spec_root.pad.converse_end;
-    let (mut ctx, display, _environment) = build(syntax, doc, edge_chars * unit + pad, 800.);
-    settle(&mut ctx);
-    let rows = render_text(&display, unit);
-    let mut over = 0;
-    for (i, line) in rows.iter().enumerate() {
-        // Wrapped lines may hang half a character over (nearest-index split).
-        if line.trim_end().chars().count() as f64 > edge_chars + 1. {
-            over += 1;
-        }
-        if i < 40 {
-            println!("{}", line);
-        }
-    }
-    println!("rows: {}, over edge: {}", rows.len(), over);
-    assert!(rows.len() > 100);
-    assert_eq!(over, 0, "{} rows exceed the edge", over);
-}
 
 fn expr(id: u64, variant: &str, body: &str) -> String {
     return format!(r#"{{"id":{{"value":{}}},"variant":{{"{}":{}}}}}"#, id, variant, body);
-}
-
-fn number(id: u64, n: f64) -> String {
-    return expr(id, "literal", &format!(r#"{{"value":{{"number":{{"value":{}}}}}}}"#, n));
-}
-
-fn sub(id: u64, base: &str, reference: &str) -> String {
-    return expr(id, "operator_binary", &format!(r#"{{"op":"sub","base":{},"reference":{}}}"#, base, reference));
-}
-
-fn render_module(expr: &str) -> String {
-    let syntax = load_syntax(include_str!("../../syntaxes/alligatorus.json"));
-    let doc = load_document(&syntax, &format!(r#"{{"v1":{{"expr":{}}}}}"#, expr));
-    let (mut ctx, display, _environment) = build(syntax, doc, 2000., 800.);
-    settle(&mut ctx);
-    let rows = display.display_test_rows();
-    assert_eq!(rows.len(), 1);
-    return rows[0].bricks.iter().map(|b| b.text.as_str()).collect::<Vec<_>>().concat();
-}
-
-#[test]
-fn parentheses_follow_associativity() {
-    // Left associative: (1 - 2) - 3 needs no parentheses, 1 - (2 - 3) does.
-    let left = sub(0, &sub(1, &number(2, 1.), &number(3, 2.)), &number(4, 3.));
-    assert_eq!(render_module(&left), "1 - 2 - 3");
-    let right = sub(0, &number(1, 1.), &sub(2, &number(3, 2.), &number(4, 3.)));
-    assert_eq!(render_module(&right), "1 - (2 - 3)");
-}
-
-#[test]
-fn ids_round_trip() {
-    let syntax = load_syntax(include_str!("../../syntaxes/alligatorus.json"));
-    let source = include_str!("data/synth-midi-sine.at");
-    let document = load_document(&syntax, source);
-    let written = merman3_core::serialize::serialize_atom(&syntax, &document, document.root);
-    let want: serde_json::Value = serde_json::from_str(source).unwrap();
-    let mut diffs = vec![];
-    first_difference(&written, &want, "", &mut diffs);
-    for d in diffs.iter().take(8) {
-        println!("{}", d);
-    }
-    assert!(diffs.is_empty(), "{} differences, first shown above", diffs.len());
 }
 
 fn first_difference(got: &serde_json::Value, want: &serde_json::Value, path: &str, out: &mut Vec<String>) -> bool {
@@ -117,6 +54,59 @@ fn first_difference(got: &serde_json::Value, want: &serde_json::Value, path: &st
             return true;
         },
     }
+}
+
+#[test]
+fn ids_round_trip() {
+    let syntax = load_syntax(include_str!("../../syntaxes/alligatorus.json"));
+    let source = include_str!("data/synth-midi-sine.at");
+    let document = load_document(&syntax, source);
+    let written = merman_core::serialize::serialize_atom(&syntax, &document, document.root);
+    let want: serde_json::Value = serde_json::from_str(source).unwrap();
+    let mut diffs = vec![];
+    first_difference(&written, &want, "", &mut diffs);
+    for d in diffs.iter().take(8) {
+        println!("{}", d);
+    }
+    assert!(diffs.is_empty(), "{} differences, first shown above", diffs.len());
+}
+
+#[test]
+fn lays_out_synth_module() {
+    let syntax = load_syntax(include_str!("../../syntaxes/alligatorus.json"));
+    let doc = load_document(&syntax, include_str!("data/synth-midi-sine.at"));
+    let unit = syntax.syntax_style(0).font.size * 0.6;
+    let edge_chars = 100.;
+    let pad = syntax.spec_root.pad.converse_start + syntax.spec_root.pad.converse_end;
+    let (mut ctx, display, _environment) = build(syntax, doc, edge_chars * unit + pad, 800.);
+    settle(&mut ctx);
+    let rows = render_text(&display, unit);
+    let mut over = 0;
+    for (i, line) in rows.iter().enumerate() {
+        // Wrapped lines may hang half a character over (nearest-index split).
+        if line.trim_end().chars().count() as f64 > edge_chars + 1. {
+            over += 1;
+        }
+        if i < 40 {
+            println!("{}", line);
+        }
+    }
+    println!("rows: {}, over edge: {}", rows.len(), over);
+    assert!(rows.len() > 100);
+    assert_eq!(over, 0, "{} rows exceed the edge", over);
+}
+
+fn number(id: u64, n: f64) -> String {
+    return expr(id, "literal", &format!(r#"{{"value":{{"number":{{"value":{}}}}}}}"#, n));
+}
+
+#[test]
+fn parentheses_follow_associativity() {
+    // Left associative: (1 - 2) - 3 needs no parentheses, 1 - (2 - 3) does.
+    let left = sub(0, &sub(1, &number(2, 1.), &number(3, 2.)), &number(4, 3.));
+    assert_eq!(render_module(&left), "1 - 2 - 3");
+    let right = sub(0, &number(1, 1.), &sub(2, &number(3, 2.), &number(4, 3.)));
+    assert_eq!(render_module(&right), "1 - (2 - 3)");
 }
 
 fn profile(name: &str, source: &str) {
@@ -169,6 +159,25 @@ fn profile(name: &str, source: &str) {
     println!("hover across the wall ({} rows): worst {:?}", rows.len(), worst);
 }
 
+#[test]
+#[ignore]
+fn profile_large_document() {
+    let source = include_str!("data/synth-midi-sine.at");
+    profile("synth-midi-sine", source);
+    profile("x4", &repeated(source, 4));
+    profile("x16", &repeated(source, 16));
+}
+
+fn render_module(expr: &str) -> String {
+    let syntax = load_syntax(include_str!("../../syntaxes/alligatorus.json"));
+    let doc = load_document(&syntax, &format!(r#"{{"v1":{{"expr":{}}}}}"#, expr));
+    let (mut ctx, display, _environment) = build(syntax, doc, 2000., 800.);
+    settle(&mut ctx);
+    let rows = display.display_test_rows();
+    assert_eq!(rows.len(), 1);
+    return rows[0].bricks.iter().map(|b| b.text.as_str()).collect::<Vec<_>>().concat();
+}
+
 fn repeated(source: &str, times: usize) -> String {
     let mut value: serde_json::Value = serde_json::from_str(source).unwrap();
     let exprs = value["v1"]["expr"]["variant"]["seq"]["exprs"].as_array().unwrap().clone();
@@ -180,11 +189,6 @@ fn repeated(source: &str, times: usize) -> String {
     return serde_json::to_string(&value).unwrap();
 }
 
-#[test]
-#[ignore]
-fn profile_large_document() {
-    let source = include_str!("data/synth-midi-sine.at");
-    profile("synth-midi-sine", source);
-    profile("x4", &repeated(source, 4));
-    profile("x16", &repeated(source, 16));
+fn sub(id: u64, base: &str, reference: &str) -> String {
+    return expr(id, "operator_binary", &format!(r#"{{"op":"sub","base":{},"reference":{}}}"#, base, reference));
 }

@@ -1,53 +1,31 @@
 mod common;
 
-use common::{
-    build,
-    load_document,
-    load_syntax,
-    render_text,
-    settle,
+use {
+    common::{
+        build,
+        load_document,
+        load_syntax,
+        render_text,
+        settle,
+    },
+    merman_core::{
+        context::{
+            Context,
+            Vector,
+        },
+        display::DisplayTest,
+        environment::EnvironmentTest,
+        error::ErrorKind,
+        matcher::match_document,
+        spec::SpecSyntax,
+        syntax::Syntax,
+    },
 };
-use merman3_core::context::{
-    Context,
-    Vector,
-};
-use merman3_core::display::DisplayTest;
-use merman3_core::environment::EnvironmentTest;
-use merman3_core::matcher::match_document;
-use merman3_core::spec::SpecSyntax;
-use merman3_core::error::ErrorKind;
-use merman3_core::syntax::Syntax;
 
 /// The json syntax uses a 16px font, which merman treats as 16pt = 12px; the fixed
 /// measurer makes every grapheme 0.6em, so 7.2px, and the 28.8px indent is 4
 /// characters.
 const UNIT: f64 = 12. * 0.6;
-
-fn json_context(text: &str, edge_chars: f64) -> (Context, DisplayTest, EnvironmentTest) {
-    let syntax = load_syntax(include_str!("../../syntaxes/json.json"));
-    let doc = load_document(&syntax, text);
-    let pad = syntax.spec_root.pad.converse_start + syntax.spec_root.pad.converse_end;
-    let (mut ctx, display, environment) = build(syntax, doc, edge_chars * UNIT + pad, 600.);
-    settle(&mut ctx);
-    return (ctx, display, environment);
-}
-
-fn layout_text(text: &str, edge_chars: f64) -> Vec<String> {
-    let (_ctx, display, _environment) = json_context(text, edge_chars);
-    return render_text(&display, UNIT);
-}
-
-fn resize(ctx: &mut Context, edge_chars: f64) {
-    let pad = ctx.syntax.spec_root.pad.converse_start + ctx.syntax.spec_root.pad.converse_end;
-    ctx.context_resize(edge_chars * UNIT + pad, 600.);
-    settle(ctx);
-}
-
-#[test]
-fn single_line_fits() {
-    let rows = layout_text(r#"{"a": 1, "b": [true, null]}"#, 100.);
-    assert_eq!(rows, vec!["{a: 1, b: [true, null]}".to_string()]);
-}
 
 #[test]
 fn compacts_outer_first() {
@@ -83,63 +61,6 @@ fn expands_when_edge_grows_and_recompacts() {
     assert_eq!(
         render_text(&display, UNIT),
         vec!["{".to_string(), "    a: 1, ".to_string(), "    b: [true, null]".to_string(), "}".to_string(),]
-    );
-}
-
-#[test]
-fn nested_indent_chains() {
-    let rows = layout_text(r#"{"a": {"bb": [1, 2, 3, 4, 5, 6]}}"#, 14.);
-    assert_eq!(
-        rows,
-        vec![
-            "{".to_string(),
-            "    a: {".to_string(),
-            "        bb: [".to_string(),
-            "            1, ".to_string(),
-            "            2, ".to_string(),
-            "            3, ".to_string(),
-            "            4, ".to_string(),
-            "            5, ".to_string(),
-            "            6".to_string(),
-            "        ]".to_string(),
-            "    }".to_string(),
-            "}".to_string(),
-        ]
-    );
-}
-
-#[test]
-fn soft_wraps_long_string() {
-    let rows = layout_text(r#"["the quick brown fox jumps over the lazy dog"]"#, 20.);
-
-    // The record (lowest depth) breaks; the array still fits on its line.
-    assert_eq!(
-        rows,
-        vec![
-            "[".to_string(),
-            "    \"the quick brown ".to_string(),
-            "    fox jumps over ".to_string(),
-            "    the lazy dog\"".to_string(),
-            "]".to_string(),
-        ]
-    );
-}
-
-#[test]
-fn unwraps_string_when_edge_grows() {
-    let (mut ctx, display, _environment) = json_context(r#"["the quick brown fox jumps over the lazy dog"]"#, 20.);
-    assert_eq!(render_text(&display, UNIT).len(), 5);
-    resize(&mut ctx, 100.);
-    assert_eq!(render_text(&display, UNIT), vec!["[\"the quick brown fox jumps over the lazy dog\"]".to_string()]);
-    resize(&mut ctx, 30.);
-    assert_eq!(
-        render_text(&display, UNIT),
-        vec![
-            "[".to_string(),
-            "    \"the quick brown fox jumps ".to_string(),
-            "    over the lazy dog\"".to_string(),
-            "]".to_string(),
-        ]
     );
 }
 
@@ -183,6 +104,20 @@ fn hover_click_and_copy() {
     assert_eq!(display.display_test_drawings(), 2);
 }
 
+fn json_context(text: &str, edge_chars: f64) -> (Context, DisplayTest, EnvironmentTest) {
+    let syntax = load_syntax(include_str!("../../syntaxes/json.json"));
+    let doc = load_document(&syntax, text);
+    let pad = syntax.spec_root.pad.converse_start + syntax.spec_root.pad.converse_end;
+    let (mut ctx, display, environment) = build(syntax, doc, edge_chars * UNIT + pad, 600.);
+    settle(&mut ctx);
+    return (ctx, display, environment);
+}
+
+fn layout_text(text: &str, edge_chars: f64) -> Vec<String> {
+    let (_ctx, display, _environment) = json_context(text, edge_chars);
+    return render_text(&display, UNIT);
+}
+
 #[test]
 fn mismatch_reports_alternatives() {
     let spec: SpecSyntax = serde_json::from_str(r##"{
@@ -198,6 +133,57 @@ fn mismatch_reports_alternatives() {
 }
 
 #[test]
+fn nested_indent_chains() {
+    let rows = layout_text(r#"{"a": {"bb": [1, 2, 3, 4, 5, 6]}}"#, 14.);
+    assert_eq!(
+        rows,
+        vec![
+            "{".to_string(),
+            "    a: {".to_string(),
+            "        bb: [".to_string(),
+            "            1, ".to_string(),
+            "            2, ".to_string(),
+            "            3, ".to_string(),
+            "            4, ".to_string(),
+            "            5, ".to_string(),
+            "            6".to_string(),
+            "        ]".to_string(),
+            "    }".to_string(),
+            "}".to_string(),
+        ]
+    );
+}
+
+fn resize(ctx: &mut Context, edge_chars: f64) {
+    let pad = ctx.syntax.spec_root.pad.converse_start + ctx.syntax.spec_root.pad.converse_end;
+    ctx.context_resize(edge_chars * UNIT + pad, 600.);
+    settle(ctx);
+}
+
+#[test]
+fn single_line_fits() {
+    let rows = layout_text(r#"{"a": 1, "b": [true, null]}"#, 100.);
+    assert_eq!(rows, vec!["{a: 1, b: [true, null]}".to_string()]);
+}
+
+#[test]
+fn soft_wraps_long_string() {
+    let rows = layout_text(r#"["the quick brown fox jumps over the lazy dog"]"#, 20.);
+
+    // The record (lowest depth) breaks; the array still fits on its line.
+    assert_eq!(
+        rows,
+        vec![
+            "[".to_string(),
+            "    \"the quick brown ".to_string(),
+            "    fox jumps over ".to_string(),
+            "    the lazy dog\"".to_string(),
+            "]".to_string(),
+        ]
+    );
+}
+
+#[test]
 fn syntax_validation_reports_unused_field() {
     let spec: SpecSyntax = serde_json::from_str(r##"{
           "background": "#000",
@@ -208,4 +194,22 @@ fn syntax_validation_reports_unused_field() {
     let errors = Syntax::syntax_resolve(spec).err().expect("should fail");
     assert_eq!(errors.0.len(), 1, "{}", errors);
     assert_eq!(errors.0[0].kind, ErrorKind::UnusedBackData { unused: "x".to_string() }, "{}", errors);
+}
+
+#[test]
+fn unwraps_string_when_edge_grows() {
+    let (mut ctx, display, _environment) = json_context(r#"["the quick brown fox jumps over the lazy dog"]"#, 20.);
+    assert_eq!(render_text(&display, UNIT).len(), 5);
+    resize(&mut ctx, 100.);
+    assert_eq!(render_text(&display, UNIT), vec!["[\"the quick brown fox jumps over the lazy dog\"]".to_string()]);
+    resize(&mut ctx, 30.);
+    assert_eq!(
+        render_text(&display, UNIT),
+        vec![
+            "[".to_string(),
+            "    \"the quick brown fox jumps ".to_string(),
+            "    over the lazy dog\"".to_string(),
+            "]".to_string(),
+        ]
+    );
 }

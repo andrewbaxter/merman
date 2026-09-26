@@ -1,86 +1,25 @@
-use crate::document::{
-    Atom,
-    AtomId,
-    AtomParent,
-    Document,
-    Field,
+use {
+    crate::{
+        document::{
+            Atom,
+            AtomId,
+            AtomParent,
+            Document,
+            Field,
+        },
+        spec::SpecBack,
+        syntax::{
+            Syntax,
+            TYPE_ROOT,
+            TypeId,
+        },
+    },
+    serde_json::Value,
+    std::{
+        collections::HashMap,
+        fmt::Write,
+    },
 };
-use crate::spec::SpecBack;
-use crate::syntax::{
-    Syntax,
-    TypeId,
-    TYPE_ROOT,
-};
-use serde_json::Value;
-use std::collections::HashMap;
-use std::fmt::Write;
-
-pub struct Mismatch {
-    /// JSON pointer style path of the value that failed.
-    pub path: String,
-    pub message: String,
-    /// For group matches: each candidate type and why it failed.
-    pub alternatives: Vec<(String, Mismatch)>,
-}
-
-impl Mismatch {
-    fn leaf(path: &str, message: String) -> Mismatch {
-        return Mismatch {
-            path: path.to_string(),
-            message: message,
-            alternatives: vec![],
-        };
-    }
-
-    /// Multi-line explanation, most specific failures nested under the group they were
-    /// tried for.
-    pub fn mismatch_format(&self) -> String {
-        let mut out = String::new();
-        let mut lines = 0;
-        self.format_into(&mut out, 0, &mut lines);
-        return out;
-    }
-
-    fn format_into(&self, out: &mut String, depth: usize, lines: &mut usize) {
-        const MAX_LINES: usize = 400;
-        if *lines >= MAX_LINES {
-            return;
-        }
-        *lines += 1;
-        let indent = "  ".repeat(depth);
-        writeln!(out, "{}{}: {}", indent, self.path, self.message).unwrap();
-        if depth >= 8 && !self.alternatives.is_empty() {
-            writeln!(out, "{}  ...", indent).unwrap();
-            return;
-        }
-        for (t, m) in &self.alternatives {
-            if *lines >= MAX_LINES {
-                writeln!(out, "{}  ...", indent).unwrap();
-                return;
-            }
-            *lines += 1;
-            writeln!(out, "{}  as `{}`:", indent, t).unwrap();
-            m.format_into(out, depth + 2, lines);
-        }
-    }
-}
-
-pub fn match_document(syntax: &Syntax, value: &Value) -> Result<Document, Mismatch> {
-    let mut m = Matcher {
-        syntax: syntax,
-        atoms: vec![],
-    };
-    let root = m.match_type(TYPE_ROOT, value, "")?;
-    return Ok(Document {
-        atoms: m.atoms,
-        root: root,
-    });
-}
-
-struct Matcher<'a> {
-    syntax: &'a Syntax,
-    atoms: Vec<Atom>,
-}
 
 fn describe(value: &Value) -> String {
     match value {
@@ -104,92 +43,24 @@ fn literal_text(value: &Value) -> Option<String> {
     }
 }
 
+pub fn match_document(syntax: &Syntax, value: &Value) -> Result<Document, Mismatch> {
+    let mut m = Matcher {
+        syntax: syntax,
+        atoms: vec![],
+    };
+    let root = m.match_type(TYPE_ROOT, value, "")?;
+    return Ok(Document {
+        atoms: m.atoms,
+        root: root,
+    });
+}
+
+struct Matcher<'a> {
+    atoms: Vec<Atom>,
+    syntax: &'a Syntax,
+}
+
 impl<'a> Matcher<'a> {
-    fn match_type(&mut self, type_id: TypeId, value: &Value, path: &str) -> Result<AtomId, Mismatch> {
-        let mark = self.atoms.len();
-        let id = mark;
-        self.atoms.push(Atom {
-            type_: type_id,
-            back_ids: vec![],
-            unique_id: None,
-            path: path.to_string(),
-            fields: HashMap::new(),
-            parent: None,
-        });
-        let mut fields = HashMap::new();
-        let back = &self.syntax.syntax_type(type_id).back;
-        match self.match_back(back, value, path, id, &mut fields) {
-            Ok(()) => {
-                self.atoms[id].fields = fields;
-                return Ok(id);
-            },
-            Err(e) => {
-                self.atoms.truncate(mark);
-                return Err(e);
-            },
-        }
-    }
-
-    fn match_group(&mut self, group: &str, value: &Value, path: &str) -> Result<AtomId, Mismatch> {
-        let candidates =
-            self
-                .syntax
-                .groups
-                .get(group)
-                .unwrap_or_else(|| panic!("unknown group `{}`; syntax validation should have caught this", group))
-                .clone();
-        let mut alternatives = vec![];
-        for t in candidates {
-            match self.match_type(t, value, path) {
-                Ok(a) => return Ok(a),
-                Err(e) => alternatives.push((self.syntax.syntax_type(t).id.clone(), e)),
-            }
-        }
-        return Err(Mismatch {
-            path: path.to_string(),
-            message: format!("{} matched no type in `{}`", describe(value), group),
-            alternatives: alternatives,
-        });
-    }
-
-    fn match_sub_array(
-        &mut self,
-        specs: &[SpecBack],
-        elems: &[Value],
-        at: &mut usize,
-        run: usize,
-        path: &str,
-        owner: AtomId,
-        fields: &mut HashMap<String, Field>,
-    ) -> Result<(), Mismatch> {
-        for spec in specs {
-            match spec {
-                SpecBack::SubArray(a) => {
-                    let mut out = vec![];
-                    for i in 0 .. run {
-                        let child = self.match_group(&a.element, &elems[*at + i], &format!("{}/{}", path, *at + i))?;
-                        self.atoms[child].parent = Some(AtomParent {
-                            atom: owner,
-                            field: a.id.clone(),
-                            index: i,
-                        });
-                        out.push(child);
-                    }
-                    fields.insert(a.id.clone(), Field::Array(out));
-                    *at += run;
-                },
-                SpecBack::FixedSubArray(inner) => {
-                    self.match_sub_array(inner, elems, at, run, path, owner, fields)?;
-                },
-                _ => {
-                    self.match_back(spec, &elems[*at], &format!("{}/{}", path, *at), owner, fields)?;
-                    *at += 1;
-                },
-            }
-        }
-        return Ok(());
-    }
-
     fn match_back(
         &mut self,
         back: &SpecBack,
@@ -469,5 +340,139 @@ impl<'a> Matcher<'a> {
                 return Ok(());
             },
         }
+    }
+
+    fn match_group(&mut self, group: &str, value: &Value, path: &str) -> Result<AtomId, Mismatch> {
+        let candidates =
+            self
+                .syntax
+                .groups
+                .get(group)
+                .unwrap_or_else(|| panic!("unknown group `{}`; syntax validation should have caught this", group))
+                .clone();
+        let mut alternatives = vec![];
+        for t in candidates {
+            match self.match_type(t, value, path) {
+                Ok(a) => return Ok(a),
+                Err(e) => alternatives.push((self.syntax.syntax_type(t).id.clone(), e)),
+            }
+        }
+        return Err(Mismatch {
+            path: path.to_string(),
+            message: format!("{} matched no type in `{}`", describe(value), group),
+            alternatives: alternatives,
+        });
+    }
+
+    fn match_sub_array(
+        &mut self,
+        specs: &[SpecBack],
+        elems: &[Value],
+        at: &mut usize,
+        run: usize,
+        path: &str,
+        owner: AtomId,
+        fields: &mut HashMap<String, Field>,
+    ) -> Result<(), Mismatch> {
+        for spec in specs {
+            match spec {
+                SpecBack::SubArray(a) => {
+                    let mut out = vec![];
+                    for i in 0 .. run {
+                        let child = self.match_group(&a.element, &elems[*at + i], &format!("{}/{}", path, *at + i))?;
+                        self.atoms[child].parent = Some(AtomParent {
+                            atom: owner,
+                            field: a.id.clone(),
+                            index: i,
+                        });
+                        out.push(child);
+                    }
+                    fields.insert(a.id.clone(), Field::Array(out));
+                    *at += run;
+                },
+                SpecBack::FixedSubArray(inner) => {
+                    self.match_sub_array(inner, elems, at, run, path, owner, fields)?;
+                },
+                _ => {
+                    self.match_back(spec, &elems[*at], &format!("{}/{}", path, *at), owner, fields)?;
+                    *at += 1;
+                },
+            }
+        }
+        return Ok(());
+    }
+
+    fn match_type(&mut self, type_id: TypeId, value: &Value, path: &str) -> Result<AtomId, Mismatch> {
+        let mark = self.atoms.len();
+        let id = mark;
+        self.atoms.push(Atom {
+            type_: type_id,
+            back_ids: vec![],
+            unique_id: None,
+            path: path.to_string(),
+            fields: HashMap::new(),
+            parent: None,
+        });
+        let mut fields = HashMap::new();
+        let back = &self.syntax.syntax_type(type_id).back;
+        match self.match_back(back, value, path, id, &mut fields) {
+            Ok(()) => {
+                self.atoms[id].fields = fields;
+                return Ok(id);
+            },
+            Err(e) => {
+                self.atoms.truncate(mark);
+                return Err(e);
+            },
+        }
+    }
+}
+
+pub struct Mismatch {
+    /// For group matches: each candidate type and why it failed.
+    pub alternatives: Vec<(String, Mismatch)>,
+    pub message: String,
+    pub path: String,
+}
+
+impl Mismatch {
+    fn format_into(&self, out: &mut String, depth: usize, lines: &mut usize) {
+        const MAX_LINES: usize = 400;
+        if *lines >= MAX_LINES {
+            return;
+        }
+        *lines += 1;
+        let indent = "  ".repeat(depth);
+        writeln!(out, "{}{}: {}", indent, self.path, self.message).unwrap();
+        if depth >= 8 && !self.alternatives.is_empty() {
+            writeln!(out, "{}  ...", indent).unwrap();
+            return;
+        }
+        for (t, m) in &self.alternatives {
+            if *lines >= MAX_LINES {
+                writeln!(out, "{}  ...", indent).unwrap();
+                return;
+            }
+            *lines += 1;
+            writeln!(out, "{}  as `{}`:", indent, t).unwrap();
+            m.format_into(out, depth + 2, lines);
+        }
+    }
+
+    fn leaf(path: &str, message: String) -> Mismatch {
+        return Mismatch {
+            path: path.to_string(),
+            message: message,
+            alternatives: vec![],
+        };
+    }
+
+    /// Multi-line explanation, most specific failures nested under the group they were
+    /// tried for.
+    pub fn mismatch_format(&self) -> String {
+        let mut out = String::new();
+        let mut lines = 0;
+        self.format_into(&mut out, 0, &mut lines);
+        return out;
     }
 }

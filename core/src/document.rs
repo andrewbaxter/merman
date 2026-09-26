@@ -1,24 +1,21 @@
 //! A matched document: a tree of atoms with named fields.
 use crate::cursor::Located;
-use crate::syntax::TypeId;
-use std::collections::HashMap;
-
-pub type AtomId = usize;
-
-pub struct Document {
-    pub atoms: Vec<Atom>,
-    pub root: AtomId,
-}
+use {
+    crate::syntax::TypeId,
+    std::collections::HashMap,
+};
 
 pub struct Atom {
-    pub type_: TypeId,
     pub back_ids: Vec<i64>,
-    pub unique_id: Option<i64>,
-    pub path: String,
     pub fields: HashMap<String, Field>,
     /// None for the root.
     pub parent: Option<AtomParent>,
+    pub path: String,
+    pub type_: TypeId,
+    pub unique_id: Option<i64>,
 }
+
+pub type AtomId = usize;
 
 pub struct AtomParent {
     pub atom: AtomId,
@@ -27,10 +24,9 @@ pub struct AtomParent {
     pub index: usize,
 }
 
-pub enum Field {
-    Primitive(String),
-    Atom(AtomId),
-    Array(Vec<AtomId>),
+pub struct Document {
+    pub atoms: Vec<Atom>,
+    pub root: AtomId,
 }
 
 impl Document {
@@ -76,4 +72,10 @@ impl Document {
         }
         return Some(at);
     }
+}
+
+pub enum Field {
+    Array(Vec<AtomId>),
+    Atom(AtomId),
+    Primitive(String),
 }

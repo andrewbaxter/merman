@@ -1,7 +1,11 @@
-use merman3_api::Event;
-use std::collections::VecDeque;
-use std::sync::Mutex;
-use tokio::sync::broadcast;
+use {
+    merman_api::Event,
+    std::{
+        collections::VecDeque,
+        sync::Mutex,
+    },
+    tokio::sync::broadcast,
+};
 
 pub struct Events {
     pub buffer: Mutex<(u64, VecDeque<(u64, Event)>)>,

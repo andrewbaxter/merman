@@ -1,95 +1,16 @@
-use crate::spec::SpecDirection;
-use std::fmt::{
-    Display,
-    Formatter,
-    Result as FmtResult,
+use {
+    crate::spec::SpecDirection,
+    std::fmt::{
+        Display,
+        Formatter,
+        Result as FmtResult,
+    },
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ErrorKind {
-    UnknownStyle {
-        style: String,
-    },
-    NotTransverse {
-        converse: SpecDirection,
-        transverse: SpecDirection,
-    },
-    ReservedAtomTypeId {
-        atom_type: String,
-    },
-    DuplicateAtomTypeIds {
-        atom_type: String,
-    },
-    DuplicateAtomTypeIdsInGroup {
-        group: String,
-    },
-    DuplicateGroupId {
-        group: String,
-    },
-    TypeCircularReference {
-        stack: Vec<String>,
-        member: String,
-    },
-    GroupChildDoesntExist {
-        member: String,
-    },
-    EmptyGroup {
-        group: String,
-    },
-    AtomTypeDoesntExist {
-        candidate_type: String,
-    },
-    RootBackIsKey,
-    KeyInvalidAtLocation,
-    KeyInvalidForGroupMember {
-        atom_type: String,
-    },
-    NonKeyInvalidAtLocation {
-        atom_type: String,
-    },
-    DuplicateBackId {
-        id: String,
-    },
-    BackFieldWrongType {
-        field: String,
-        found: String,
-        expected: String,
-    },
-    ArrayMultipleAtoms,
-    RecordDiscardDuplicateKey {
-        key: String,
-    },
-    MissingBack {
-        field: String,
-    },
-    UnusedBackData {
-        unused: String,
-    },
-    EmptyAlignmentBase,
-    EmptyKeyBinding {
-        action: String,
-    },
-    UnknownAction {
-        action: String,
-        known: Vec<String>,
-    },
-    AmbiguousKeyBinding {
-        binding: String,
-        action: String,
-        other: String,
-    },
-    ShadowedKeyBinding {
-        binding: String,
-        action: String,
-        other_binding: String,
-        other: String,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Error {
-    pub path: String,
     pub kind: ErrorKind,
+    pub path: String,
 }
 
 impl Display for Error {
@@ -184,6 +105,87 @@ impl Display for Error {
         }
         return Ok(());
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ErrorKind {
+    AmbiguousKeyBinding {
+        binding: String,
+        action: String,
+        other: String,
+    },
+    ArrayMultipleAtoms,
+    AtomTypeDoesntExist {
+        candidate_type: String,
+    },
+    BackFieldWrongType {
+        field: String,
+        found: String,
+        expected: String,
+    },
+    DuplicateAtomTypeIds {
+        atom_type: String,
+    },
+    DuplicateAtomTypeIdsInGroup {
+        group: String,
+    },
+    DuplicateBackId {
+        id: String,
+    },
+    DuplicateGroupId {
+        group: String,
+    },
+    EmptyAlignmentBase,
+    EmptyGroup {
+        group: String,
+    },
+    EmptyKeyBinding {
+        action: String,
+    },
+    GroupChildDoesntExist {
+        member: String,
+    },
+    KeyInvalidAtLocation,
+    KeyInvalidForGroupMember {
+        atom_type: String,
+    },
+    MissingBack {
+        field: String,
+    },
+    NonKeyInvalidAtLocation {
+        atom_type: String,
+    },
+    NotTransverse {
+        converse: SpecDirection,
+        transverse: SpecDirection,
+    },
+    RecordDiscardDuplicateKey {
+        key: String,
+    },
+    ReservedAtomTypeId {
+        atom_type: String,
+    },
+    RootBackIsKey,
+    ShadowedKeyBinding {
+        binding: String,
+        action: String,
+        other_binding: String,
+        other: String,
+    },
+    TypeCircularReference {
+        stack: Vec<String>,
+        member: String,
+    },
+    UnknownAction {
+        action: String,
+        known: Vec<String>,
+    },
+    UnknownStyle {
+        style: String,
+    },
+    UnusedBackData {
+        unused: String,
+    },
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

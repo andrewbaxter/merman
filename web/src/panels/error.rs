@@ -1,21 +1,23 @@
-use crate::panels::{
-    panel_path_parent,
-    Panel,
-    PanelResult,
-};
-use rooting::{
-    el,
-    El,
-};
-use web_sys::{
-    KeyboardEvent,
-    MouseEvent,
+use {
+    crate::panels::{
+        Panel,
+        PanelResult,
+        panel_path_parent,
+    },
+    rooting::{
+        El,
+        el,
+    },
+    web_sys::{
+        KeyboardEvent,
+        MouseEvent,
+    },
 };
 
 pub struct ErrorPanel {
-    path: String,
     dir: bool,
     message: String,
+    path: String,
 }
 
 impl ErrorPanel {
@@ -33,19 +35,18 @@ impl Panel for ErrorPanel {
         return el("pre").classes(&["merman_panel", "merman_error"]).text(&self.message);
     }
 
+    fn panel_changed(&self, path: &str) -> Option<bool> {
+        if path == self.path || (self.dir && panel_path_parent(path) == Some(self.path.as_str())) {
+            return Some(self.dir);
+        }
+        return None;
+    }
+
+    fn panel_cursor_reference(&self) -> Option<String> {
+        return None;
+    }
+
     fn panel_detach(&self) { }
-
-    fn panel_path(&self) -> String {
-        return self.path.clone();
-    }
-
-    fn panel_parent(&self) -> Option<String> {
-        return None;
-    }
-
-    fn panel_selection(&self) -> Option<(bool, String)> {
-        return None;
-    }
 
     fn panel_focusable(&self) -> bool {
         return false;
@@ -61,18 +62,19 @@ impl Panel for ErrorPanel {
         return PanelResult::Ignored;
     }
 
-    fn panel_changed(&self, path: &str) -> Option<bool> {
-        if path == self.path || (self.dir && panel_path_parent(path) == Some(self.path.as_str())) {
-            return Some(self.dir);
-        }
+    fn panel_parent(&self) -> Option<String> {
         return None;
     }
 
-    fn panel_cursor_path(&self) -> Option<Vec<String>> {
-        return None;
+    fn panel_path(&self) -> String {
+        return self.path.clone();
     }
 
     fn panel_reference(&self) -> Option<String> {
+        return None;
+    }
+
+    fn panel_selection(&self) -> Option<(bool, String)> {
         return None;
     }
 }

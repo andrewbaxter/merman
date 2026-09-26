@@ -1,4 +1,4 @@
 /target
 /result
-/cli/static/merman3_web.js
-/cli/static/merman3_web_bg.wasm
+/cli/static/merman_web.js
+/cli/static/merman_web_bg.wasm

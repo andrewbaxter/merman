@@ -1,15 +1,31 @@
-use crate::document::{
-    AtomId,
-    Document,
-    Field,
+use {
+    crate::{
+        document::{
+            AtomId,
+            Document,
+            Field,
+        },
+        spec::SpecBack,
+        syntax::Syntax,
+    },
+    serde_json::{
+        Map,
+        Number,
+        Value,
+    },
 };
-use crate::spec::SpecBack;
-use crate::syntax::Syntax;
-use serde_json::{
-    Map,
-    Number,
-    Value,
-};
+
+fn literal(text: &str) -> Value {
+    match text {
+        "null" => return Value::Null,
+        "true" => return Value::Bool(true),
+        "false" => return Value::Bool(false),
+        _ => match text.parse::<Number>() {
+            Ok(n) => return Value::Number(n),
+            Err(_) => panic!("literal field `{}` is not null, a boolean or a number", text),
+        },
+    }
+}
 
 pub fn serialize_atom(syntax: &Syntax, document: &Document, atom: AtomId) -> Value {
     let a = document.document_atom(atom);
@@ -27,43 +43,6 @@ pub fn serialize_pair(syntax: &Syntax, document: &Document, atom: AtomId) -> (St
         panic!("pair key back did not produce a string; syntax validation should have caught this");
     };
     return (key, write_back(syntax, document, atom, &pair.value, &mut next_id));
-}
-
-fn literal(text: &str) -> Value {
-    match text {
-        "null" => return Value::Null,
-        "true" => return Value::Bool(true),
-        "false" => return Value::Bool(false),
-        _ => match text.parse::<Number>() {
-            Ok(n) => return Value::Number(n),
-            Err(_) => panic!("literal field `{}` is not null, a boolean or a number", text),
-        },
-    }
-}
-
-fn write_sub_array(
-    syntax: &Syntax,
-    document: &Document,
-    atom: AtomId,
-    specs: &[SpecBack],
-    out: &mut Vec<Value>,
-    next_id: &mut usize,
-) {
-    let a = document.document_atom(atom);
-    for spec in specs {
-        match spec {
-            SpecBack::SubArray(s) => {
-                let Some(Field::Array(elements)) = a.fields.get(&s.id) else {
-                    panic!("field `{}` is not an array", s.id);
-                };
-                for e in elements {
-                    out.push(serialize_atom(syntax, document, *e));
-                }
-            },
-            SpecBack::FixedSubArray(inner) => write_sub_array(syntax, document, atom, inner, out, next_id),
-            _ => out.push(write_back(syntax, document, atom, spec, next_id)),
-        }
-    }
 }
 
 fn write_back(syntax: &Syntax, document: &Document, atom: AtomId, back: &SpecBack, next_id: &mut usize) -> Value {
@@ -148,5 +127,30 @@ fn write_back(syntax: &Syntax, document: &Document, atom: AtomId, back: &SpecBac
             }
             return Value::Object(out);
         },
+    }
+}
+
+fn write_sub_array(
+    syntax: &Syntax,
+    document: &Document,
+    atom: AtomId,
+    specs: &[SpecBack],
+    out: &mut Vec<Value>,
+    next_id: &mut usize,
+) {
+    let a = document.document_atom(atom);
+    for spec in specs {
+        match spec {
+            SpecBack::SubArray(s) => {
+                let Some(Field::Array(elements)) = a.fields.get(&s.id) else {
+                    panic!("field `{}` is not an array", s.id);
+                };
+                for e in elements {
+                    out.push(serialize_atom(syntax, document, *e));
+                }
+            },
+            SpecBack::FixedSubArray(inner) => write_sub_array(syntax, document, atom, inner, out, next_id),
+            _ => out.push(write_back(syntax, document, atom, spec, next_id)),
+        }
     }
 }

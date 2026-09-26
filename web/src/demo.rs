@@ -1,25 +1,31 @@
-use crate::panels::code::CodePanel;
-use crate::panels::{
-    Panel,
-    PanelResult,
+use {
+    crate::panels::{
+        Panel,
+        PanelResult,
+        code::CodePanel,
+    },
+    gloo_events::EventListener,
+    gloo_utils::document,
+    merman_core::{
+        keys::{
+            Keymap,
+            SpecKeys,
+        },
+        matcher::match_document,
+        spec::SpecSyntax,
+        syntax::Syntax,
+    },
+    rooting::{
+        el,
+        set_root,
+    },
+    std::rc::Rc,
+    wasm_bindgen::{
+        JsCast,
+        prelude::*,
+    },
+    web_sys::KeyboardEvent,
 };
-use gloo_events::EventListener;
-use gloo_utils::document;
-use merman3_core::keys::{
-    Keymap,
-    SpecKeys,
-};
-use merman3_core::matcher::match_document;
-use merman3_core::spec::SpecSyntax;
-use merman3_core::syntax::Syntax;
-use rooting::{
-    el,
-    set_root,
-};
-use std::rc::Rc;
-use wasm_bindgen::prelude::*;
-use wasm_bindgen::JsCast;
-use web_sys::KeyboardEvent;
 
 fn read_embedded(id: &str) -> Result<String, String> {
     let Some(e) = document().get_element_by_id(id) else {

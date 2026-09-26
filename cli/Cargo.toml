@@ -1,15 +1,22 @@
 [package]
-name = "merman3"
+name = "merman"
 edition.workspace = true
 version.workspace = true
 
+[lib]
+path = "src/lib.rs"
+
 [[bin]]
-name = "merman3"
+name = "merman"
 path = "src/main.rs"
 
+[[bin]]
+name = "merman-tool"
+path = "src/tool.rs"
+
 [dependencies]
-merman3_core = { path = "../core" }
-merman3_api = { path = "../api" }
+merman_core = { path = "../core" }
+merman_api = { path = "../api" }
 aargvark = "0.12"
 serde_json = { version = "1", features = ["preserve_order"] }
 htwrap = "0.15"
@@ -27,3 +34,5 @@ futures = "0.3"
 hyper-tungstenite = "0.17"
 hyper = { version = "1", features = ["server", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
+foyer = "0.22.6"
+uuid = { version = "1.26.1", features = ["v4"] }

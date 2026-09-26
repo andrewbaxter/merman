@@ -1,5 +1,5 @@
 [package]
-name = "merman3_web"
+name = "merman_web"
 edition.workspace = true
 version.workspace = true
 
@@ -7,8 +7,8 @@ version.workspace = true
 crate-type = ["cdylib"]
 
 [dependencies]
-merman3_core = { path = "../core" }
-merman3_api = { path = "../api" }
+merman_core = { path = "../core" }
+merman_api = { path = "../api" }
 glove = "0.5"
 serde_json = { version = "1", features = ["preserve_order"] }
 wasm-bindgen = "=0.2.121"

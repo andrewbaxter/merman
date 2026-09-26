@@ -1,32 +1,61 @@
-use crate::context::{
-    AlignId,
-    BrickId,
-    Context,
-    VisualId,
+use crate::{
+    context::{
+        AlignId,
+        BrickId,
+        Context,
+        VisualId,
+    },
+    iteration::TaskKind,
+    spec::SpecAlignment,
 };
-use crate::iteration::TaskKind;
-use crate::spec::SpecAlignment;
+
+pub struct Alignment {
+    pub bricks: Vec<BrickId>,
+    pub converse: f64,
+    pub derived: Vec<AlignId>,
+    pub kind: AlignmentKind,
+}
 
 pub enum AlignmentKind {
+    Concensus {
+        iteration_align: Option<crate::context::TaskId>,
+    },
     Relative {
         base_key: String,
         offset: f64,
         collapse: bool,
         base: Option<AlignId>,
     },
-    Concensus {
-        iteration_align: Option<crate::context::TaskId>,
-    },
-}
-
-pub struct Alignment {
-    pub kind: AlignmentKind,
-    pub converse: f64,
-    pub bricks: Vec<BrickId>,
-    pub derived: Vec<AlignId>,
 }
 
 impl Context {
+    pub fn alignment_add_brick(&mut self, a: AlignId, b: BrickId) {
+        self.aligns[a].bricks.push(b);
+        if let AlignmentKind::Relative { collapse: true, .. } = &self.aligns[a].kind {
+            if self.aligns[a].bricks.len() == 1 {
+                self.alignment_changed(a);
+            }
+        }
+    }
+
+    pub fn alignment_changed(&mut self, a: AlignId) {
+        if let AlignmentKind::Relative { offset, collapse, base, .. } = &self.aligns[a].kind {
+            let base_converse = base.map(|b| self.aligns[b].converse).unwrap_or(0.);
+            let offset = if *collapse && self.aligns[a].bricks.is_empty() {
+                0.
+            } else {
+                *offset
+            };
+            self.aligns[a].converse = base_converse + offset;
+        }
+        for b in self.aligns[a].bricks.clone() {
+            self.brick_layout_properties_changed(b);
+        }
+        for d in self.aligns[a].derived.clone() {
+            self.alignment_changed(d);
+        }
+    }
+
     pub fn alignment_create(&mut self, spec: &SpecAlignment) -> AlignId {
         let to_pixels = self.syntax.spec_root.to_pixels;
         let (kind, converse) = match spec {
@@ -46,24 +75,6 @@ impl Context {
             derived: vec![],
         });
         return id;
-    }
-
-    pub fn alignment_root(&mut self, a: AlignId, atom: VisualId) {
-        let base_key = match &self.aligns[a].kind {
-            AlignmentKind::Relative { base_key, .. } => base_key.clone(),
-            AlignmentKind::Concensus { .. } => return,
-        };
-        let base = self.parent_find_alignment(atom, &base_key);
-        if base == Some(a) {
-            panic!("alignment parented to self");
-        }
-        if let AlignmentKind::Relative { base: b, .. } = &mut self.aligns[a].kind {
-            *b = base;
-        }
-        if let Some(b) = base {
-            self.aligns[b].derived.push(a);
-        }
-        self.alignment_changed(a);
     }
 
     pub fn alignment_feedback(&mut self, a: AlignId, converse: f64) {
@@ -87,33 +98,6 @@ impl Context {
         }
     }
 
-    pub fn alignment_changed(&mut self, a: AlignId) {
-        if let AlignmentKind::Relative { offset, collapse, base, .. } = &self.aligns[a].kind {
-            let base_converse = base.map(|b| self.aligns[b].converse).unwrap_or(0.);
-            let offset = if *collapse && self.aligns[a].bricks.is_empty() {
-                0.
-            } else {
-                *offset
-            };
-            self.aligns[a].converse = base_converse + offset;
-        }
-        for b in self.aligns[a].bricks.clone() {
-            self.brick_layout_properties_changed(b);
-        }
-        for d in self.aligns[a].derived.clone() {
-            self.alignment_changed(d);
-        }
-    }
-
-    pub fn alignment_add_brick(&mut self, a: AlignId, b: BrickId) {
-        self.aligns[a].bricks.push(b);
-        if let AlignmentKind::Relative { collapse: true, .. } = &self.aligns[a].kind {
-            if self.aligns[a].bricks.len() == 1 {
-                self.alignment_changed(a);
-            }
-        }
-    }
-
     pub fn alignment_remove_brick(&mut self, a: AlignId, b: BrickId) {
         self.aligns[a].bricks.retain(|x| *x != b);
         match &self.aligns[a].kind {
@@ -131,6 +115,30 @@ impl Context {
         }
     }
 
+    pub fn alignment_root(&mut self, a: AlignId, atom: VisualId) {
+        let base_key = match &self.aligns[a].kind {
+            AlignmentKind::Relative { base_key, .. } => base_key.clone(),
+            AlignmentKind::Concensus { .. } => return,
+        };
+        let base = self.parent_find_alignment(atom, &base_key);
+        if base == Some(a) {
+            panic!("alignment parented to self");
+        }
+        if let AlignmentKind::Relative { base: b, .. } = &mut self.aligns[a].kind {
+            *b = base;
+        }
+        if let Some(b) = base {
+            self.aligns[b].derived.push(a);
+        }
+        self.alignment_changed(a);
+    }
+
+    pub fn concensus_align_destroyed(&mut self, a: AlignId) {
+        if let AlignmentKind::Concensus { iteration_align } = &mut self.aligns[a].kind {
+            *iteration_align = None;
+        }
+    }
+
     pub fn run_concensus_align(&mut self, a: AlignId) -> bool {
         let old = self.aligns[a].converse;
         let mut max: f64 = 0.;
@@ -142,11 +150,5 @@ impl Context {
             self.alignment_changed(a);
         }
         return false;
-    }
-
-    pub fn concensus_align_destroyed(&mut self, a: AlignId) {
-        if let AlignmentKind::Concensus { iteration_align } = &mut self.aligns[a].kind {
-            *iteration_align = None;
-        }
     }
 }
