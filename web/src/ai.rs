@@ -8,7 +8,10 @@ use {
             sessions::SessionsPanel,
         },
     },
-    gloo_utils::window,
+    gloo_utils::{
+        document,
+        window,
+    },
     merman_api::{
         AiMessage,
         AiRole,
@@ -55,6 +58,7 @@ use {
 
 pub struct Ai {
     element: El,
+    focused: Cell<bool>,
     history: Cell<bool>,
     pub icon: El,
     input: El,
@@ -64,6 +68,7 @@ pub struct Ai {
     messages_el: El,
     older: El,
     pub status: El,
+    stick: Cell<bool>,
     this: Weak<Ai>,
 }
 
@@ -71,6 +76,15 @@ impl Ai {
     pub fn ai_append(&self, text: &str) {
         let input = html(&self.input);
         input.set_inner_text(&format!("{}{}", input.inner_text(), text));
+        self.ai_focus();
+        return;
+    }
+
+    fn ai_focus(&self) {
+        let input = html(&self.input);
+        if document().active_element().is_some_and(|a| &a == input.as_ref() as &web_sys::Element) {
+            return;
+        }
         _ = input.focus();
         if let Ok(Some(selection)) = window().get_selection() {
             _ = selection.select_all_children(&input);
@@ -113,21 +127,14 @@ impl Ai {
         let messages_el = el("div").classes(&["merman_ai_messages"]);
         let log = el("div").classes(&["merman_ai_log"]).push(older.clone()).push(messages_el.clone());
         let input = el("div").classes(&["merman_ai_input"]).attr("contenteditable", "true");
-        let element =
-            el("div")
-                .classes(&["merman_ai"])
-                .push(log.clone())
-                .push(
-                    el("div")
-                        .classes(&["merman_ai_compose"])
-                        .push(el("span").classes(&["merman_ai_prompt"]).text(">"))
-                        .push(input.clone()),
-                );
+        let element = el("div").classes(&["merman_ai"]).push(log.clone()).push(input.clone());
         let ai = Rc::new_cyclic(|this| Ai {
             element: element,
+            focused: Cell::new(false),
+            stick: Cell::new(true),
             status: status,
             icon: icon.clone(),
-            log: log,
+            log: log.clone(),
             older: older.clone(),
             messages_el: messages_el,
             input: input.clone(),
@@ -144,6 +151,31 @@ impl Ai {
                 };
                 ai.history.set(!ai.history.get());
                 ai.ai_render();
+            }
+        });
+        log.ref_on("scroll", {
+            let ai: Weak<Ai> = Rc::downgrade(&ai);
+            move |_| {
+                let Some(ai) = ai.upgrade() else {
+                    return;
+                };
+                let log = ai.log.raw();
+                ai.stick.set(log.scroll_top() + log.client_height() >= log.scroll_height() - 1);
+            }
+        });
+        log.ref_on_resize({
+            let ai: Weak<Ai> = Rc::downgrade(&ai);
+            move |_, _, block_size| {
+                let Some(ai) = ai.upgrade() else {
+                    return;
+                };
+                if block_size == 0. {
+                    return;
+                }
+                ai.ai_scroll();
+                if ai.focused.get() {
+                    ai.ai_focus();
+                }
             }
         });
         ai.ai_load();
@@ -191,8 +223,15 @@ impl Ai {
         }).collect::<Vec<_>>();
         self.messages_el.ref_clear();
         self.messages_el.ref_extend(rows);
-        let log = self.log.raw();
-        log.set_scroll_top(log.scroll_height());
+        self.ai_scroll();
+        return;
+    }
+
+    fn ai_scroll(&self) {
+        if self.stick.get() {
+            let log = self.log.raw();
+            log.set_scroll_top(log.scroll_height());
+        }
         return;
     }
 
@@ -236,11 +275,11 @@ impl Panel for Ai {
     }
 
     fn panel_focused(&self, focused: bool) {
-        let input = html(&self.input);
+        self.focused.set(focused);
         if focused {
-            _ = input.focus();
+            self.ai_focus();
         } else {
-            _ = input.blur();
+            _ = html(&self.input).blur();
         }
         return;
     }

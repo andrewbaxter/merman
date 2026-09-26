@@ -90,6 +90,5 @@ body { background: #222222; }
 .merman_ai_user .merman_ai_text { color: #ffffff; }
 .merman_ai_tool .merman_ai_text { color: #99aabb; }
 .merman_ai_system .merman_ai_text { color: #ff8080; }
-.merman_ai_compose { display: flex; gap: 6px; }
-.merman_ai_prompt { color: #767676; }
-.merman_ai_input { flex: 1 1 0; max-height: 12em; overflow: auto; color: #ffffff; white-space: pre-wrap; overflow-wrap: anywhere; outline: none; }
+.merman_ai_input { flex: none; min-height: 3em; max-height: 12em; overflow: auto; padding: 4px; border: 1px solid #555555; border-radius: 3px; color: #ffffff; white-space: pre-wrap; overflow-wrap: anywhere; outline: none; }
+.merman_ai_input:focus { border-color: #ffffff; }
