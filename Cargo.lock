@@ -2265,6 +2265,7 @@ dependencies = [
  "merman_core",
  "notify",
  "open",
+ "regex",
  "serde",
  "serde_json",
  "tao",

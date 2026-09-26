@@ -142,8 +142,15 @@ pub fn ai_spawn(ai: &Arc<Ai>, id: String, resume: bool) -> Result<AiSession, log
             (every element's id is at `id.value` in the file), then a jq path below that element, e.g. \
             `a.at#16.variant.bind.name`; without an id the jq path starts from the file's root, e.g. \
             `a.at#.v1.expr`. A trailing jq slice selects a range: `#16.variant.seq.exprs[1:3]` is elements \
-            1 and 2, `#16.variant.bind.name[0:3]` the first three characters. Run `merman-tool get FILE REF` \
-            (REF from the `#` on) to print the canonical reference, the element id and the JSON there.",
+            1 and 2, `#16.variant.bind.name[0:3]` the first three characters. The files are single-line JSON, \
+            so use `merman-tool` (REF is from the `#` on) rather than text tools: `merman-tool get FILE REF` \
+            prints the canonical reference, the element id and the JSON there; `merman-tool find FILE PATTERN \
+            [--within REF] [--regex] [--depth N]` prints the same for every value matching a JSON pattern (an \
+            object matches objects having at least its keys, e.g. `'{\"bind\":{\"name\":\"x\"}}'`); \
+            `merman-tool set FILE REF` replaces the JSON at REF with the JSON on stdin (a slice takes an array \
+            or string to splice in, so `[i:i]` inserts); `merman-tool delete FILE REF` removes it. Edits are \
+            checked against the syntax before the file is written. Give new elements an id of -1 and it is \
+            assigned; ids copied from elsewhere in the file are reassigned too.",
         ],
     );
     cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
