@@ -10,24 +10,22 @@ body { background: #222222; }
 .merman_panels { display: flex; align-items: stretch; flex: 1 1 0; min-width: 0; }
 .merman_panel { overflow: auto; position: relative; box-sizing: border-box; }
 
-/* Each panel shows the selection of the one to its left, and only the last two
-   are shown. A filesystem panel gets a third of the row and a code panel two
-   thirds, which at the narrowest width that fits one of each is exactly their
-   minimums. */
-.merman_panel_filesystem { flex: 1 1 0; min-width: 10cm; background: #2b2b2b; }
-.merman_panel_code, pre.merman_panel { flex: 2 1 0; min-width: 20cm; }
+/* Each panel shows the selection of the one to its left, and at most two are
+   shown. They split the row by the weight each panel gives, which the editor sets
+   as the flex grow, so a panel on its own takes all of it. */
+.merman_panel { flex: 1 1 0; min-width: 0; }
+.merman_panel_filesystem, .merman_panel_sessions { background: #2b2b2b; }
+.merman_panel_ai { background: #2b2b2b; overflow: hidden; }
 
 /* merman positions and scrolls everything itself, so the panel neither scrolls nor
    takes part in hit testing: the mouse event lands on the panel and its offset is
    already the coordinate merman wants. */
 .merman_panel_code { overflow: hidden; }
 
-/* Below the two minimums together there's no room for a listing beside a file, so
-   only the panel being used is shown and it takes the whole row. */
+/* Below this there's no room for a listing beside a file, so only the panel being
+   used is shown and it takes the whole row. */
 @media (max-width: 30cm) {
-  .merman_panel { min-width: 0; }
   .merman_panel:not(.merman_panel_focus) { display: none; }
-  .merman_panel_focus { flex: 1 1 100%; }
 }
 
 /* The cursor and hover marks of a panel that isn't taking keys are faded. */
@@ -75,20 +73,16 @@ body { background: #222222; }
   white-space: pre-wrap;
 }
 
-/* A column of status icons at the left edge, as in merman2, and the Claude pane at the
-   right edge. Both stay put while the panels between them come and go. */
+/* A column of status icons at the left edge, as in merman2. It stays put while the
+   panels beside it come and go. */
 .merman_status { flex: none; width: 24px; padding-top: 8px; display: flex; flex-direction: column; align-items: center; background: #1a1a1a; }
 .merman_status_icon { font-family: "Material Icons"; font-size: 18px; line-height: 1; color: #e0c060; cursor: pointer; }
 .merman_status_icon[hidden] { display: none; }
 
-.merman_ai { flex: none; width: 14cm; display: flex; flex-direction: column; border-left: 1px solid #444444; background: #2b2b2b; color: #cacaca; font-family: monospace; font-size: 12px; }
-.merman_ai[hidden] { display: none; }
-.merman_ai button { font: inherit; color: #cacaca; background: #3a3a3a; border: 1px solid #555555; border-radius: 3px; padding: 2px 8px; cursor: pointer; }
-.merman_ai button:hover { border-color: #888888; }
-.merman_ai_header { display: flex; align-items: center; gap: 6px; padding: 6px; border-bottom: 1px solid #444444; }
-.merman_ai_title { flex: 1 1 0; color: #ffffff; }
-.merman_ai_log { flex: 1 1 0; overflow: auto; padding: 6px; }
-.merman_ai_older { display: block; margin: 0 auto 8px; }
+.merman_ai { height: 100%; display: flex; flex-direction: column; padding: 12px; box-sizing: border-box; color: #cacaca; font-family: monospace; font-size: 12px; }
+.merman_ai_log { flex: 1 1 0; overflow: auto; }
+.merman_ai_older { color: #767676; cursor: pointer; margin-bottom: 8px; }
+.merman_ai_older:hover { color: #ffffff; }
 .merman_ai_older[hidden] { display: none; }
 .merman_ai_msg { margin-bottom: 8px; }
 .merman_ai_time { color: #767676; margin-right: 6px; }
@@ -96,11 +90,6 @@ body { background: #222222; }
 .merman_ai_user .merman_ai_text { color: #ffffff; }
 .merman_ai_tool .merman_ai_text { color: #99aabb; }
 .merman_ai_system .merman_ai_text { color: #ff8080; }
-.merman_ai_compose { display: flex; align-items: flex-end; gap: 6px; padding: 6px; border-top: 1px solid #444444; }
-.merman_ai_input { flex: 1 1 0; min-height: 3em; max-height: 12em; overflow: auto; padding: 4px; border: 1px solid #555555; border-radius: 3px; white-space: pre-wrap; outline: none; }
-.merman_ai_input:focus { border-color: #ffffff; }
-
-.merman_ai_sessions { padding: 6px; border-bottom: 1px solid #444444; display: flex; flex-direction: column; gap: 4px; max-height: 50%; overflow: auto; }
-.merman_ai_sessions[hidden] { display: none; }
-.merman_ai_sessions_title { color: #ffffff; margin-bottom: 4px; }
-.merman_ai_session { text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; }
+.merman_ai_compose { display: flex; gap: 6px; }
+.merman_ai_prompt { color: #767676; }
+.merman_ai_input { flex: 1 1 0; max-height: 12em; overflow: auto; color: #ffffff; white-space: pre-wrap; overflow-wrap: anywhere; outline: none; }

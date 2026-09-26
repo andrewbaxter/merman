@@ -23,7 +23,7 @@ htwrap = "0.15"
 http = "1"
 http-body-util = "0.1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "process", "io-util", "sync", "time"] }
-loga = "0.5"
+loga = { version = "0.5.5", features = ["serde"] }
 open = "5"
 serde = { version = "1", features = ["derive"] }
 directories = "6"
@@ -37,3 +37,4 @@ hyper-util = { version = "0.1", features = ["tokio"] }
 foyer = "0.22.6"
 regex = "1"
 uuid = { version = "1.26.1", features = ["v4"] }
+notify-rust = { version = "4.18.0", default-features = false, features = ["z-with-tokio"] }

@@ -1,5 +1,13 @@
 use {
-    crate::client::client_send,
+    crate::{
+        client::client_send,
+        panels::{
+            Panel,
+            PanelResult,
+            panel_key_stroke,
+            sessions::SessionsPanel,
+        },
+    },
     gloo_utils::window,
     merman_api::{
         AiMessage,
@@ -7,10 +15,18 @@ use {
         AiStatus,
         ReqAiClear,
         ReqAiHistory,
-        ReqAiResume,
         ReqAiSend,
-        ReqAiSessions,
         RespAiHistory,
+    },
+    merman_core::{
+        cursor::CursorKind,
+        direction::DirectionConvert,
+        keys::{
+            Action,
+            KeyResolve,
+            Keymap,
+        },
+        spec::SpecDirection,
     },
     rooting::{
         El,
@@ -33,20 +49,22 @@ use {
     web_sys::{
         HtmlElement,
         KeyboardEvent,
+        MouseEvent,
     },
 };
 
 pub struct Ai {
-    pub element: El,
+    element: El,
     history: Cell<bool>,
-    icon: El,
+    pub icon: El,
     input: El,
+    keys: Keymap,
     log: El,
     messages: RefCell<Vec<AiMessage>>,
     messages_el: El,
     older: El,
-    sessions: El,
     pub status: El,
+    this: Weak<Ai>,
 }
 
 impl Ai {
@@ -88,91 +106,48 @@ impl Ai {
         return;
     }
 
-    pub fn ai_new() -> Rc<Ai> {
+    pub fn ai_new(keys: Keymap) -> Rc<Ai> {
         let icon = el("span").classes(&["merman_status_icon"]).attr("hidden", "");
         let status = el("div").classes(&["merman_status"]).push(icon.clone());
-        let older = el("button").classes(&["merman_ai_older"]).attr("hidden", "");
+        let older = el("div").classes(&["merman_ai_older"]).attr("hidden", "");
         let messages_el = el("div").classes(&["merman_ai_messages"]);
         let log = el("div").classes(&["merman_ai_log"]).push(older.clone()).push(messages_el.clone());
-        let sessions = el("div").classes(&["merman_ai_sessions"]).attr("hidden", "");
         let input = el("div").classes(&["merman_ai_input"]).attr("contenteditable", "true");
-        let send = el("button").text("Send");
-        let clear = el("button").text("Clear");
-        let close = el("button").text("Close");
         let element =
             el("div")
                 .classes(&["merman_ai"])
-                .attr("hidden", "")
+                .push(log.clone())
                 .push(
                     el("div")
-                        .classes(&["merman_ai_header"])
-                        .push(el("span").classes(&["merman_ai_title"]).text("Claude"))
-                        .push(clear.clone())
-                        .push(close.clone()),
-                )
-                .push(sessions.clone())
-                .push(log.clone())
-                .push(el("div").classes(&["merman_ai_compose"]).push(input.clone()).push(send.clone()));
-        let ai = Rc::new(Ai {
-            element: element.clone(),
+                        .classes(&["merman_ai_compose"])
+                        .push(el("span").classes(&["merman_ai_prompt"]).text(">"))
+                        .push(input.clone()),
+                );
+        let ai = Rc::new_cyclic(|this| Ai {
+            element: element,
             status: status,
             icon: icon.clone(),
             log: log,
             older: older.clone(),
             messages_el: messages_el,
-            sessions: sessions,
             input: input.clone(),
+            keys: keys,
             messages: RefCell::new(vec![]),
             history: Cell::new(false),
+            this: this.clone(),
         });
-        icon.ref_on("click", with_ai(&ai, |ai| ai.ai_open()));
-        close.ref_on("click", with_ai(&ai, |ai| {
-            ai.element.ref_attr("hidden", "");
-        }));
-        clear.ref_on("click", with_ai(&ai, |ai| {
-            wasm_bindgen_futures::spawn_local({
-                let ai = ai.clone();
-                async move {
-                    if let Err(e) = client_send(ReqAiClear {}).await {
-                        ai.ai_message(AiMessage {
-                            role: AiRole::System,
-                            text: e,
-                            time: js_sys::Date::now() as u64,
-                        });
-                        return;
-                    }
-                    ai.messages.borrow_mut().clear();
-                    ai.history.set(false);
-                    ai.ai_render();
-                }
-            });
-        }));
-        older.ref_on("click", with_ai(&ai, |ai| {
-            ai.history.set(!ai.history.get());
-            ai.ai_render();
-        }));
-        send.ref_on("click", with_ai(&ai, |ai| ai.ai_send()));
-        input.ref_on("keydown", {
+        older.ref_on("click", {
             let ai: Weak<Ai> = Rc::downgrade(&ai);
-            move |e| {
-                let e: &KeyboardEvent = e.dyn_ref().unwrap();
-                if e.key() != "Enter" || e.shift_key() {
+            move |_| {
+                let Some(ai) = ai.upgrade() else {
                     return;
-                }
-                e.prevent_default();
-                if let Some(ai) = ai.upgrade() {
-                    ai.ai_send();
-                }
+                };
+                ai.history.set(!ai.history.get());
+                ai.ai_render();
             }
         });
         ai.ai_load();
         return ai;
-    }
-
-    pub fn ai_open(&self) {
-        self.element.ref_remove_attr("hidden");
-        _ = html(&self.input).focus();
-        return;
     }
 
     fn ai_render(&self) {
@@ -221,97 +196,6 @@ impl Ai {
         return;
     }
 
-    fn ai_send(self: &Rc<Self>) {
-        let input = html(&self.input);
-        let text = input.inner_text().trim().to_string();
-        if text.is_empty() {
-            return;
-        }
-        input.set_inner_text("");
-        if text == "/resume" {
-            wasm_bindgen_futures::spawn_local({
-                let ai = self.clone();
-                async move {
-                    let sessions = match client_send(ReqAiSessions {}).await {
-                        Ok(v) => v.sessions,
-                        Err(e) => {
-                            ai.ai_message(AiMessage {
-                                role: AiRole::System,
-                                text: e,
-                                time: js_sys::Date::now() as u64,
-                            });
-                            return;
-                        },
-                    };
-                    let rows = sessions.iter().map(|session| {
-                        let first: String = session.first.chars().take(80).collect();
-                        let time =
-                            js_sys::Date::new(&JsValue::from_f64(session.last_time as f64))
-                                .to_locale_string("default", &JsValue::UNDEFINED)
-                                .as_string()
-                                .unwrap_or_default();
-                        let row =
-                            el("button")
-                                .classes(&["merman_ai_session"])
-                                .text(&format!("{} \u{2014} {} ({} messages)", time, first, session.messages));
-                        row.ref_on("click", {
-                            let ai: Weak<Ai> = Rc::downgrade(&ai);
-                            let id = session.id.clone();
-                            move |_| {
-                                let Some(ai) = ai.upgrade() else {
-                                    return;
-                                };
-                                ai.sessions.ref_attr("hidden", "");
-                                wasm_bindgen_futures::spawn_local({
-                                    let ai = ai.clone();
-                                    let id = id.clone();
-                                    async move {
-                                        match client_send(ReqAiResume { id: id }).await {
-                                            Ok(_) => ai.ai_load(),
-                                            Err(e) => ai.ai_message(AiMessage {
-                                                role: AiRole::System,
-                                                text: e,
-                                                time: js_sys::Date::now() as u64,
-                                            }),
-                                        }
-                                    }
-                                });
-                            }
-                        });
-                        return row;
-                    }).collect::<Vec<_>>();
-                    let cancel = el("button").text("Cancel");
-                    cancel.ref_on("click", with_ai(&ai, |ai| {
-                        ai.sessions.ref_attr("hidden", "");
-                    }));
-                    ai.sessions.ref_clear();
-                    ai.sessions.ref_push(el("div").classes(&["merman_ai_sessions_title"]).text(if rows.is_empty() {
-                        "No earlier sessions"
-                    } else {
-                        "Resume a session"
-                    }));
-                    ai.sessions.ref_extend(rows);
-                    ai.sessions.ref_push(cancel);
-                    ai.sessions.ref_remove_attr("hidden");
-                }
-            });
-            return;
-        }
-        wasm_bindgen_futures::spawn_local({
-            let ai = self.clone();
-            async move {
-                if let Err(e) = client_send(ReqAiSend { text: text }).await {
-                    ai.ai_message(AiMessage {
-                        role: AiRole::System,
-                        text: e,
-                        time: js_sys::Date::now() as u64,
-                    });
-                }
-            }
-        });
-        return;
-    }
-
     pub fn ai_status(&self, status: AiStatus) {
         match status {
             AiStatus::Off => {
@@ -332,15 +216,120 @@ impl Ai {
     }
 }
 
-fn html(e: &El) -> HtmlElement {
-    return e.raw().dyn_into().unwrap();
+impl Panel for Ai {
+    fn panel_attach(&self) -> El {
+        return el("div").classes(&["merman_panel", "merman_panel_ai"]).push(self.element.clone());
+    }
+
+    fn panel_changed(&self, _path: &str) -> Option<bool> {
+        return None;
+    }
+
+    fn panel_cursor_reference(&self) -> Option<String> {
+        return None;
+    }
+
+    fn panel_detach(&self) { }
+
+    fn panel_focusable(&self) -> bool {
+        return true;
+    }
+
+    fn panel_focused(&self, focused: bool) {
+        let input = html(&self.input);
+        if focused {
+            _ = input.focus();
+        } else {
+            _ = input.blur();
+        }
+        return;
+    }
+
+    fn panel_key(&self, e: &KeyboardEvent) -> PanelResult {
+        if e.key() == "Enter" && !e.shift_key() {
+            let input = html(&self.input);
+            let text = input.inner_text().trim().to_string();
+            if text.is_empty() {
+                return PanelResult::Used;
+            }
+            input.set_inner_text("");
+            let Some(ai) = self.this.upgrade() else {
+                return PanelResult::Used;
+            };
+            if text == "/clear" {
+                wasm_bindgen_futures::spawn_local({
+                    let ai = ai.clone();
+                    async move {
+                        if let Err(e) = client_send(ReqAiClear {}).await {
+                            ai.ai_message(AiMessage {
+                                role: AiRole::System,
+                                text: e,
+                                time: js_sys::Date::now() as u64,
+                            });
+                            return;
+                        }
+                        ai.messages.borrow_mut().clear();
+                        ai.history.set(false);
+                        ai.ai_render();
+                    }
+                });
+                return PanelResult::Used;
+            }
+            if text == "/resume" {
+                return PanelResult::Open(
+                    Rc::new(SessionsPanel::sessions_new(self.keys.clone(), self.this.clone())),
+                );
+            }
+            wasm_bindgen_futures::spawn_local({
+                let ai = ai.clone();
+                async move {
+                    if let Err(e) = client_send(ReqAiSend { text: text }).await {
+                        ai.ai_message(AiMessage {
+                            role: AiRole::System,
+                            text: e,
+                            time: js_sys::Date::now() as u64,
+                        });
+                    }
+                }
+            });
+            return PanelResult::Used;
+        }
+        let Some(stroke) =
+            panel_key_stroke(e, DirectionConvert::new(SpecDirection::Right, SpecDirection::Down)) else {
+                return PanelResult::Ignored;
+            };
+        let KeyResolve::Action(Action::Exit) =
+            self.keys.keymap_read(&mut vec![], stroke, Some(CursorKind::Primitive)) else {
+                return PanelResult::Ignored;
+            };
+        return PanelResult::Unused(Action::Exit);
+    }
+
+    fn panel_mouse(&self, _e: &MouseEvent) -> PanelResult {
+        return PanelResult::Ignored;
+    }
+
+    fn panel_parent(&self) -> Option<String> {
+        return None;
+    }
+
+    fn panel_path(&self) -> String {
+        return String::new();
+    }
+
+    fn panel_reference(&self) -> Option<String> {
+        return None;
+    }
+
+    fn panel_selection(&self) -> Option<(bool, String)> {
+        return None;
+    }
+
+    fn panel_size(&self) -> f64 {
+        return 3.;
+    }
 }
 
-fn with_ai(ai: &Rc<Ai>, f: impl Fn(&Rc<Ai>) + 'static) -> impl FnMut(&web_sys::Event) + 'static {
-    let ai: Weak<Ai> = Rc::downgrade(ai);
-    return move |_| {
-        if let Some(ai) = ai.upgrade() {
-            f(&ai);
-        }
-    };
+fn html(e: &El) -> HtmlElement {
+    return e.raw().dyn_into().unwrap();
 }

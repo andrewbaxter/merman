@@ -80,7 +80,6 @@ use {
             Path,
             PathBuf,
         },
-        process::exit,
         sync::Arc,
     },
     tao::{
@@ -226,7 +225,7 @@ impl Handler<Body> for HandlerRoot {
                         },
                         Err(e) => ServerResp::err(format!("Error reading the location cache: {}", e)),
                     },
-                    Err(e) => ServerResp::err(e.to_string()),
+                    Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
                 },
                 ServerReq::AiSend(respond, req) => {
                     let result: Result<(), loga::Error> = async {
@@ -236,18 +235,9 @@ impl Handler<Body> for HandlerRoot {
                             let Some(session) = state.session.as_mut() else {
                                 return Err(loga::err("There is no session to cancel"));
                             };
-                            let request = serde_json::json!({
-                                "type": "control_request",
-                                "request_id": format !("cancel-{}", ai::now_ms()),
-                                "request": {
-                                    "subtype": "interrupt"
-                                }
-                            });
-                            session
-                                .stdin
-                                .write_all(format!("{}\n", request).as_bytes())
-                                .await
-                                .context("Error sending the interrupt to claude")?;
+                            ai::ai_control(session, serde_json::json!({
+                                "subtype": "interrupt"
+                            })).await?;
                             ai::ai_message(&session.log, &ai.events, AiRole::System, "Cancel requested".to_string())?;
                             return Ok(());
                         }
@@ -255,6 +245,25 @@ impl Handler<Body> for HandlerRoot {
                             state.session = Some(ai::ai_spawn(ai, uuid::Uuid::new_v4().to_string(), false)?);
                         }
                         let session = state.session.as_mut().unwrap();
+                        if let Some(model) =
+                            req.text.trim().strip_prefix("/model").filter(|m| m.is_empty() || m.starts_with(' ')) {
+                            let model = model.trim();
+                            ai::ai_control(session, serde_json::json!({
+                                "subtype": "set_model",
+                                "model": if model.is_empty() {
+                                    None
+                                }
+                                else {
+                                    Some(model)
+                                }
+                            })).await?;
+                            ai::ai_message(&session.log, &ai.events, AiRole::System, if model.is_empty() {
+                                "Switching to the default model".to_string()
+                            } else {
+                                format!("Switching to model {}", model)
+                            })?;
+                            return Ok(());
+                        }
                         ai::ai_message(&session.log, &ai.events, AiRole::User, req.text.clone())?;
                         let line = serde_json::json!({
                             "type": "user",
@@ -273,7 +282,7 @@ impl Handler<Body> for HandlerRoot {
                     }.await;
                     match result {
                         Ok(()) => respond(RespAiSend {}),
-                        Err(e) => ServerResp::err(e.to_string()),
+                        Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
                     }
                 },
                 ServerReq::AiClear(respond, _) => {
@@ -309,7 +318,7 @@ impl Handler<Body> for HandlerRoot {
                     }.await;
                     match result {
                         Ok(v) => respond(v),
-                        Err(e) => ServerResp::err(e.to_string()),
+                        Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
                     }
                 },
                 ServerReq::AiSessions(respond, _) => match (|| -> Result<RespAiSessions, loga::Error> {
@@ -372,7 +381,7 @@ impl Handler<Body> for HandlerRoot {
                     return Ok(RespAiSessions { sessions: sessions });
                 })() {
                     Ok(v) => respond(v),
-                    Err(e) => ServerResp::err(e.to_string()),
+                    Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
                 },
                 ServerReq::AiResume(respond, req) => {
                     let result: Result<(), loga::Error> = async {
@@ -394,7 +403,7 @@ impl Handler<Body> for HandlerRoot {
                     }.await;
                     match result {
                         Ok(()) => respond(RespAiResume {}),
-                        Err(e) => ServerResp::err(e.to_string()),
+                        Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
                     }
                 },
                 ServerReq::LocationSet(respond, req) => match self.dir_contains(Path::new(&req.path)) {
@@ -402,7 +411,7 @@ impl Handler<Body> for HandlerRoot {
                         self.locations.insert(display(&path), req.location);
                         respond(RespLocationSet {})
                     },
-                    Err(e) => ServerResp::err(e.to_string()),
+                    Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
                 },
                 ServerReq::Open(respond, req) => match (|| -> Result<(RespOpen, String), loga::Error> {
                     let path = self.dir_contains(Path::new(&req.path))?;
@@ -444,7 +453,7 @@ impl Handler<Body> for HandlerRoot {
                         },
                         Err(e) => ServerResp::err(format!("Error reading the location cache: {}", e)),
                     },
-                    Err(e) => ServerResp::err(e.to_string()),
+                    Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
                 },
             };
             return Response::builder()
@@ -482,7 +491,18 @@ fn main() {
             Some(source_abs.clone())
         };
         let dir = match &file {
-            Some(file) => file.parent().unwrap_or(&cwd).to_path_buf(),
+            Some(file) => {
+                let cwd = std::fs::canonicalize(&cwd).context("Error resolving the working directory")?;
+                if !file.starts_with(&cwd) {
+                    return Err(
+                        loga::err_with(
+                            "The source file must be inside the working directory",
+                            ea!(source = file.display(), dir = cwd.display()),
+                        ),
+                    );
+                }
+                cwd
+            },
             None => source_abs.clone(),
         };
         let config = config::config_load(&dir, &cwd)?;
@@ -567,12 +587,19 @@ fn main() {
             return format!("%{:02X}", c as u32);
         }).collect::<String>());
         let ai = Arc::new(ai::Ai {
+            configs: config
+                .sources
+                .iter()
+                .cloned()
+                .chain(config.extensions.values().map(|m| m.syntax.clone()))
+                .collect(),
             dir: dir.clone(),
             logs: logs,
             events: events.clone(),
             state: tokio::sync::Mutex::new(ai::AiState {
                 status: AiStatus::Off,
                 session: None,
+                notification: None,
             }),
         });
         let handler = Arc::new(HandlerRoot {
@@ -786,10 +813,7 @@ fn main() {
         }
     })() {
         Ok(_) => (),
-        Err(e) => {
-            eprintln!("{}", e);
-            exit(1);
-        },
+        Err(e) => loga::fatal(e),
     }
 }
 

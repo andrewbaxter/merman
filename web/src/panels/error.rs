@@ -77,4 +77,8 @@ impl Panel for ErrorPanel {
     fn panel_selection(&self) -> Option<(bool, String)> {
         return None;
     }
+
+    fn panel_size(&self) -> f64 {
+        return 5.;
+    }
 }

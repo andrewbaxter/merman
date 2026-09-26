@@ -1,6 +1,8 @@
 pub mod code;
 pub mod error;
 pub mod filesystem;
+pub mod list;
+pub mod sessions;
 
 use {
     merman_core::{
@@ -13,6 +15,7 @@ use {
         spec::SpecDirection,
     },
     rooting::El,
+    std::rc::Rc,
     web_sys::{
         KeyboardEvent,
         MouseEvent,
@@ -32,6 +35,7 @@ pub trait Panel {
     fn panel_path(&self) -> String;
     fn panel_reference(&self) -> Option<String>;
     fn panel_selection(&self) -> Option<(bool, String)>;
+    fn panel_size(&self) -> f64;
 }
 
 pub fn panel_key_stroke(e: &KeyboardEvent, convert: DirectionConvert) -> Option<KeyStroke> {
@@ -165,6 +169,7 @@ pub fn panel_path_parent(path: &str) -> Option<&str> {
 
 pub enum PanelResult {
     Ignored,
+    Open(Rc<dyn Panel>),
     Selected,
     Unused(Action),
     Used,

@@ -128,11 +128,12 @@ let
       cargoArtifacts = craneLib.buildDepsOnly cliArgs;
       # The binary launches the webview at runtime, so it needs the gtk
       # environment (gsettings schemas, gdk-pixbuf loaders) wrapped in. The ai
-      # pane's sandbox needs claude and merman-tool on the PATH and, since every
-      # binary here lives in the store, the store bound read-only inside it.
+      # pane needs bwrap, and its sandbox claude and merman-tool, on the PATH
+      # and, since every binary here lives in the store, the store bound
+      # read-only inside it.
       nativeBuildInputs = cliNativeBuildInputs ++ [ pkgs.wrapGAppsHook3 ];
       preFixup = ''
-        gappsWrapperArgs+=(--prefix PATH : "${claudeCode}/bin:$out/bin" --set MERMAN_SANDBOX_RO /nix/store)
+        gappsWrapperArgs+=(--prefix PATH : "${pkgs.bubblewrap}/bin:${claudeCode}/bin:$out/bin" --set MERMAN_SANDBOX_RO /nix/store)
       '';
       passthru = {
         inherit web claudeCode;

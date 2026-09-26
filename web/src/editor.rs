@@ -11,7 +11,10 @@ use {
         },
     },
     futures::channel::oneshot::Receiver,
-    gloo_events::EventListener,
+    gloo_events::{
+        EventListener,
+        EventListenerOptions,
+    },
     gloo_timers::callback::Timeout,
     gloo_utils::{
         document,
@@ -50,6 +53,7 @@ use {
             RefCell,
         },
         collections::HashMap,
+        path::Path,
         rc::{
             Rc,
             Weak,
@@ -60,7 +64,7 @@ use {
         prelude::*,
     },
     web_sys::{
-        Element,
+        HtmlElement,
         KeyboardEvent,
         MessageEvent,
         MouseEvent,
@@ -87,6 +91,8 @@ struct Editor {
     selections: RefCell<HashMap<String, String>>,
     shown: RefCell<Vec<(Rc<dyn Panel>, El)>>,
     socket: RefCell<Option<(WebSocket, Vec<EventListener>)>>,
+    start: Cell<usize>,
+    start_focus: RefCell<Option<String>>,
 }
 
 fn editor_connect(editor: &Rc<Editor>) {
@@ -150,10 +156,32 @@ fn editor_connect(editor: &Rc<Editor>) {
     return;
 }
 
+fn editor_ai_open(editor: &Rc<Editor>, index: usize) {
+    let ai: Rc<dyn Panel> = editor.ai.clone();
+    if let Some(existing) = editor_index(editor, &ai) {
+        editor_focus(editor, existing);
+        return;
+    }
+    editor_open_child(editor, index, ai);
+    return;
+}
+
+fn editor_open_child(editor: &Rc<Editor>, index: usize, child: Rc<dyn Panel>) {
+    *editor.child_request.borrow_mut() = None;
+    let count = editor.panels.borrow().len();
+    editor_splice(editor, index + 1, count - index - 1, vec![child]);
+    editor_focus(editor, index + 1);
+    return;
+}
+
 fn editor_focus(editor: &Rc<Editor>, index: usize) {
+    if let Some(active) = document().active_element() {
+        _ = active.dyn_into::<HtmlElement>().map(|active| active.blur());
+    }
     editor.focus.set(index);
     editor.focus_next.set(false);
     let count = editor.panels.borrow().len();
+    editor.start.set((index + 2).min(count).saturating_sub(2));
     editor_splice(editor, (index + 2).min(count), count.saturating_sub(index + 2), vec![]);
     let (panel, child) = {
         let panels = editor.panels.borrow();
@@ -244,6 +272,10 @@ fn editor_result(editor: &Rc<Editor>, index: usize, result: PanelResult) -> bool
             editor_sync(editor, index);
             return true;
         },
+        PanelResult::Open(child) => {
+            editor_open_child(editor, index, child);
+            return true;
+        },
         PanelResult::Unused(action) => action,
     };
     match action {
@@ -258,10 +290,10 @@ fn editor_result(editor: &Rc<Editor>, index: usize, result: PanelResult) -> bool
                 None => editor.focus_next.set(true),
             }
         },
-        Action::AiOpen => editor.ai.ai_open(),
+        Action::AiOpen => editor_ai_open(editor, index),
         Action::AiOpenReference => {
-            editor.ai.ai_open();
             let reference = editor.panels.borrow()[index].panel_reference();
+            editor_ai_open(editor, index);
             if let Some(reference) = reference {
                 let prefix = format!("{}/", editor.dir);
                 editor.ai.ai_append(&format!("{} ", reference.strip_prefix(&prefix).unwrap_or(&reference)));
@@ -347,7 +379,10 @@ fn editor_schedule_reload(editor: &Rc<Editor>) {
 
 fn editor_show(editor: &Rc<Editor>) {
     let panels = editor.panels.borrow();
-    let wanted = &panels[panels.len().saturating_sub(2)..];
+    let focus = editor.focus.get();
+    let start = editor.start.get().clamp(focus.saturating_sub(1), focus).min(panels.len());
+    editor.start.set(start);
+    let wanted = &panels[start .. (start + 2).min(panels.len())];
     let mut shown = editor.shown.borrow_mut();
     let mut i = 0;
     while i < shown.len() {
@@ -364,31 +399,45 @@ fn editor_show(editor: &Rc<Editor>) {
             continue;
         }
         let element = panel.panel_attach();
-        element.ref_on("mousedown", {
-            let editor: Weak<Editor> = Rc::downgrade(editor);
-            let panel = panel.clone();
-            move |e| {
-                let e: &MouseEvent = e.dyn_ref().unwrap();
-                let Some(editor) = editor.upgrade() else {
-                    return;
-                };
-                let Some(index) = editor_index(&editor, &panel) else {
-                    return;
-                };
-                if e.button() == 0 {
-                    editor_focus(&editor, index);
-                }
-                if editor_result(&editor, index, panel.panel_mouse(e)) {
-                    e.prevent_default();
-                }
-                editor_location_touch(&editor);
-            }
-        });
+        _ =
+            element
+                .raw()
+                .dyn_into::<HtmlElement>()
+                .unwrap()
+                .style()
+                .set_property("flex-grow", &panel.panel_size().to_string());
+        element.ref_own(
+            |e| EventListener::new_with_options(
+                &e.raw(),
+                "mousedown",
+                EventListenerOptions::enable_prevent_default(),
+                {
+                    let editor: Weak<Editor> = Rc::downgrade(editor);
+                    let panel = panel.clone();
+                    move |e| {
+                        let e: &MouseEvent = e.dyn_ref().unwrap();
+                        let Some(editor) = editor.upgrade() else {
+                            return;
+                        };
+                        let Some(index) = editor_index(&editor, &panel) else {
+                            return;
+                        };
+                        if e.button() == 0 {
+                            editor_focus(&editor, index);
+                        }
+                        if editor_result(&editor, index, panel.panel_mouse(e)) {
+                            e.prevent_default();
+                        }
+                        editor_location_touch(&editor);
+                    }
+                },
+            ),
+        );
         editor.element.ref_splice(i, 0, vec![element.clone()]);
         shown.insert(i, (panel.clone(), element));
     }
     for (panel, element) in shown.iter() {
-        let focused = panels.get(editor.focus.get()).is_some_and(|f| panel_same(panel, f));
+        let focused = panels.get(focus).is_some_and(|f| panel_same(panel, f));
         element.ref_modify_classes(&[("merman_panel_focus", focused)]);
         if focused {
             element.raw().scroll_into_view();
@@ -401,6 +450,10 @@ fn editor_splice(editor: &Rc<Editor>, offset: usize, remove: usize, add: Vec<Rc<
     let focus = editor.focus.get();
     if focus >= offset + remove {
         editor.focus.set(focus - remove + add.len());
+    }
+    let start = editor.start.get();
+    if start >= offset + remove {
+        editor.start.set(start - remove + add.len());
     }
     editor.panels.borrow_mut().splice(offset .. offset + remove, add);
     editor_show(editor);
@@ -448,7 +501,13 @@ fn editor_sync(editor: &Rc<Editor>, index: usize) {
             let Some(index) = editor_index(&editor, &panel) else {
                 return;
             };
-            let jump = editor.focus.get() == index && editor.focus_next.get() && child.panel_focusable();
+            let child_path = child.panel_path();
+            let start =
+                editor.start_focus.borrow().as_ref().is_some_and(|file| Path::new(file).starts_with(&child_path));
+            if editor.start_focus.borrow().as_deref() == Some(child_path.as_str()) {
+                *editor.start_focus.borrow_mut() = None;
+            }
+            let jump = start || (editor.focus.get() == index && editor.focus_next.get() && child.panel_focusable());
             let count = editor.panels.borrow().len();
             editor_splice(&editor, index + 1, count - index - 1, vec![child]);
             if jump {
@@ -489,7 +548,7 @@ pub fn start_editor() {
                 return;
             },
         };
-        let ai = Ai::ai_new();
+        let ai = Ai::ai_new(keys.clone());
         let editor = Rc::new(Editor {
             keys: keys,
             dir: start.dir.clone(),
@@ -506,47 +565,60 @@ pub fn start_editor() {
             changed_timer: RefCell::new(None),
             reloads: RefCell::new(HashMap::new()),
             socket: RefCell::new(None),
+            start: Cell::new(0),
             last_seq: Cell::new(None),
             reconnect: RefCell::new(None),
             location_timer: RefCell::new(None),
+            start_focus: RefCell::new(start.file.clone()),
         });
-        let root = editor_list(&editor, start.dir, start.file.clone()).await;
-        editor.element.ref_own(|_| EventListener::new(&document(), "keydown", {
-            let editor = editor.clone();
-            move |e| {
-                let e: &KeyboardEvent = e.dyn_ref().unwrap();
-                let typing =
-                    e
-                        .target()
-                        .and_then(|t| t.dyn_into::<Element>().ok())
-                        .is_some_and(|t| t.closest(".merman_ai").ok().flatten().is_some());
-                if typing {
-                    return;
-                }
-                let index = editor.focus.get();
-                let panel = editor.panels.borrow().get(index).cloned();
-                let Some(panel) = panel else {
+        if let Some(file) = &start.file {
+            let mut selections = editor.selections.borrow_mut();
+            let mut child = Path::new(file);
+            while let Some(parent) = child.parent().filter(|p| p.starts_with(&start.dir)) {
+                selections.insert(parent.to_string_lossy().into_owned(), child.to_string_lossy().into_owned());
+                child = parent;
+            }
+        }
+        let root = editor_list(&editor, start.dir, None).await;
+        editor
+            .element
+            .ref_own(
+                |_| EventListener::new_with_options(
+                    &document(),
+                    "keydown",
+                    EventListenerOptions::enable_prevent_default(),
+                    {
+                        let editor = editor.clone();
+                        move |e| {
+                            let e: &KeyboardEvent = e.dyn_ref().unwrap();
+                            let index = editor.focus.get();
+                            let panel = editor.panels.borrow().get(index).cloned();
+                            let Some(panel) = panel else {
+                                return;
+                            };
+                            if editor_result(&editor, index, panel.panel_key(e)) {
+                                e.prevent_default();
+                                editor_location_touch(&editor);
+                            }
+                        }
+                    },
+                ),
+            );
+        ai.icon.ref_on("click", {
+            let editor: Weak<Editor> = Rc::downgrade(&editor);
+            move |_| {
+                let Some(editor) = editor.upgrade() else {
                     return;
                 };
-                if editor_result(&editor, index, panel.panel_key(e)) {
-                    e.prevent_default();
-                    editor_location_touch(&editor);
-                }
+                editor_ai_open(&editor, editor.focus.get());
             }
-        }));
+        });
         editor_connect(&editor);
         set_root(
-            vec![
-                el("div")
-                    .classes(&["merman_root"])
-                    .push(ai.status.clone())
-                    .push(editor.element.clone())
-                    .push(ai.element.clone()),
-            ],
+            vec![el("div").classes(&["merman_root"]).push(ai.status.clone()).push(editor.element.clone())],
         );
         editor_splice(&editor, 0, 0, vec![root]);
         editor_focus(&editor, 0);
-        editor.focus_next.set(start.file.is_some());
         set_root_non_dom(editor);
     });
 }

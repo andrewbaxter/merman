@@ -4,7 +4,10 @@ use {
         PanelResult,
         code::CodePanel,
     },
-    gloo_events::EventListener,
+    gloo_events::{
+        EventListener,
+        EventListenerOptions,
+    },
     gloo_utils::document,
     merman_core::{
         keys::{
@@ -64,16 +67,23 @@ pub fn start_demo() {
         let panel = Rc::new(CodePanel::code_new(keys, String::new(), syntax, document_, None));
         let element = panel.panel_attach();
         element.ref_classes(&["merman_panel_focus"]);
-        element.ref_own(|_| EventListener::new(&document(), "keydown", {
-            let panel = panel.clone();
-            move |e| {
-                let e: &KeyboardEvent = e.dyn_ref().unwrap();
-                if let PanelResult::Ignored = panel.panel_key(e) {
-                    return;
-                }
-                e.prevent_default();
-            }
-        }));
+        element.ref_own(
+            |_| EventListener::new_with_options(
+                &document(),
+                "keydown",
+                EventListenerOptions::enable_prevent_default(),
+                {
+                    let panel = panel.clone();
+                    move |e| {
+                        let e: &KeyboardEvent = e.dyn_ref().unwrap();
+                        if let PanelResult::Ignored = panel.panel_key(e) {
+                            return;
+                        }
+                        e.prevent_default();
+                    }
+                },
+            ),
+        );
         set_root(vec![el("div").classes(&["merman_panels"]).push(element)]);
         return Ok(());
     })() {

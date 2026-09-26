@@ -11,6 +11,7 @@ use {
     merman_core::{
         context::Vector,
         keys::Action,
+        reference::Reference,
     },
     std::time::Instant,
 };
@@ -69,6 +70,20 @@ fn ids_round_trip() {
         println!("{}", d);
     }
     assert!(diffs.is_empty(), "{} differences, first shown above", diffs.len());
+}
+
+#[test]
+fn a_selected_expression_is_referenced_by_its_own_id() {
+    let syntax = load_syntax(include_str!("../../syntaxes/alligatorus.json"));
+    let doc = load_document(&syntax, &format!(r#"{{"v1":{{"expr":{}}}}}"#, sub(5, &number(6, 1.), &number(7, 2.))));
+    let (mut ctx, _display, _environment) = build(syntax, doc, 2000., 800.);
+    settle(&mut ctx);
+    assert!(ctx.cursor_select_reference(&Reference::reference_parse("#.v1.expr").unwrap()));
+    settle(&mut ctx);
+    assert_eq!(ctx.cursor_reference().unwrap().reference_format(), "#5");
+    assert!(ctx.cursor_select_reference(&Reference::reference_parse("#5.variant.operator_binary.base").unwrap()));
+    settle(&mut ctx);
+    assert_eq!(ctx.cursor_reference().unwrap().reference_format(), "#6");
 }
 
 #[test]

@@ -2,8 +2,10 @@ mod common;
 
 use {
     common::{
+        build,
         load_document,
         load_syntax,
+        render_text,
         settle,
     },
     merman_core::{
@@ -16,7 +18,6 @@ use {
             CursorKind,
         },
         display::DisplayTest,
-        environment::EnvironmentTest,
         keys::Action,
     },
 };
@@ -36,7 +37,7 @@ fn jump_rebuilds_from_the_cursor() {
         ticks += 1;
         assert!(ticks < 200, "a jump to the end took too many ticks to settle");
     }
-    let laid = rows(&display);
+    let laid = render_text(&display, 1.).len();
     assert!(laid > 40 && laid < 400, "unexpected course count after the jump: {}", laid);
     let (first, _) = ctx.wall_usage().unwrap();
     assert!(first < 0., "the wall wasn't rebuilt from the cornerstone: {}", first);
@@ -48,14 +49,14 @@ fn lays_only_around_the_view() {
     let (mut ctx, display) = view_context(3000, 600.);
     ctx.visual_select_into_any_child(ctx.root_visual);
     settle(&mut ctx);
-    let laid = rows(&display);
+    let laid = render_text(&display, 1.).len();
     assert!(laid > 40, "too few courses laid: {}", laid);
     assert!(laid < 400, "the whole document was laid: {}", laid);
     let (first_before, _) = ctx.wall_usage().unwrap();
     ctx.context_scroll_by(3000.);
     settle(&mut ctx);
     let (first_after, last_after) = ctx.wall_usage().unwrap();
-    assert!(rows(&display) < 400, "scrolling laid too much: {}", rows(&display));
+    assert!(render_text(&display, 1.).len() < 400, "scrolling laid too much: {}", render_text(&display, 1.).len());
     assert!(first_after > first_before, "courses above the view were kept: {} -> {}", first_before, first_after);
     assert!(last_after >= ctx.scroll + 600., "courses weren't laid down to the view: {} < {}", last_after, ctx.scroll);
     let border = match ctx.cursor_get(ctx.cursor.unwrap()) {
@@ -66,10 +67,6 @@ fn lays_only_around_the_view() {
     let last_course = *ctx.wall.children.last().unwrap();
     assert_eq!(ctx.borders[border].as_ref().unwrap().first, Some(ctx.courses[first_course].children[0]));
     assert_eq!(ctx.borders[border].as_ref().unwrap().last, ctx.courses[last_course].children.last().copied());
-}
-
-fn rows(display: &DisplayTest) -> usize {
-    return display.display_test_rows().len();
 }
 
 fn view_context(entries: usize, transverse: f64) -> (Context, DisplayTest) {
@@ -83,17 +80,8 @@ fn view_context(entries: usize, transverse: f64) -> (Context, DisplayTest) {
     }
     text.push('}');
     let doc = load_document(&syntax, &text);
-    let display = DisplayTest::default();
-    let mut ctx =
-        Context::context_new(
-            syntax,
-            doc,
-            ContextConfig::default(),
-            Box::new(display.clone()),
-            Box::new(EnvironmentTest::default()),
-            40. * 12. * 0.6,
-            transverse,
-        );
+    let (mut ctx, display, _environment) = build(syntax, doc, 40. * 12. * 0.6, transverse);
+    ctx.config.lay_beyond_view = ContextConfig::default().lay_beyond_view;
     settle(&mut ctx);
     return (ctx, display);
 }

@@ -4,6 +4,11 @@ use {
         ResultContext,
         ea,
     },
+    notify_rust::{
+        Notification,
+        NotificationHandle,
+        Timeout,
+    },
     merman_api::{
         AiMessage,
         AiRole,
@@ -28,6 +33,7 @@ use {
         io::{
             AsyncBufReadExt,
             AsyncReadExt,
+            AsyncWriteExt,
             BufReader,
         },
         process::{
@@ -40,6 +46,7 @@ use {
 };
 
 pub struct Ai {
+    pub configs: Vec<PathBuf>,
     pub dir: PathBuf,
     pub events: Arc<Events>,
     pub logs: PathBuf,
@@ -67,6 +74,46 @@ pub fn ai_message(log: &Path, events: &Events, role: AiRole, text: String) -> Re
     return Ok(());
 }
 
+pub fn ai_notify(ai: &Arc<Ai>, status: AiStatus, summary: &str, body: String) {
+    let mut notification = Notification::new();
+    notification
+        .appname("merman")
+        .summary(summary)
+        .body(&body.chars().take(300).collect::<String>())
+        .timeout(Timeout::Never);
+    tokio::spawn({
+        let ai = ai.clone();
+        async move {
+            let Ok(handle) = notification.show_async().await else {
+                return;
+            };
+            let mut state = ai.state.lock().await;
+            if state.status != status {
+                handle.close_async().await;
+                return;
+            }
+            if let Some(old) = state.notification.replace(handle) {
+                old.close_async().await;
+            }
+        }
+    });
+    return;
+}
+
+pub async fn ai_control(session: &mut AiSession, request: serde_json::Value) -> Result<(), loga::Error> {
+    let line = serde_json::json!({
+        "type": "control_request",
+        "request_id": format !("{}-{}", request["subtype"].as_str().unwrap_or_default(), now_ms()),
+        "request": request
+    });
+    session
+        .stdin
+        .write_all(format!("{}\n", line).as_bytes())
+        .await
+        .context("Error sending a control request to claude")?;
+    return Ok(());
+}
+
 pub fn ai_spawn(ai: &Arc<Ai>, id: String, resume: bool) -> Result<AiSession, loga::Error> {
     std::fs::create_dir_all(
         &ai.logs,
@@ -75,7 +122,18 @@ pub fn ai_spawn(ai: &Arc<Ai>, id: String, resume: bool) -> Result<AiSession, log
     let home = directories::BaseDirs::new().context("Error finding the home directory")?.home_dir().to_path_buf();
     let mut cmd = Command::new("bwrap");
     cmd.args(
-        ["--unshare-all", "--share-net", "--die-with-parent", "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp"],
+        [
+            "--unshare-all",
+            "--share-net",
+            "--die-with-parent",
+            "--bind",
+            "/proc",
+            "/proc",
+            "--dev",
+            "/dev",
+            "--tmpfs",
+            "/tmp",
+        ],
     );
     let mut bound: Vec<PathBuf> = vec![];
     let mut bind = |cmd: &mut Command, path: &Path, writable: bool| {
@@ -89,8 +147,11 @@ pub fn ai_spawn(ai: &Arc<Ai>, id: String, resume: bool) -> Result<AiSession, log
         }).arg(path).arg(path);
         bound.push(path.to_path_buf());
     };
-    for root in ["/usr", "/lib", "/lib64", "/bin", "/sbin", "/etc", "/opt"] {
+    for root in ["/usr", "/lib", "/lib64", "/bin", "/sbin", "/etc", "/opt", "/run/current-system"] {
         bind(&mut cmd, Path::new(root), false);
+    }
+    if let Ok(resolv) = std::fs::canonicalize("/etc/resolv.conf") {
+        bind(&mut cmd, &resolv, false);
     }
     for extra in std::env::split_paths(&std::env::var_os("MERMAN_SANDBOX_RO").unwrap_or_default()) {
         bind(&mut cmd, &extra, false);
@@ -103,15 +164,17 @@ pub fn ai_spawn(ai: &Arc<Ai>, id: String, resume: bool) -> Result<AiSession, log
             .to_path_buf();
     let mut path_dirs = vec![exe_dir];
     path_dirs.extend(std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()));
-    for dir in &path_dirs {
-        if let Ok(dir) = std::fs::canonicalize(dir) {
-            bind(&mut cmd, &dir, false);
-        }
+    for dir in path_dirs.iter().filter(|d| d.is_absolute()) {
+        bind(&mut cmd, dir, false);
     }
     cmd.arg("--dir").arg(&home);
     bind(&mut cmd, &home.join(".claude"), true);
     bind(&mut cmd, &home.join(".claude.json"), true);
-    cmd.arg("--bind").arg(&ai.dir).arg(&ai.dir).arg("--chdir").arg(&ai.dir);
+    bind(&mut cmd, &ai.dir, true);
+    cmd.arg("--chdir").arg(&ai.dir);
+    for config in &ai.configs {
+        bind(&mut cmd, config, false);
+    }
     cmd.arg("--setenv").arg("HOME").arg(&home);
     cmd
         .arg("--setenv")
@@ -240,6 +303,12 @@ pub fn ai_spawn(ai: &Arc<Ai>, id: String, resume: bool) -> Result<AiSession, log
                         }
                         let mut state = ai.state.lock().await;
                         ai_status_set(&mut state, &ai.events, AiStatus::Waiting);
+                        ai_notify(
+                            &ai,
+                            AiStatus::Waiting,
+                            "Claude is waiting for you",
+                            value["result"].as_str().unwrap_or_default().to_string(),
+                        );
                     },
                     _ => { },
                 }
@@ -257,12 +326,14 @@ pub fn ai_spawn(ai: &Arc<Ai>, id: String, resume: bool) -> Result<AiSession, log
                 },
             };
             let stderr = stderr.trim();
-            _ = ai_message(&log, &ai.events, AiRole::System, if stderr.is_empty() {
+            let text = if stderr.is_empty() {
                 format!("Claude exited ({})", status)
             } else {
                 format!("Claude exited ({}):\n{}", status, stderr)
-            });
+            };
+            _ = ai_message(&log, &ai.events, AiRole::System, text.clone());
             ai_status_set(&mut state, &ai.events, AiStatus::Off);
+            ai_notify(&ai, AiStatus::Off, "Claude exited", text);
         }
     });
     return Ok(AiSession {
@@ -275,6 +346,11 @@ pub fn ai_spawn(ai: &Arc<Ai>, id: String, resume: bool) -> Result<AiSession, log
 
 pub fn ai_status_set(state: &mut AiState, events: &Events, status: AiStatus) {
     state.status = status;
+    if let Some(notification) = state.notification.take() {
+        tokio::spawn(async move {
+            notification.close_async().await;
+        });
+    }
     events.events_publish(Event::AiStatus { status: status });
     return;
 }
@@ -287,6 +363,7 @@ pub struct AiSession {
 }
 
 pub struct AiState {
+    pub notification: Option<NotificationHandle>,
     pub session: Option<AiSession>,
     pub status: AiStatus,
 }

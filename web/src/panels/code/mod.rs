@@ -10,6 +10,10 @@ use {
         },
         panel_key_stroke,
     },
+    gloo_events::{
+        EventListener,
+        EventListenerOptions,
+    },
     gloo_render::{
         AnimationFrame,
         request_animation_frame,
@@ -163,16 +167,18 @@ impl Panel for CodePanel {
                 after_context(&state);
             }
         });
-        panel.ref_on("wheel", {
-            let state = state.clone();
-            move |e| {
-                let e: &WheelEvent = e.dyn_ref().unwrap();
-                e.prevent_default();
-                let convert = state.borrow().convert();
-                let (_, transverse) = convert.direction_convert_point(e.delta_x(), e.delta_y());
-                with_context(&state, |ctx| ctx.context_scroll_by(transverse));
-            }
-        });
+        panel.ref_own(
+            |e| EventListener::new_with_options(&e.raw(), "wheel", EventListenerOptions::enable_prevent_default(), {
+                let state = state.clone();
+                move |e| {
+                    let e: &WheelEvent = e.dyn_ref().unwrap();
+                    e.prevent_default();
+                    let convert = state.borrow().convert();
+                    let (_, transverse) = convert.direction_convert_point(e.delta_x(), e.delta_y());
+                    with_context(&state, |ctx| ctx.context_scroll_by(transverse));
+                }
+            }),
+        );
         panel.ref_on("mousemove", {
             let state = state.clone();
             move |e| {
@@ -218,19 +224,26 @@ impl Panel for CodePanel {
                 with_context(&state, |ctx| ctx.mouse_exited())
             }
         });
-        panel.ref_on("mousedown", {
-            let state = state.clone();
-            move |e| {
-                let e: &MouseEvent = e.dyn_ref().unwrap();
-                if e.button() != 0 {
-                    return;
-                }
-                e.prevent_default();
-                with_context(&state, |ctx| {
-                    ctx.mouse_button(true);
-                });
-            }
-        });
+        panel.ref_own(
+            |e| EventListener::new_with_options(
+                &e.raw(),
+                "mousedown",
+                EventListenerOptions::enable_prevent_default(),
+                {
+                    let state = state.clone();
+                    move |e| {
+                        let e: &MouseEvent = e.dyn_ref().unwrap();
+                        if e.button() != 0 {
+                            return;
+                        }
+                        e.prevent_default();
+                        with_context(&state, |ctx| {
+                            ctx.mouse_button(true);
+                        });
+                    }
+                },
+            ),
+        );
         panel.ref_on("mouseup", {
             let state = state.clone();
             move |e| {
@@ -349,6 +362,10 @@ impl Panel for CodePanel {
 
     fn panel_selection(&self) -> Option<(bool, String)> {
         return None;
+    }
+
+    fn panel_size(&self) -> f64 {
+        return 5.;
     }
 }
 struct EnvironmentWeb;

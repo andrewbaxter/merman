@@ -14,7 +14,10 @@ use {
             TextBorderId,
             VisualId,
         },
-        document::AtomId,
+        document::{
+            AtomId,
+            Field,
+        },
         reference::Reference,
         serialize::{
             serialize_atom,
@@ -731,7 +734,11 @@ impl Context {
         let (located, range) = match self.cursor_get(self.cursor?) {
             Cursor::Atom(c) => {
                 let va = self.visual_atom(c.visual);
-                (Located::Field(va.atom, va.selectable[c.index].0.clone()), None)
+                let field = va.selectable[c.index].0.clone();
+                match self.document.document_atom(va.atom).fields.get(&field) {
+                    Some(Field::Atom(child)) => (Located::Atom(*child), None),
+                    _ => (Located::Field(va.atom, field), None),
+                }
             },
             Cursor::Array(c) => {
                 if c.begin_index == c.end_index {

@@ -35,7 +35,6 @@ use {
             Path,
             PathBuf,
         },
-        process::exit,
     },
 };
 
@@ -454,9 +453,6 @@ fn main() {
         }
     })() {
         Ok(_) => (),
-        Err(e) => {
-            eprintln!("{}", e);
-            exit(1);
-        },
+        Err(e) => loga::fatal(e),
     }
 }
