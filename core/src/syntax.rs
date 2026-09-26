@@ -3,7 +3,7 @@
 use crate::direction::DirectionConvert;
 use {
     crate::{
-        display::display_unit_to_pixels,
+        display::PIXELS_PER_MM,
         error::{
             ErrorKind,
             MultiError,
@@ -14,7 +14,6 @@ use {
             SpecBack,
             SpecCondition,
             SpecDirection,
-            SpecDisplayUnit,
             SpecFront,
             SpecFrontArray,
             SpecFrontArrayAsAtom,
@@ -25,6 +24,7 @@ use {
             SpecSplit,
             SpecSymbol,
             SpecSyntax,
+            SpecTheme,
             SpecType,
             SpecTypeRoot,
         },
@@ -362,11 +362,6 @@ pub enum FieldKind {
     Primitive,
 }
 
-fn font_pixels(unit: SpecDisplayUnit, size: f64) -> f64 {
-    let mm_per_unit = display_unit_to_pixels(unit) / display_unit_to_pixels(SpecDisplayUnit::Mm);
-    return size * mm_per_unit * 72. / 25.4;
-}
-
 pub enum Front {
     Array(FrontArray),
     Atom(FrontAtom),
@@ -424,10 +419,8 @@ pub struct SpecSyntaxSettings {
     pub convert: DirectionConvert,
     pub course_transverse_stride: f64,
     pub cursor: SpecObbox,
-    pub display_unit: SpecDisplayUnit,
     pub hover: SpecObbox,
     pub pad: SpecPadding,
-    pub to_pixels: f64,
     pub unprintable: String,
 }
 
@@ -509,9 +502,9 @@ pub struct Syntax {
 }
 
 impl Syntax {
-    pub fn syntax_resolve(spec: SpecSyntax) -> Result<Syntax, MultiError> {
+    pub fn syntax_resolve(spec: SpecSyntax, theme: &SpecTheme) -> Result<Syntax, MultiError> {
         let mut errors = Errors::default();
-        let to_pixels = display_unit_to_pixels(spec.display_unit);
+        let to_pixels = PIXELS_PER_MM;
 
         // Directions
         let vertical = |d: SpecDirection| matches!(d, SpecDirection::Up | SpecDirection::Down);
@@ -525,21 +518,21 @@ impl Syntax {
         // Styles
         let mut styles = vec![Style {
             font: FontSpec {
-                family: spec.font_family.clone(),
-                size: font_pixels(spec.display_unit, spec.font_size),
+                family: theme.font_family.clone(),
+                size: theme.font_size * to_pixels,
             },
-            color: spec.foreground.clone(),
+            color: theme.text_color.clone(),
             padding: SpecPadding::default(),
             ascent: None,
             descent: None,
         }];
         let mut style_ids = HashMap::new();
-        for (name, s) in &spec.styles {
+        for (name, s) in &theme.text_styles {
             style_ids.insert(name.clone(), styles.len());
             styles.push(Style {
                 font: FontSpec {
-                    family: s.font_family.clone().unwrap_or_else(|| spec.font_family.clone()),
-                    size: font_pixels(spec.display_unit, s.font_size.unwrap_or(spec.font_size)),
+                    family: s.font_family.clone().unwrap_or_else(|| theme.font_family.clone()),
+                    size: s.font_size.unwrap_or(theme.font_size) * to_pixels,
                 },
                 color: s.color.clone(),
                 padding: scale_padding(&s.padding, to_pixels),
@@ -659,15 +652,13 @@ impl Syntax {
         }
         return Ok(Syntax {
             spec_root: SpecSyntaxSettings {
-                background: spec.background,
-                display_unit: spec.display_unit,
-                to_pixels: to_pixels,
+                background: theme.background.clone(),
                 convert: DirectionConvert::new(spec.converse_direction, spec.transverse_direction),
                 pad: scale_padding(&spec.pad, to_pixels),
                 course_transverse_stride: spec.course_transverse_stride * to_pixels,
                 unprintable: spec.unprintable,
-                cursor: scale_obbox(&spec.cursor, to_pixels),
-                hover: scale_obbox(&spec.hover, to_pixels),
+                cursor: scale_obbox(&theme.cursor, to_pixels),
+                hover: scale_obbox(&theme.hover, to_pixels),
             },
             types: types,
             groups: groups,

@@ -8,13 +8,11 @@ use {
         render_text,
         settle,
     },
+    merman_core::display::PIXELS_PER_MM,
     merman_core::serialize::serialize_atom,
 };
 
 const AS_ATOM_SYNTAX: &str = r##"{
-  "background": "#333333",
-  "display_unit": "px",
-  "font_size": 16,
   "groups": [{"id": "any", "members": ["word"]}],
   "root": {
     "back": {
@@ -36,10 +34,8 @@ const AS_ATOM_SYNTAX: &str = r##"{
     }
   ]
 }"##;
+const UNIT: f64 = 4. * PIXELS_PER_MM * 0.6;
 const DISCARD_SYNTAX: &str = r##"{
-  "background": "#333333",
-  "display_unit": "px",
-  "font_size": 16,
   "root": {
     "back": {"fixed_record": [{"key": "ignored"}, {"key": "kept", "value": {"string": {"id": "text"}}}]},
     "front": [{"primitive": {"field": "text"}}]
@@ -47,9 +43,6 @@ const DISCARD_SYNTAX: &str = r##"{
   "types": []
 }"##;
 const SYNTAX: &str = r##"{
-  "background": "#333333",
-  "display_unit": "px",
-  "font_size": 16,
   "groups": [{"id": "any", "members": ["word"]}],
   "root": {
     "back": {
@@ -73,7 +66,6 @@ const SYNTAX: &str = r##"{
     }
   ]
 }"##;
-const UNIT: f64 = 12. * 0.6;
 
 #[test]
 fn a_valueless_entry_is_read_and_left_out_when_written() {
@@ -135,8 +127,6 @@ fn sub_array_splices_into_the_enclosing_array() {
 #[test]
 fn two_sub_arrays_in_one_array_are_rejected() {
     let spec: merman_core::spec::SpecSyntax = serde_json::from_str(r##"{
-      "background": "#000",
-      "display_unit": "px",
       "groups": [{"id": "any", "members": ["word"]}],
       "root": {
         "back": {
@@ -149,7 +139,8 @@ fn two_sub_arrays_in_one_array_are_rejected() {
       },
       "types": [{"id": "word", "back": {"string": {"id": "text"}}, "front": []}]
     }"##).unwrap();
-    let errors = merman_core::syntax::Syntax::syntax_resolve(spec).err().expect("should not resolve");
+    let errors =
+        merman_core::syntax::Syntax::syntax_resolve(spec, &common::theme()).err().expect("should not resolve");
     assert!(
         errors.0.iter().any(|e| e.kind == merman_core::error::ErrorKind::ArrayMultipleAtoms),
         "expected an ambiguity error, got {}",
@@ -160,9 +151,6 @@ fn two_sub_arrays_in_one_array_are_rejected() {
 #[test]
 fn unique_id_is_captured_separately_from_plain_ids() {
     let syntax = load_syntax(r##"{
-      "background": "#333333",
-      "display_unit": "px",
-      "font_size": 16,
       "groups": [{"id": "any", "members": ["word"]}],
       "root": {
         "back": {

@@ -3,6 +3,7 @@ use {
         Panel,
         PanelResult,
         code::CodePanel,
+        panel_theme_apply,
     },
     gloo_events::{
         EventListener,
@@ -15,7 +16,10 @@ use {
             SpecKeys,
         },
         matcher::match_document,
-        spec::SpecSyntax,
+        spec::{
+            SpecSyntax,
+            SpecTheme,
+        },
         syntax::Syntax,
     },
     rooting::{
@@ -45,7 +49,12 @@ pub fn start_demo() {
             serde_json::from_str(
                 &read_embedded("merman-syntax")?,
             ).map_err(|e| format!("Error parsing syntax JSON: {}", e))?;
-        let syntax = Rc::new(Syntax::syntax_resolve(spec).map_err(|e| format!("Syntax errors:\n{}", e))?);
+        let theme: SpecTheme =
+            serde_json::from_str(
+                &read_embedded("merman-theme")?,
+            ).map_err(|e| format!("Error parsing theme JSON: {}", e))?;
+        panel_theme_apply(&theme);
+        let syntax = Rc::new(Syntax::syntax_resolve(spec, &theme).map_err(|e| format!("Syntax errors:\n{}", e))?);
         let keys = match document().get_element_by_id("merman-keys").map(|e| e.text_content().unwrap_or_default()) {
             Some(text) if !text.trim().is_empty() => serde_json::from_str::<SpecKeys>(
                 &text,

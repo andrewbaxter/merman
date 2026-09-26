@@ -70,7 +70,6 @@ pub struct Context {
     pub drawings: Vec<Option<Drawing>>,
     pub edge: f64,
     pub environment: Box<dyn Environment>,
-    pub from_pixels_to_mm: f64,
     pub hover: Option<HoverableId>,
     pub hover_brick: Option<BrickId>,
     pub hover_idle: Option<TaskId>,
@@ -93,7 +92,6 @@ pub struct Context {
     pub text_borders: Vec<Option<TextBorder>>,
     pub text_layer: DisplayNodeId,
     pub timer_requested: bool,
-    pub to_pixels: f64,
     pub transverse_edge: f64,
     pub visuals: Vec<Visual>,
     pub wall: Wall,
@@ -144,8 +142,6 @@ impl Context {
     ) -> Context {
         display.display_set_background(&syntax.spec_root.background);
         let syntax_for_stylist = syntax.clone();
-        let to_pixels = display.display_to_pixels(syntax.spec_root.display_unit);
-        let from_pixels_to_mm = 1. / display.display_to_pixels(crate::spec::SpecDisplayUnit::Mm);
         let background_layer = display.display_layer(DisplayLayer::Background);
         let text_layer = display.display_layer(DisplayLayer::Text);
         let overlay_layer = display.display_layer(DisplayLayer::Overlay);
@@ -160,8 +156,6 @@ impl Context {
             display: display,
             environment: environment,
             stylist: Rc::new(StylistDirect { syntax: syntax_for_stylist }),
-            to_pixels: to_pixels,
-            from_pixels_to_mm: from_pixels_to_mm,
             background_layer: background_layer,
             text_layer: text_layer,
             overlay_layer: overlay_layer,

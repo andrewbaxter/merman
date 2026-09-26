@@ -9,6 +9,7 @@ use {
         settle,
     },
     merman_core::{
+        display::PIXELS_PER_MM,
         context::{
             Context,
             Vector,
@@ -36,7 +37,7 @@ use {
 };
 
 const SOURCE: &str = r#"{"a": 1, "b": [true, null]}"#;
-const UNIT: f64 = 12. * 0.6;
+const UNIT: f64 = 4. * PIXELS_PER_MM * 0.6;
 
 #[test]
 fn a_reference_is_selected_or_its_nearest_ancestor() {

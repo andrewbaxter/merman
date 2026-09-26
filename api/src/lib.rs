@@ -176,6 +176,7 @@ pub struct RespStart {
     pub dir: String,
     pub file: Option<String>,
     pub keys: String,
+    pub theme: String,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema)]

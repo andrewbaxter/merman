@@ -9,6 +9,7 @@ use {
         settle,
     },
     merman_core::{
+        display::PIXELS_PER_MM,
         context::{
             Context,
             ContextConfig,
@@ -20,9 +21,6 @@ use {
 };
 
 const SYNTAX: &str = r##"{
-  "background": "#333333",
-  "display_unit": "px",
-  "font_size": 16,
   "groups": [{"id": "any", "members": ["nest", "leaf"]}],
   "root": {
     "back": {"fixed_record": [{"key": "v", "value": {"atom": {"id": "value", "type": "any"}}}]},
@@ -46,7 +44,7 @@ const SYNTAX: &str = r##"{
     }
   ]
 }"##;
-const UNIT: f64 = 12. * 0.6;
+const UNIT: f64 = 4. * PIXELS_PER_MM * 0.6;
 
 #[test]
 fn ellipsize_threshold_bounds_the_window() {

@@ -2,5 +2,39 @@
   "extensions": {
     "json": "syntaxes/json.json",
     "at": "syntaxes/alligatorus.json"
+  },
+  "background": "#2b2b2b",
+  "font_family": "monospace",
+  "font_size": 4,
+  "text_color": "#cacaca",
+  "icon_color": "#e0c060",
+  "error_color": "#ff8080",
+  "cursor": {
+    "padding": {"converse_start": 1, "converse_end": 1, "transverse_start": 1, "transverse_end": 1},
+    "round_start": true,
+    "round_end": true,
+    "line_thickness": 0.3,
+    "round_radius": 3,
+    "line_color": "#ffffff"
+  },
+  "hover": {
+    "padding": {"converse_start": 1, "converse_end": 1, "transverse_start": 1, "transverse_end": 1},
+    "round_start": true,
+    "round_end": true,
+    "line_thickness": 0.3,
+    "round_radius": 3,
+    "line_color": "#888888"
+  },
+  "text_styles": {
+    "keyword": {"color": "#e66ea5"},
+    "identifier": {"color": "#d8c3ff"},
+    "literal": {"color": "#79bf97"},
+    "literal_symbol": {"color": "rgba(121, 191, 151, 0.7)"},
+    "label": {"color": "#557fde"},
+    "symbol": {"color": "#a27878"},
+    "symbol_fade": {"color": "#67556e"},
+    "string": {"color": "#f79578"},
+    "number": {"color": "#95fa94"},
+    "special": {"color": "#7dd4fb"}
   }
 }

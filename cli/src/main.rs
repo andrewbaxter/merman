@@ -128,6 +128,7 @@ struct HandlerRoot {
     html: Vec<u8>,
     keys: String,
     locations: foyer::HybridCache<String, String>,
+    theme: String,
 }
 
 impl HandlerRoot {
@@ -166,6 +167,7 @@ impl Handler<Body> for HandlerRoot {
                     dir: display(&self.dir),
                     file: self.file.as_deref().map(display),
                     keys: self.keys.clone(),
+                    theme: self.theme.clone(),
                 }),
                 ServerReq::List(respond, req) => match (|| -> Result<RespList, loga::Error> {
                     let dir = self.dir_contains(Path::new(&req.dir))?;
@@ -516,6 +518,7 @@ fn main() {
             );
         }
         let keys_text = serde_json::to_string(&config.keys).unwrap();
+        let theme_text = serde_json::to_string(&config.theme).unwrap();
         let demo = args.browser.is_some();
         let html = if demo {
             let Some(source) = &file else {
@@ -532,6 +535,7 @@ fn main() {
                 .replace("__MERMAN_SYNTAX__", &embed_json(&syntax_text))
                 .replace("__MERMAN_SOURCE__", &embed_json(&source_text))
                 .replace("__MERMAN_KEYS__", &embed_json(&keys_text))
+                .replace("__MERMAN_THEME__", &embed_json(&theme_text))
         } else {
             include_str!("../static/editor.html").to_string()
         };
@@ -608,6 +612,7 @@ fn main() {
             dir: dir,
             file: file,
             keys: keys_text,
+            theme: theme_text,
             events: events,
             ai: ai,
             locations: locations,

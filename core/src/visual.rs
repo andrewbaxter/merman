@@ -12,6 +12,7 @@ use {
             Cursor,
             Hoverable,
         },
+        display::PIXELS_PER_MM,
         document::{
             AtomId,
             Field,
@@ -148,7 +149,6 @@ impl Context {
             let a = self.visual_field_array(v);
             (a.type_, a.front)
         };
-        let syntax = self.syntax.clone();
         let spec = self.front_array_spec(type_, front);
         let empty = spec.empty.as_ref()?;
         let split = empty.split;
@@ -160,11 +160,10 @@ impl Context {
                 style: *style,
             }),
             SymbolKind::Space { width, ascent, descent } => {
-                let to_pixels = syntax.spec_root.to_pixels;
                 BrickKind::Empty(BrickEmpty {
-                    ascent: ascent * to_pixels,
-                    descent: descent * to_pixels,
-                    span: width * to_pixels,
+                    ascent: ascent * PIXELS_PER_MM,
+                    descent: descent * PIXELS_PER_MM,
+                    span: width * PIXELS_PER_MM,
                 })
             },
         };
@@ -305,11 +304,10 @@ impl Context {
                 style: *style,
             }),
             SymbolKind::Space { width, ascent, descent } => {
-                let to_pixels = syntax.spec_root.to_pixels;
                 BrickKind::Empty(BrickEmpty {
-                    ascent: ascent * to_pixels,
-                    descent: descent * to_pixels,
-                    span: width * to_pixels,
+                    ascent: ascent * PIXELS_PER_MM,
+                    descent: descent * PIXELS_PER_MM,
+                    span: width * PIXELS_PER_MM,
                 })
             },
         };
@@ -906,7 +904,6 @@ impl Context {
         let VisualKind::Symbol(s) = &self.visuals[v].kind else {
             unreachable!();
         };
-        let syntax = self.syntax.clone();
         let spec = self.symbol_spec(s.symbol);
         let split = spec.split;
         let align = self.leaf_find_alignment(v, &spec.alignment);
@@ -917,11 +914,10 @@ impl Context {
                 style: *style,
             }),
             SymbolKind::Space { width, ascent, descent } => {
-                let to_pixels = syntax.spec_root.to_pixels;
                 BrickKind::Empty(BrickEmpty {
-                    ascent: ascent * to_pixels,
-                    descent: descent * to_pixels,
-                    span: width * to_pixels,
+                    ascent: ascent * PIXELS_PER_MM,
+                    descent: descent * PIXELS_PER_MM,
+                    span: width * PIXELS_PER_MM,
                 })
             },
         };

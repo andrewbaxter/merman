@@ -44,7 +44,7 @@ pub fn load_document(
         serde_json::from_str::<SpecSyntax>(
             &syntax_text,
         ).context_with("Error parsing syntax", ea!(syntax = syntax_path.display()))?;
-    let syntax = match Syntax::syntax_resolve(spec) {
+    let syntax = match Syntax::syntax_resolve(spec, &config.theme) {
         Ok(s) => s,
         Err(errors) => {
             return Err(

@@ -1,63 +1,9 @@
 {
-  "background": "#2b323a",
-  "foreground": "#bdbdbd",
-  "display_unit": "mm",
-  "font_family": "monospace",
-  "font_size": 6,
   "pad": {
     "converse_start": 5,
     "converse_end": 5,
     "transverse_start": 5,
     "transverse_end": 5
-  },
-  "cursor": {
-    "padding": {
-      "converse_start": 1,
-      "converse_end": 1,
-      "transverse_start": 1,
-      "transverse_end": 1
-    },
-    "round_start": true,
-    "round_end": true,
-    "line_thickness": 0.3,
-    "round_radius": 3,
-    "line_color": "#b9b9b9"
-  },
-  "hover": {
-    "padding": {
-      "converse_start": 1,
-      "converse_end": 1,
-      "transverse_start": 1,
-      "transverse_end": 1
-    },
-    "round_start": true,
-    "round_end": true,
-    "line_thickness": 0.3,
-    "round_radius": 3,
-    "line_color": "#737373"
-  },
-  "styles": {
-    "keyword": {
-      "color": "#e66ea5"
-    },
-    "identifier": {
-      "color": "#d8c3ff"
-    },
-    "literal": {
-      "color": "#79bf97"
-    },
-    "literal_symbol": {
-      "color": "rgba(121, 191, 151, 0.7)"
-    },
-    "label": {
-      "color": "#557fde"
-    },
-    "symbol": {
-      "color": "#a27878"
-    },
-    "symbol_fade": {
-      "color": "#67556e"
-    }
   },
   "groups": [
     {
@@ -83,7 +29,6 @@
         "graft",
         "lower",
         "stage",
-        "literal_null",
         "literal_number",
         "literal_str",
         "op_add",
@@ -2548,82 +2493,6 @@
             "forward_alignments": [
               "indent"
             ]
-          }
-        }
-      ]
-    },
-    {
-      "id": "literal_null",
-      "depth_score": 1,
-      "name": "Null",
-      "alignments": {
-        "base": {
-          "relative": {
-            "base": "indent",
-            "offset": 0
-          }
-        },
-        "indent": {
-          "relative": {
-            "base": "indent",
-            "offset": 8,
-            "collapse": true
-          }
-        }
-      },
-      "back": {
-        "fixed_record": [
-          {
-            "key": "id",
-            "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
-            }
-          },
-          {
-            "key": "variant",
-            "value": {
-              "fixed_record": [
-                {
-                  "key": "literal",
-                  "value": {
-                    "fixed_record": [
-                      {
-                        "key": "value",
-                        "value": {
-                          "fixed_record": [
-                            {
-                              "key": "null",
-                              "value": {
-                                "fixed_record": []
-                              }
-                            }
-                          ]
-                        }
-                      }
-                    ]
-                  }
-                }
-              ]
-            }
-          }
-        ]
-      },
-      "front": [
-        {
-          "symbol": {
-            "text": {
-              "text": "null",
-              "style": "literal"
-            }
           }
         }
       ]

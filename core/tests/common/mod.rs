@@ -8,7 +8,10 @@ use {
         document::Document,
         environment::EnvironmentTest,
         matcher::match_document,
-        spec::SpecSyntax,
+        spec::{
+            SpecSyntax,
+            SpecTheme,
+        },
         syntax::Syntax,
     },
     std::rc::Rc,
@@ -36,7 +39,15 @@ pub fn load_document(syntax: &Syntax, text: &str) -> Rc<Document> {
 
 pub fn load_syntax(json: &str) -> Rc<Syntax> {
     let spec: SpecSyntax = serde_json::from_str(json).expect("syntax json");
-    return Rc::new(Syntax::syntax_resolve(spec).unwrap_or_else(|e| panic!("{}", e)));
+    return Rc::new(Syntax::syntax_resolve(spec, &theme()).unwrap_or_else(|e| panic!("{}", e)));
+}
+
+pub fn theme() -> SpecTheme {
+    let config: serde_json::Value = serde_json::from_str(include_str!("../../../merman.json")).unwrap();
+    return SpecTheme {
+        text_styles: serde_json::from_value(config["text_styles"].clone()).unwrap(),
+        ..SpecTheme::default()
+    };
 }
 
 pub fn render_text(display: &DisplayTest, unit: f64) -> Vec<String> {

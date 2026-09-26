@@ -8,6 +8,7 @@ use {
             code::CodePanel,
             error::ErrorPanel,
             filesystem::FilesystemPanel,
+            panel_theme_apply,
         },
     },
     futures::channel::oneshot::Receiver,
@@ -37,7 +38,10 @@ use {
             SpecKeys,
         },
         matcher::match_document,
-        spec::SpecSyntax,
+        spec::{
+            SpecSyntax,
+            SpecTheme,
+        },
         syntax::Syntax,
     },
     rooting::{
@@ -93,6 +97,7 @@ struct Editor {
     socket: RefCell<Option<(WebSocket, Vec<EventListener>)>>,
     start: Cell<usize>,
     start_focus: RefCell<Option<String>>,
+    theme: Rc<SpecTheme>,
 }
 
 fn editor_connect(editor: &Rc<Editor>) {
@@ -236,7 +241,7 @@ fn editor_location_touch(editor: &Rc<Editor>) {
     return;
 }
 
-async fn editor_open(keys: Keymap, path: String, select: Option<String>) -> Rc<dyn Panel> {
+async fn editor_open(keys: Keymap, theme: Rc<SpecTheme>, path: String, select: Option<String>) -> Rc<dyn Panel> {
     let opened = match client_send(ReqOpen { path: path.clone() }).await {
         Ok(opened) => opened,
         Err(e) => return Rc::new(ErrorPanel::error_new(path, false, &e)),
@@ -244,7 +249,7 @@ async fn editor_open(keys: Keymap, path: String, select: Option<String>) -> Rc<d
     let built = (|| -> Result<_, String> {
         let spec: SpecSyntax =
             serde_json::from_str(&opened.syntax).map_err(|e| format!("Error parsing syntax JSON: {}", e))?;
-        let syntax = Rc::new(Syntax::syntax_resolve(spec).map_err(|e| format!("Syntax errors:\n{}", e))?);
+        let syntax = Rc::new(Syntax::syntax_resolve(spec, &theme).map_err(|e| format!("Syntax errors:\n{}", e))?);
         let value: serde_json::Value =
             serde_json::from_str(&opened.source).map_err(|e| format!("Error parsing source JSON: {}", e))?;
         let document =
@@ -352,7 +357,12 @@ fn editor_schedule_reload(editor: &Rc<Editor>) {
                             let select = panel.panel_selection().map(|(_, p)| p);
                             editor_list(&editor, path, select).await
                         } else {
-                            editor_open(editor.keys.clone(), path, panel.panel_cursor_reference()).await
+                            editor_open(
+                                editor.keys.clone(),
+                                editor.theme.clone(),
+                                path,
+                                panel.panel_cursor_reference(),
+                            ).await
                         };
                         let Some(index) = editor_index(&editor, &panel) else {
                             return;
@@ -485,6 +495,7 @@ fn editor_sync(editor: &Rc<Editor>, index: usize) {
     });
     let request = spawn_rooted({
         let keys = editor.keys.clone();
+        let theme = editor.theme.clone();
         let editor: Weak<Editor> = Rc::downgrade(editor);
         async move {
             let child: Rc<dyn Panel> = if dir {
@@ -493,7 +504,7 @@ fn editor_sync(editor: &Rc<Editor>, index: usize) {
                 };
                 editor_list(&editor, path, None).await
             } else {
-                editor_open(keys, path, None).await
+                editor_open(keys, theme, path, None).await
             };
             let Some(editor) = editor.upgrade() else {
                 return;
@@ -534,20 +545,26 @@ pub fn start_editor() {
                 return;
             },
         };
-        let keys = (|| -> Result<Keymap, String> {
+        let resolved = (|| -> Result<(Keymap, SpecTheme), String> {
             let spec =
                 serde_json::from_str::<SpecKeys>(
                     &start.keys,
                 ).map_err(|e| format!("Error parsing keys JSON: {}", e))?;
-            return Keymap::keymap_resolve(&spec).map_err(|e| format!("Errors in key bindings:\n{}", e));
+            let keys = Keymap::keymap_resolve(&spec).map_err(|e| format!("Errors in key bindings:\n{}", e))?;
+            let theme =
+                serde_json::from_str::<SpecTheme>(
+                    &start.theme,
+                ).map_err(|e| format!("Error parsing theme JSON: {}", e))?;
+            return Ok((keys, theme));
         })();
-        let keys = match keys {
-            Ok(keys) => keys,
+        let (keys, theme) = match resolved {
+            Ok(resolved) => resolved,
             Err(e) => {
                 set_root(vec![el("pre").classes(&["merman_error"]).text(&e)]);
                 return;
             },
         };
+        panel_theme_apply(&theme);
         let ai = Ai::ai_new(keys.clone());
         let editor = Rc::new(Editor {
             keys: keys,
@@ -570,6 +587,7 @@ pub fn start_editor() {
             reconnect: RefCell::new(None),
             location_timer: RefCell::new(None),
             start_focus: RefCell::new(start.file.clone()),
+            theme: Rc::new(theme),
         });
         if let Some(file) = &start.file {
             let mut selections = editor.selections.borrow_mut();

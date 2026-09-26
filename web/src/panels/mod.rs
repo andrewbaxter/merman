@@ -12,11 +12,17 @@ use {
             KeyName,
             KeyStroke,
         },
-        spec::SpecDirection,
+        spec::{
+            SpecDirection,
+            SpecTheme,
+        },
     },
+    gloo_utils::document,
     rooting::El,
     std::rc::Rc,
+    wasm_bindgen::JsCast,
     web_sys::{
+        HtmlElement,
         KeyboardEvent,
         MouseEvent,
     },
@@ -157,6 +163,27 @@ pub fn panel_key_stroke(e: &KeyboardEvent, convert: DirectionConvert) -> Option<
         },
     };
     return stroke(name);
+}
+
+pub fn panel_theme_apply(theme: &SpecTheme) {
+    let style = document().document_element().unwrap().dyn_into::<HtmlElement>().unwrap().style();
+    for (
+        name,
+        value,
+    ) in [
+        ("--merman-background", theme.background.clone()),
+        ("--merman-cursor-color", theme.cursor.line_color.clone()),
+        ("--merman-error-color", theme.error_color.clone()),
+        ("--merman-font-family", theme.font_family.clone()),
+        ("--merman-font-size", format!("{}mm", theme.font_size)),
+        ("--merman-hover-color", theme.hover.line_color.clone()),
+        ("--merman-icon-color", theme.icon_color.clone()),
+        ("--merman-line-thickness", format!("{}mm", theme.cursor.line_thickness)),
+        ("--merman-text-color", theme.text_color.clone()),
+    ] {
+        style.set_property(name, &value).unwrap();
+    }
+    return;
 }
 
 pub fn panel_path_parent(path: &str) -> Option<&str> {

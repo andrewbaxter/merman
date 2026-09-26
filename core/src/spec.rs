@@ -25,18 +25,6 @@ fn default_ellipsis() -> SpecSymbol {
     });
 }
 
-fn default_font_family() -> String {
-    return "monospace".to_string();
-}
-
-fn default_font_size() -> f64 {
-    return 6.;
-}
-
-fn default_foreground() -> String {
-    return "#000000".to_string();
-}
-
 fn default_one() -> f64 {
     return 1.;
 }
@@ -196,14 +184,6 @@ pub enum SpecDirection {
     Up,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum SpecDisplayUnit {
-    #[default]
-    Mm,
-    Px,
-}
-
 #[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum SpecFront {
@@ -344,7 +324,7 @@ pub enum SpecSplit {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
-pub struct SpecStyle {
+pub struct SpecTextStyle {
     pub ascent: Option<f64>,
     pub color: String,
     pub descent: Option<f64>,
@@ -392,35 +372,64 @@ pub struct SpecSymbolText {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct SpecSyntax {
-    pub background: String,
     #[serde(default = "default_converse_direction")]
     pub converse_direction: SpecDirection,
     #[serde(default)]
     pub course_transverse_stride: f64,
     #[serde(default)]
-    pub cursor: SpecObbox,
-    #[serde(default)]
-    pub display_unit: SpecDisplayUnit,
-    #[serde(default = "default_font_family")]
-    pub font_family: String,
-    #[serde(default = "default_font_size")]
-    pub font_size: f64,
-    #[serde(default = "default_foreground")]
-    pub foreground: String,
-    #[serde(default)]
     pub groups: Vec<SpecGroup>,
-    #[serde(default)]
-    pub hover: SpecObbox,
     #[serde(default)]
     pub pad: SpecPadding,
     pub root: SpecTypeRoot,
-    #[serde(default)]
-    pub styles: BTreeMap<String, SpecStyle>,
     #[serde(default = "default_transverse_direction")]
     pub transverse_direction: SpecDirection,
     pub types: Vec<SpecType>,
     #[serde(default = "default_unprintable")]
     pub unprintable: String,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct SpecTheme {
+    pub background: String,
+    pub cursor: SpecObbox,
+    pub error_color: String,
+    pub font_family: String,
+    pub font_size: f64,
+    pub hover: SpecObbox,
+    pub icon_color: String,
+    pub text_color: String,
+    pub text_styles: BTreeMap<String, SpecTextStyle>,
+}
+
+impl Default for SpecTheme {
+    fn default() -> Self {
+        let obbox = |line_color: &str| SpecObbox {
+            padding: SpecPadding {
+                converse_start: 1.,
+                converse_end: 1.,
+                transverse_start: 1.,
+                transverse_end: 1.,
+            },
+            round_start: true,
+            round_end: true,
+            round_radius: 3.,
+            line_thickness: 0.3,
+            line_color: line_color.to_string(),
+            ..SpecObbox::default()
+        };
+        return SpecTheme {
+            background: "#2b2b2b".to_string(),
+            cursor: obbox("#ffffff"),
+            error_color: "#ff8080".to_string(),
+            font_family: "monospace".to_string(),
+            font_size: 4.,
+            hover: obbox("#888888"),
+            icon_color: "#e0c060".to_string(),
+            text_color: "#cacaca".to_string(),
+            text_styles: BTreeMap::new(),
+        };
+    }
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]

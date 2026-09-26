@@ -1,12 +1,20 @@
 pub use merman_core::keys::SpecKeys;
 use {
+    merman_core::spec::{
+        SpecObbox,
+        SpecTextStyle,
+        SpecTheme,
+    },
     loga::{
         ResultContext,
         ea,
     },
     serde::Deserialize,
     std::{
-        collections::HashMap,
+        collections::{
+            BTreeMap,
+            HashMap,
+        },
         path::{
             Path,
             PathBuf,
@@ -18,6 +26,7 @@ pub struct Config {
     pub extensions: HashMap<String, Mapping>,
     pub keys: SpecKeys,
     pub sources: Vec<PathBuf>,
+    pub theme: SpecTheme,
 }
 
 impl Config {
@@ -35,6 +44,15 @@ pub fn config_load(dir: &Path, cwd: &Path) -> Result<Config, loga::Error> {
     let mut extensions = std::collections::HashMap::new();
     let mut keys = SpecKeys::default();
     let mut sources = vec![];
+    let mut background = None;
+    let mut cursor = None;
+    let mut error_color = None;
+    let mut font_family = None;
+    let mut font_size = None;
+    let mut hover = None;
+    let mut icon_color = None;
+    let mut text_color = None;
+    let mut text_styles = BTreeMap::new();
     let dirs = {
         let mut out = vec![];
         let mut add = |dir: PathBuf| {
@@ -84,6 +102,17 @@ pub fn config_load(dir: &Path, cwd: &Path) -> Result<Config, loga::Error> {
                     into.entry(action).or_insert(bindings);
                 }
             }
+            background = background.or(spec.background);
+            cursor = cursor.or(spec.cursor);
+            error_color = error_color.or(spec.error_color);
+            font_family = font_family.or(spec.font_family);
+            font_size = font_size.or(spec.font_size);
+            hover = hover.or(spec.hover);
+            icon_color = icon_color.or(spec.icon_color);
+            text_color = text_color.or(spec.text_color);
+            for (name, style) in spec.text_styles {
+                text_styles.entry(name).or_insert(style);
+            }
             sources.push(path);
         }
     }
@@ -91,6 +120,20 @@ pub fn config_load(dir: &Path, cwd: &Path) -> Result<Config, loga::Error> {
         extensions: extensions,
         keys: keys,
         sources: sources,
+        theme: {
+            let default = SpecTheme::default();
+            SpecTheme {
+                background: background.unwrap_or(default.background),
+                cursor: cursor.unwrap_or(default.cursor),
+                error_color: error_color.unwrap_or(default.error_color),
+                font_family: font_family.unwrap_or(default.font_family),
+                font_size: font_size.unwrap_or(default.font_size),
+                hover: hover.unwrap_or(default.hover),
+                icon_color: icon_color.unwrap_or(default.icon_color),
+                text_color: text_color.unwrap_or(default.text_color),
+                text_styles: text_styles,
+            }
+        },
     });
 }
 
@@ -106,8 +149,18 @@ pub fn normalize_ext(ext: &str) -> String {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SpecConfig {
+    pub background: Option<String>,
+    pub cursor: Option<SpecObbox>,
+    pub error_color: Option<String>,
     #[serde(default)]
     pub extensions: HashMap<String, PathBuf>,
+    pub font_family: Option<String>,
+    pub font_size: Option<f64>,
+    pub hover: Option<SpecObbox>,
+    pub icon_color: Option<String>,
     #[serde(default)]
     pub keys: SpecKeys,
+    pub text_color: Option<String>,
+    #[serde(default)]
+    pub text_styles: BTreeMap<String, SpecTextStyle>,
 }

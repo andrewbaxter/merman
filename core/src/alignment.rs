@@ -5,6 +5,7 @@ use crate::{
         Context,
         VisualId,
     },
+    display::PIXELS_PER_MM,
     iteration::TaskKind,
     spec::SpecAlignment,
 };
@@ -57,14 +58,13 @@ impl Context {
     }
 
     pub fn alignment_create(&mut self, spec: &SpecAlignment) -> AlignId {
-        let to_pixels = self.syntax.spec_root.to_pixels;
         let (kind, converse) = match spec {
             SpecAlignment::Relative(r) => (AlignmentKind::Relative {
                 base_key: r.base.clone(),
-                offset: r.offset * to_pixels,
+                offset: r.offset * PIXELS_PER_MM,
                 collapse: r.collapse,
                 base: None,
-            }, r.offset * to_pixels),
+            }, r.offset * PIXELS_PER_MM),
             SpecAlignment::Concensus(_) => (AlignmentKind::Concensus { iteration_align: None }, 0.),
         };
         let id = self.aligns.len();

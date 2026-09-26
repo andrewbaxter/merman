@@ -4,7 +4,13 @@
 }
 
 html, body { margin: 0; padding: 0; height: 100%; }
-body { background: #222222; }
+/* The theme from the config sets the --merman-* variables on the root element. */
+body {
+  background: var(--merman-background);
+  color: var(--merman-text-color);
+  font-family: var(--merman-font-family);
+  font-size: var(--merman-font-size);
+}
 
 .merman_root { display: flex; align-items: stretch; height: 100vh; }
 .merman_panels { display: flex; align-items: stretch; flex: 1 1 0; min-width: 0; }
@@ -14,8 +20,7 @@ body { background: #222222; }
    shown. They split the row by the weight each panel gives, which the editor sets
    as the flex grow, so a panel on its own takes all of it. */
 .merman_panel { flex: 1 1 0; min-width: 0; }
-.merman_panel_filesystem, .merman_panel_sessions { background: #2b2b2b; }
-.merman_panel_ai { background: #2b2b2b; overflow: hidden; }
+.merman_panel_ai { overflow: hidden; }
 
 /* merman positions and scrolls everything itself, so the panel neither scrolls nor
    takes part in hit testing: the mouse event lands on the panel and its offset is
@@ -47,48 +52,45 @@ body { background: #222222; }
 .merman_display_text text { white-space: pre; }
 .merman_animate { transition: left 0.1s linear, top 0.1s linear; }
 
-.merman_rows { padding: 12px; font-family: monospace; font-size: 12px; color: #cacaca; }
+.merman_rows { padding: 12px; }
 .merman_row {
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 1px 3px;
-  border: 1px solid transparent;
+  border: var(--merman-line-thickness) solid transparent;
   border-radius: 3px;
   white-space: pre;
 }
-.merman_row:hover { border-color: #888888; }
-.merman_row_select { border-color: #ffffff; }
+.merman_row:hover { border-color: var(--merman-hover-color); }
+.merman_row_select { border-color: var(--merman-cursor-color); }
 
 /* Files have an icon box too, just an empty one, so the names line up. */
-.merman_icon { flex: none; width: 1em; font-family: "Material Icons"; font-size: 12px; line-height: 1; color: #e0c060; }
-.merman_row_empty { padding: 1px 3px; color: #767676; }
+.merman_icon { flex: none; width: 1em; font-family: "Material Icons"; line-height: 1; color: var(--merman-icon-color); }
+.merman_row_empty { padding: 1px 3px; opacity: 0.6; }
 
 .merman_error {
   margin: 0;
   padding: 1em;
-  color: #ff8080;
-  background: #222222;
-  font-family: monospace;
+  color: var(--merman-error-color);
   white-space: pre-wrap;
 }
 
 /* A column of status icons at the left edge, as in merman2. It stays put while the
    panels beside it come and go. */
-.merman_status { flex: none; width: 24px; padding-top: 8px; display: flex; flex-direction: column; align-items: center; background: #1a1a1a; }
-.merman_status_icon { font-family: "Material Icons"; font-size: 18px; line-height: 1; color: #e0c060; cursor: pointer; }
+.merman_status { flex: none; width: 2em; padding-top: 0.5em; display: flex; flex-direction: column; align-items: center; }
+.merman_status_icon { font-family: "Material Icons"; line-height: 1; color: var(--merman-icon-color); cursor: pointer; }
 .merman_status_icon[hidden] { display: none; }
 
-.merman_ai { height: 100%; display: flex; flex-direction: column; padding: 12px; box-sizing: border-box; color: #cacaca; font-family: monospace; font-size: 12px; }
+.merman_ai { height: 100%; display: flex; flex-direction: column; padding: 12px; box-sizing: border-box; }
 .merman_ai_log { flex: 1 1 0; overflow: auto; }
-.merman_ai_older { color: #767676; cursor: pointer; margin-bottom: 8px; }
-.merman_ai_older:hover { color: #ffffff; }
+.merman_ai_older { opacity: 0.6; cursor: pointer; margin-bottom: 8px; }
+.merman_ai_older:hover { opacity: 1; }
 .merman_ai_older[hidden] { display: none; }
 .merman_ai_msg { margin-bottom: 8px; }
-.merman_ai_time { color: #767676; margin-right: 6px; }
+.merman_ai_time { opacity: 0.6; margin-right: 6px; }
 .merman_ai_text { white-space: pre-wrap; overflow-wrap: anywhere; }
-.merman_ai_user .merman_ai_text { color: #ffffff; }
-.merman_ai_tool .merman_ai_text { color: #99aabb; }
-.merman_ai_system .merman_ai_text { color: #ff8080; }
-.merman_ai_input { flex: none; min-height: 3em; max-height: 12em; overflow: auto; padding: 4px; border: 1px solid #555555; border-radius: 3px; color: #ffffff; white-space: pre-wrap; overflow-wrap: anywhere; outline: none; }
-.merman_ai_input:focus { border-color: #ffffff; }
+.merman_ai_tool .merman_ai_text { opacity: 0.6; }
+.merman_ai_system .merman_ai_text { color: var(--merman-error-color); }
+.merman_ai_input { flex: none; min-height: 3em; max-height: 12em; overflow: auto; padding: 4px; border: var(--merman-line-thickness) solid var(--merman-hover-color); border-radius: 3px; white-space: pre-wrap; overflow-wrap: anywhere; outline: none; }
+.merman_ai_input:focus { border-color: var(--merman-cursor-color); }

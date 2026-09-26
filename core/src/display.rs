@@ -5,10 +5,7 @@ use {
             FontMetrics,
             FontSpec,
         },
-        spec::{
-            SpecDisplayUnit,
-            SpecObbox,
-        },
+        spec::SpecObbox,
     },
     unicode_segmentation::UnicodeSegmentation,
 };
@@ -30,10 +27,6 @@ pub trait Display {
     fn display_root_child_count(&self) -> usize;
     fn display_set_background(&mut self, color: &str);
     fn display_text(&mut self) -> DisplayNodeId;
-
-    fn display_to_pixels(&self, unit: SpecDisplayUnit) -> f64 {
-        return display_unit_to_pixels(unit);
-    }
     fn drawing_clear(&mut self, node: DisplayNodeId);
     fn drawing_draw(&mut self, node: DisplayNodeId, commands: &[DrawCommand]);
     fn drawing_resize(&mut self, node: DisplayNodeId, size: Vector);
@@ -52,12 +45,7 @@ pub trait Display {
     fn text_set(&mut self, node: DisplayNodeId, text: &str, font: &FontSpec, color: &str);
 }
 
-pub fn display_unit_to_pixels(unit: SpecDisplayUnit) -> f64 {
-    match unit {
-        SpecDisplayUnit::Px => return 1.,
-        SpecDisplayUnit::Mm => return 96. / 25.4,
-    }
-}
+pub const PIXELS_PER_MM: f64 = 96. / 25.4;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum DisplayLayer {

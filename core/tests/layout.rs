@@ -9,6 +9,7 @@ use {
         settle,
     },
     merman_core::{
+        display::PIXELS_PER_MM,
         context::{
             Context,
             Vector,
@@ -22,10 +23,7 @@ use {
     },
 };
 
-/// The json syntax uses a 16px font, which merman treats as 16pt = 12px; the fixed
-/// measurer makes every grapheme 0.6em, so 7.2px, and the 28.8px indent is 4
-/// characters.
-const UNIT: f64 = 12. * 0.6;
+const UNIT: f64 = 4. * PIXELS_PER_MM * 0.6;
 
 #[test]
 fn compacts_outer_first() {
@@ -108,7 +106,7 @@ fn json_context(text: &str, edge_chars: f64) -> (Context, DisplayTest, Environme
     let syntax = load_syntax(include_str!("../../syntaxes/json.json"));
     let doc = load_document(&syntax, text);
     let pad = syntax.spec_root.pad.converse_start + syntax.spec_root.pad.converse_end;
-    let (mut ctx, display, environment) = build(syntax, doc, edge_chars * UNIT + pad, 600.);
+    let (mut ctx, display, environment) = build(syntax, doc, (edge_chars + 0.001) * UNIT + pad, 600.);
     settle(&mut ctx);
     return (ctx, display, environment);
 }
@@ -121,12 +119,10 @@ fn layout_text(text: &str, edge_chars: f64) -> Vec<String> {
 #[test]
 fn mismatch_reports_alternatives() {
     let spec: SpecSyntax = serde_json::from_str(r##"{
-          "background": "#000",
-          "display_unit": "px",
           "root": {"back": {"fixed_record": [{"key": "v1", "value": {"fixed_literal": "true"}}]}, "front": []},
           "types": []
         }"##).unwrap();
-    let syntax = Syntax::syntax_resolve(spec).unwrap_or_else(|e| panic!("{}", e));
+    let syntax = Syntax::syntax_resolve(spec, &common::theme()).unwrap_or_else(|e| panic!("{}", e));
     let value: serde_json::Value = serde_json::from_str(r#"{"v1": false}"#).unwrap();
     let err = match_document(&syntax, &value).err().expect("should mismatch");
     assert_eq!(err.mismatch_format().trim(), "/v1: expected literal true, got false");
@@ -156,7 +152,7 @@ fn nested_indent_chains() {
 
 fn resize(ctx: &mut Context, edge_chars: f64) {
     let pad = ctx.syntax.spec_root.pad.converse_start + ctx.syntax.spec_root.pad.converse_end;
-    ctx.context_resize(edge_chars * UNIT + pad, 600.);
+    ctx.context_resize((edge_chars + 0.001) * UNIT + pad, 600.);
     settle(ctx);
 }
 
@@ -186,12 +182,10 @@ fn soft_wraps_long_string() {
 #[test]
 fn syntax_validation_reports_unused_field() {
     let spec: SpecSyntax = serde_json::from_str(r##"{
-          "background": "#000",
-          "display_unit": "px",
           "root": {"back": {"string": {"id": "x"}}, "front": []},
           "types": []
         }"##).unwrap();
-    let errors = Syntax::syntax_resolve(spec).err().expect("should fail");
+    let errors = Syntax::syntax_resolve(spec, &common::theme()).err().expect("should fail");
     assert_eq!(errors.0.len(), 1, "{}", errors);
     assert_eq!(errors.0[0].kind, ErrorKind::UnusedBackData { unused: "x".to_string() }, "{}", errors);
 }
