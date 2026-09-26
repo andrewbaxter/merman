@@ -382,8 +382,8 @@ impl Keymap {
                         meta: true,
                         ..KeyStroke::key_stroke_new(KeyName::Char('c'))
                     }]]),
-                    (Action::AiOpen, &[&[ctrl_shift(KeyName::Char('a'))]]),
-                    (Action::AiOpenReference, &[&[ctrl_shift(KeyName::Char('r'))]]),
+                    (Action::AiOpen, &[&[plain(KeyName::Char('a'))]]),
+                    (Action::AiOpenReference, &[&[shift(KeyName::Char('a'))]]),
                 ],
                 &mut errors,
             );

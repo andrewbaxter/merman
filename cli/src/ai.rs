@@ -205,7 +205,7 @@ pub fn ai_spawn(ai: &Arc<Ai>, id: String, resume: bool) -> Result<AiSession, log
                                             format!(
                                                 "{} {}",
                                                 block["name"].as_str().unwrap_or_default(),
-                                                serde_json::to_string(&block["input"]).unwrap()
+                                                serde_json::to_string_pretty(&block["input"]).unwrap()
                                             ),
                                         );
                                 },

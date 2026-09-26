@@ -284,7 +284,7 @@ fn write(
             next += 1;
         }
     }
-    let text = serde_json::to_string(&serialize_atom(&loaded.syntax, &document, document.root)).unwrap();
+    let text = serde_json::to_string_pretty(&serialize_atom(&loaded.syntax, &document, document.root)).unwrap();
     let temp = loaded.file.with_extension("merman_tool_tmp");
     std::fs::write(&temp, text).context_with("Error writing the edited file", ea!(path = temp.display()))?;
     std::fs::rename(
