@@ -40,6 +40,7 @@ use {
             Cell,
             RefCell,
         },
+        collections::HashSet,
         rc::{
             Rc,
             Weak,
@@ -67,6 +68,8 @@ pub struct Ai {
     messages: RefCell<Vec<AiMessage>>,
     messages_el: El,
     older: El,
+    open: RefCell<HashSet<usize>>,
+    start: Cell<usize>,
     pub status: El,
     stick: Cell<bool>,
     this: Weak<Ai>,
@@ -100,8 +103,9 @@ impl Ai {
                 match client_send(ReqAiHistory {}).await {
                     Ok(RespAiHistory { status, messages }) => {
                         *ai.messages.borrow_mut() = messages;
+                        ai.open.borrow_mut().clear();
                         ai.ai_status(status);
-                        ai.ai_render();
+                        ai.ai_render(false);
                     },
                     Err(e) => ai.ai_message(AiMessage {
                         role: AiRole::System,
@@ -116,7 +120,7 @@ impl Ai {
 
     pub fn ai_message(&self, message: AiMessage) {
         self.messages.borrow_mut().push(message);
-        self.ai_render();
+        self.ai_render(true);
         return;
     }
 
@@ -131,11 +135,13 @@ impl Ai {
         let ai = Rc::new_cyclic(|this| Ai {
             element: element,
             focused: Cell::new(false),
+            start: Cell::new(0),
             stick: Cell::new(true),
             status: status,
             icon: icon.clone(),
             log: log.clone(),
             older: older.clone(),
+            open: RefCell::new(HashSet::new()),
             messages_el: messages_el,
             input: input.clone(),
             keys: keys,
@@ -150,7 +156,7 @@ impl Ai {
                     return;
                 };
                 ai.history.set(!ai.history.get());
-                ai.ai_render();
+                ai.ai_render(false);
             }
         });
         log.ref_on("scroll", {
@@ -182,7 +188,7 @@ impl Ai {
         return ai;
     }
 
-    fn ai_render(&self) {
+    fn ai_render(&self, keep: bool) {
         let messages = self.messages.borrow();
         let mut start = 0;
         if !self.history.get() {
@@ -196,7 +202,11 @@ impl Ai {
                     }
                 }
             }
+            if keep && !self.stick.get() {
+                start = start.min(self.start.get());
+            }
         }
+        self.start.set(start);
         if self.history.get() {
             self.older.ref_remove_attr("hidden").ref_text("Show recent messages only");
         } else if start > 0 {
@@ -204,7 +214,7 @@ impl Ai {
         } else {
             self.older.ref_attr("hidden", "");
         }
-        let rows = messages[start..].iter().map(|m| {
+        let rows = messages[start..].iter().enumerate().map(|(i, m)| {
             let role = match m.role {
                 AiRole::User => "merman_ai_user",
                 AiRole::Assistant => "merman_ai_assistant",
@@ -216,9 +226,51 @@ impl Ai {
                     .to_locale_time_string("default")
                     .as_string()
                     .unwrap_or_default();
+            let time = el("span").classes(&["merman_ai_time"]).text(&time);
+            if m.role == AiRole::Tool {
+                let (name, input) = m.text.split_once(' ').unwrap_or((&m.text, ""));
+                let input_json = serde_json::from_str::<serde_json::Value>(input).unwrap_or_default();
+                let gist =
+                    input_json
+                        .get("description")
+                        .and_then(|d| d.as_str())
+                        .or_else(|| input_json.as_object().and_then(|o| o.values().find_map(|v| v.as_str())))
+                        .unwrap_or_default()
+                        .lines()
+                        .next()
+                        .unwrap_or_default();
+                let index = start + i;
+                let details =
+                    el("details")
+                        .classes(&["merman_ai_msg", role])
+                        .push(
+                            el("summary")
+                                .push(time)
+                                .push(el("span").classes(&["merman_ai_text"]).text(&format!("{} {}", name, gist))),
+                        )
+                        .push(el("div").classes(&["merman_ai_text"]).text(input));
+                if self.open.borrow().contains(&index) {
+                    details.ref_attr("open", "");
+                }
+                details.ref_on("toggle", {
+                    let ai = self.this.clone();
+                    let details = details.weak();
+                    move |_| {
+                        let (Some(ai), Some(details)) = (ai.upgrade(), details.upgrade()) else {
+                            return;
+                        };
+                        if details.raw().has_attribute("open") {
+                            ai.open.borrow_mut().insert(index);
+                        } else {
+                            ai.open.borrow_mut().remove(&index);
+                        }
+                    }
+                });
+                return details;
+            }
             return el("div")
                 .classes(&["merman_ai_msg", role])
-                .push(el("span").classes(&["merman_ai_time"]).text(&time))
+                .push(time)
                 .push(el("span").classes(&["merman_ai_text"]).text(&m.text));
         }).collect::<Vec<_>>();
         self.messages_el.ref_clear();
@@ -308,8 +360,9 @@ impl Panel for Ai {
                             return;
                         }
                         ai.messages.borrow_mut().clear();
+                        ai.open.borrow_mut().clear();
                         ai.history.set(false);
-                        ai.ai_render();
+                        ai.ai_render(false);
                     }
                 });
                 return PanelResult::Used;
