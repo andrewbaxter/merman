@@ -43,9 +43,19 @@ pub fn load_syntax(json: &str) -> Rc<Syntax> {
 }
 
 pub fn theme() -> SpecTheme {
-    let config: serde_json::Value = serde_json::from_str(include_str!("../../../merman.json")).unwrap();
     return SpecTheme {
-        text_styles: serde_json::from_value(config["text_styles"].clone()).unwrap(),
+        text_styles: serde_json::from_str(r##"{
+          "keyword": {"color": "#e66ea5"},
+          "identifier": {"color": "#d8c3ff"},
+          "literal": {"color": "#79bf97"},
+          "literal_symbol": {"color": "#79bf97"},
+          "label": {"color": "#557fde"},
+          "symbol": {"color": "#a27878"},
+          "symbol_fade": {"color": "#67556e"},
+          "string": {"color": "#f79578"},
+          "number": {"color": "#95fa94"},
+          "special": {"color": "#7dd4fb"}
+        }"##).unwrap(),
         ..SpecTheme::default()
     };
 }
