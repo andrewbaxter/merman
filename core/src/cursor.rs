@@ -512,6 +512,7 @@ impl Context {
                 find_next = self.parent_get_next_brick(visual);
             }
         }
+        self.scroll_follow = true;
         self.wall_set_cornerstone(cornerstone, find_previous, find_next);
     }
 
@@ -536,7 +537,7 @@ impl Context {
         self.cursor_array_set_range(id, index, index);
     }
 
-    fn cursor_array_set_range(&mut self, id: CursorId, begin: usize, end: usize) {
+    pub fn cursor_array_set_range(&mut self, id: CursorId, begin: usize, end: usize) {
         let (visual, lead_first, border) = match self.cursor_get(id) {
             Cursor::Array(c) => (c.visual, c.lead_first, c.border),
             _ => unreachable!(),
@@ -556,7 +557,7 @@ impl Context {
         self.border_set_last(border, last);
     }
 
-    fn cursor_atom_reset_cornerstone(&mut self, id: CursorId) {
+    pub fn cursor_atom_reset_cornerstone(&mut self, id: CursorId) {
         let (visual, index, border) = match self.cursor_get(id) {
             Cursor::Atom(c) => (c.visual, c.index, c.border),
             _ => unreachable!(),
@@ -588,6 +589,7 @@ impl Context {
                         find_next = self.parent_get_next_brick(visual);
                     }
                 }
+                self.scroll_follow = true;
                 self.wall_set_cornerstone(cornerstone, find_previous, find_next);
             },
             None => {
@@ -1069,7 +1071,7 @@ impl Context {
         }
     }
 
-    fn range_set_cornerstone(&mut self, loc: RangeLoc, index: usize) {
+    pub fn range_set_cornerstone(&mut self, loc: RangeLoc, index: usize) {
         if !self.range(loc).for_selection {
             return;
         }
@@ -1097,6 +1099,7 @@ impl Context {
                 find_next = self.parent_find_next_brick(visual);
             }
         }
+        self.scroll_follow = true;
         self.wall_set_cornerstone(cornerstone, find_previous, find_next);
     }
 

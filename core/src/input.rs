@@ -209,26 +209,37 @@ impl Context {
                 return true;
             },
             Action::ScrollNext => {
-                self.scroll -= self.config.scroll_factor * self.transverse_edge;
-                self.context_apply_scroll();
+                self.context_scroll_by(-self.config.scroll_factor * self.transverse_edge);
                 return true;
             },
             Action::ScrollNextAlot => {
-                self.scroll -= self.config.scroll_alot_factor * self.transverse_edge;
-                self.context_apply_scroll();
+                self.context_scroll_by(-self.config.scroll_alot_factor * self.transverse_edge);
                 return true;
             },
             Action::ScrollPrevious => {
-                self.scroll += self.config.scroll_factor * self.transverse_edge;
-                self.context_apply_scroll();
+                self.context_scroll_by(self.config.scroll_factor * self.transverse_edge);
                 return true;
             },
             Action::ScrollPreviousAlot => {
-                self.scroll += self.config.scroll_alot_factor * self.transverse_edge;
-                self.context_apply_scroll();
+                self.context_scroll_by(self.config.scroll_alot_factor * self.transverse_edge);
                 return true;
             },
             Action::ScrollReset => {
+                self.scroll_follow = true;
+                if let Some(c) = self.cursor {
+                    match self.cursor_get(c) {
+                        Cursor::Atom(_) => self.cursor_atom_reset_cornerstone(c),
+                        Cursor::Array(ca) => {
+                            let (begin, end) = (ca.begin_index, ca.end_index);
+                            self.cursor_array_set_range(c, begin, end);
+                        },
+                        Cursor::Primitive(cp) => {
+                            let (visual, lead) = (cp.range.visual, cp.range.range_lead_index());
+                            let line = self.primitive_find_containing(visual, lead);
+                            self.range_set_cornerstone(RangeLoc::Cursor(c), line);
+                        },
+                    }
+                }
                 self.scroll_visible();
                 return true;
             },

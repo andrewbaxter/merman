@@ -69,6 +69,21 @@ fn lays_only_around_the_view() {
     assert_eq!(ctx.borders[border].as_ref().unwrap().last, ctx.courses[last_course].children.last().copied());
 }
 
+#[test]
+fn scrolling_away_isnt_pulled_back() {
+    let (mut ctx, _display) = view_context(3000, 600.);
+    ctx.visual_select_into_any_child(ctx.root_visual);
+    settle(&mut ctx);
+    for _ in 0 .. 60 {
+        ctx.context_scroll_by(100.);
+        let scrolled = ctx.scroll;
+        settle(&mut ctx);
+        assert_eq!(ctx.scroll, scrolled, "the view was pulled back after scrolling");
+    }
+    assert!(ctx.key_action(Action::ScrollReset));
+    assert!(ctx.scroll < 600., "scroll reset didn't return to the cursor: {}", ctx.scroll);
+}
+
 fn view_context(entries: usize, transverse: f64) -> (Context, DisplayTest) {
     let syntax = load_syntax(include_str!("../../syntaxes/json.json"));
     let mut text = String::from("{");

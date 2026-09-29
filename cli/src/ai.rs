@@ -8,6 +8,7 @@ use {
         Notification,
         NotificationHandle,
         Timeout,
+        Urgency,
     },
     merman_api::{
         AiMessage,
@@ -80,7 +81,8 @@ pub fn ai_notify(ai: &Arc<Ai>, status: AiStatus, summary: &str, body: String) {
         .appname("merman")
         .summary(summary)
         .body(&body.chars().take(300).collect::<String>())
-        .timeout(Timeout::Never);
+        .timeout(Timeout::Never)
+        .urgency(Urgency::Critical);
     tokio::spawn({
         let ai = ai.clone();
         async move {
@@ -207,7 +209,9 @@ pub fn ai_spawn(ai: &Arc<Ai>, id: String, resume: bool) -> Result<AiSession, log
             `a.at#.v1.expr`. A trailing jq slice selects a range: `#16.variant.seq.exprs[1:3]` is elements \
             1 and 2, `#16.variant.bind.name[0:3]` the first three characters. The files are single-line JSON, \
             so use `merman-tool` (REF is from the `#` on) rather than text tools: `merman-tool get FILE REF` \
-            prints the canonical reference, the element id and the JSON there; `merman-tool find FILE PATTERN \
+            prints the canonical reference, the element id and the JSON there (`--up N` goes N jq levels up from REF \
+            first, a slice counting as one, to see what encloses it; `--depth N` elides what's nested deeper than \
+            N); `merman-tool find FILE PATTERN \
             [--within REF] [--regex] [--depth N]` prints the same for every value matching a JSON pattern (an \
             object matches objects having at least its keys, e.g. `'{\"bind\":{\"name\":\"x\"}}'`); \
             `merman-tool set FILE REF` replaces the JSON at REF with the JSON on stdin (a slice takes an array \

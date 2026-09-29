@@ -8,10 +8,11 @@ use {
             sessions::SessionsPanel,
         },
     },
-    gloo_utils::{
-        document,
-        window,
+    gloo_render::{
+        AnimationFrame,
+        request_animation_frame,
     },
+    gloo_utils::window,
     merman_api::{
         AiMessage,
         AiRole,
@@ -58,6 +59,7 @@ use {
 };
 
 pub struct Ai {
+    attach_frame: RefCell<Option<AnimationFrame>>,
     element: El,
     focused: Cell<bool>,
     history: Cell<bool>,
@@ -85,9 +87,6 @@ impl Ai {
 
     fn ai_focus(&self) {
         let input = html(&self.input);
-        if document().active_element().is_some_and(|a| &a == input.as_ref() as &web_sys::Element) {
-            return;
-        }
         _ = input.focus();
         if let Ok(Some(selection)) = window().get_selection() {
             _ = selection.select_all_children(&input);
@@ -133,6 +132,7 @@ impl Ai {
         let input = el("div").classes(&["merman_ai_input"]).attr("contenteditable", "true");
         let element = el("div").classes(&["merman_ai"]).push(log.clone()).push(input.clone());
         let ai = Rc::new_cyclic(|this| Ai {
+            attach_frame: RefCell::new(None),
             element: element,
             focused: Cell::new(false),
             start: Cell::new(0),
@@ -179,9 +179,6 @@ impl Ai {
                     return;
                 }
                 ai.ai_scroll();
-                if ai.focused.get() {
-                    ai.ai_focus();
-                }
             }
         });
         ai.ai_load();
@@ -309,6 +306,18 @@ impl Ai {
 
 impl Panel for Ai {
     fn panel_attach(&self) -> El {
+        *self.attach_frame.borrow_mut() = Some(request_animation_frame({
+            let ai = self.this.clone();
+            move |_| {
+                let Some(ai) = ai.upgrade() else {
+                    return;
+                };
+                ai.ai_scroll();
+                if ai.focused.get() {
+                    ai.ai_focus();
+                }
+            }
+        }));
         return el("div").classes(&["merman_panel", "merman_panel_ai"]).push(self.element.clone());
     }
 

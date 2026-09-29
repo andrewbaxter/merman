@@ -94,5 +94,5 @@ body {
 .merman_ai_tool summary { cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .merman_ai_tool summary .merman_ai_text { white-space: nowrap; }
 .merman_ai_system .merman_ai_text { color: var(--merman-error-color); }
-.merman_ai_input { flex: none; min-height: 3em; max-height: 12em; overflow: auto; padding: 4px; border: var(--merman-line-thickness) solid var(--merman-hover-color); border-radius: 3px; white-space: pre-wrap; overflow-wrap: anywhere; outline: none; }
+.merman_ai_input { flex: none; max-height: 12em; overflow: auto; padding: 4px; border: var(--merman-line-thickness) solid var(--merman-hover-color); border-radius: 3px; white-space: pre-wrap; overflow-wrap: anywhere; outline: none; }
 .merman_ai_input:focus { border-color: var(--merman-cursor-color); }

@@ -15,7 +15,6 @@ use {
         back::{
             back_atom_segments,
             back_locate,
-            back_reference,
         },
         cursor::Located,
         document::Document,
@@ -56,6 +55,8 @@ enum Command {
 struct Get {
     file: PathBuf,
     reference: String,
+    up: Option<usize>,
+    depth: Option<usize>,
 }
 
 #[derive(Aargvark)]
@@ -143,20 +144,36 @@ fn value_walk<'a>(value: &'a mut Value, path: &[Segment]) -> &'a mut Value {
     return at;
 }
 
-fn locate_json(syntax: &Syntax, document: &Document, path: &[Segment]) -> (String, Option<i64>) {
-    let reference = Reference {
+fn locate_json(
+    syntax: &Syntax,
+    document: &Document,
+    path: &[Segment],
+    range: Option<(usize, usize)>,
+) -> (String, Option<i64>) {
+    let mut reference = Reference {
         id: None,
         path: path.to_vec(),
-        range: None,
+        range: range,
     };
     let Some(target) = back_locate(syntax, document, &reference) else {
         return (reference.reference_format(), None);
     };
-    let id = match &target.located {
-        Located::Atom(a) => document.document_atom(*a).unique_id,
-        Located::Field(_, _) => None,
-    };
-    return (back_reference(syntax, document, &target.located, target.range).reference_format(), id);
+    let mut at = Some(match &target.located {
+        Located::Atom(a) | Located::Field(a, _) => *a,
+    });
+    while let Some(a) = at {
+        let atom = document.document_atom(a);
+        if let Some(id) = atom.unique_id {
+            reference.id = Some(id);
+            reference.path.drain(..back_atom_segments(syntax, document, a).len());
+            break;
+        }
+        at = atom.parent.as_ref().map(|p| p.atom);
+    }
+    if !reference.path.is_empty() || reference.range.is_some() {
+        return (reference.reference_format(), None);
+    }
+    return (reference.reference_format(), reference.id);
 }
 
 fn pattern_match(pattern: &Value, value: &Value, regex: bool) -> bool {
@@ -205,7 +222,7 @@ fn find_walk(
     out: &mut Vec<Value>,
 ) {
     if pattern_match(pattern, value, regex) {
-        let (reference, id) = locate_json(&loaded.syntax, &loaded.document, path);
+        let (reference, id) = locate_json(&loaded.syntax, &loaded.document, path, None);
         out.push(serde_json::json!({
             "reference": reference,
             "id": id,
@@ -290,7 +307,7 @@ fn write(
         &temp,
         &loaded.file,
     ).context_with("Error replacing the file", ea!(path = loaded.file.display()))?;
-    let (reference, id) = locate_json(&loaded.syntax, &document, path);
+    let (reference, id) = locate_json(&loaded.syntax, &document, path, None);
     println!("{}", serde_json::to_string_pretty(&serde_json::json!({
         "reference": reference,
         "id": id
@@ -305,7 +322,11 @@ fn main() {
             Command::Get(get) => {
                 let loaded = load(&get.file)?;
                 let reference = reference_parse(&get.reference)?;
-                let (path, range) = reference_path(&loaded, &reference)?;
+                let (mut path, mut range) = reference_path(&loaded, &reference)?;
+                if let Some(up) = get.up.filter(|up| *up > 0) {
+                    path.truncate(path.len().saturating_sub(up - range.is_some() as usize));
+                    range = None;
+                }
                 let mut root = root_serialize(&loaded);
                 let mut value = value_walk(&mut root, &path).take();
                 if let Some((begin, end)) = range {
@@ -321,7 +342,10 @@ fn main() {
                         other => other,
                     };
                 }
-                let (reference, id) = locate_json(&loaded.syntax, &loaded.document, &path);
+                if let Some(depth) = get.depth {
+                    value = value_truncate(&value, depth);
+                }
+                let (reference, id) = locate_json(&loaded.syntax, &loaded.document, &path, range);
                 println!("{}", serde_json::to_string_pretty(&serde_json::json!({
                     "reference": reference,
                     "id": id,

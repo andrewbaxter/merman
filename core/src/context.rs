@@ -83,6 +83,7 @@ pub struct Context {
     pub root_visual: VisualId,
     pub scroll: f64,
     pub scroll_end: f64,
+    pub scroll_follow: bool,
     pub scroll_start: f64,
     pub select_token: u64,
     pub stylist: Rc<dyn Stylist>,
@@ -185,6 +186,7 @@ impl Context {
             scroll: 0.,
             scroll_start: 0.,
             scroll_end: 0.,
+            scroll_follow: true,
             hover_brick: None,
             hoverables: vec![],
             hover: None,
@@ -225,6 +227,7 @@ impl Context {
     }
 
     pub fn context_scroll_by(&mut self, delta: f64) {
+        self.scroll_follow = false;
         self.scroll += delta;
         self.context_apply_scroll();
     }
@@ -235,6 +238,9 @@ impl Context {
     }
 
     pub fn scroll_visible(&mut self) {
+        if !self.scroll_follow {
+            return;
+        }
         let pad = &self.syntax.spec_root.pad;
         let minimum = self.scroll_start - self.wall.bedding_before - pad.transverse_start;
         let maximum = self.scroll_end + self.wall.bedding_after + pad.transverse_end;
