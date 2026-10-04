@@ -117,15 +117,16 @@ fn layout_text(text: &str, edge_chars: f64) -> Vec<String> {
 }
 
 #[test]
-fn mismatch_reports_alternatives() {
+fn a_document_the_root_does_not_match_is_read_as_json() {
     let spec: SpecSyntax = serde_json::from_str(r##"{
           "root": {"back": {"fixed_record": [{"key": "v1", "value": {"fixed_literal": "true"}}]}, "front": []},
           "types": []
         }"##).unwrap();
     let syntax = Syntax::syntax_resolve(spec, &common::theme()).unwrap_or_else(|e| panic!("{}", e));
     let value: serde_json::Value = serde_json::from_str(r#"{"v1": false}"#).unwrap();
-    let err = match_document(&syntax, &value).err().expect("should mismatch");
-    assert_eq!(err.mismatch_format().trim(), "/v1: expected literal true, got false");
+    let document = match_document(&syntax, &value).unwrap_or_else(|e| panic!("{}", e.mismatch_format()));
+    let types: Vec<&str> = document.atoms.iter().map(|a| syntax.syntax_type(a.type_).id.as_str()).collect();
+    assert_eq!(types, vec!["__json_root", "__json_object", "__json_pair", "__json_false"]);
 }
 
 #[test]

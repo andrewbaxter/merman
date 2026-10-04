@@ -4,8 +4,13 @@ use {
         client::client_send,
         panels::{
             Panel,
+            PanelChange,
+            PanelHost,
             PanelResult,
-            code::CodePanel,
+            code::{
+                CodeEdit,
+                CodePanel,
+            },
             error::ErrorPanel,
             filesystem::FilesystemPanel,
             panel_theme_apply,
@@ -204,6 +209,19 @@ fn editor_focus(editor: &Rc<Editor>, index: usize) {
     return;
 }
 
+fn editor_host(editor: &Rc<Editor>) -> PanelHost {
+    let editor: Weak<Editor> = Rc::downgrade(editor);
+    return PanelHost(Rc::new(move |panel, result| {
+        let Some(editor) = editor.upgrade() else {
+            return;
+        };
+        let Some(index) = editor_index(&editor, &panel) else {
+            return;
+        };
+        editor_result(&editor, index, result);
+    }));
+}
+
 fn editor_index(editor: &Editor, panel: &Rc<dyn Panel>) -> Option<usize> {
     return editor.panels.borrow().iter().position(|p| panel_same(p, panel));
 }
@@ -244,7 +262,13 @@ fn editor_location_touch(editor: &Rc<Editor>) {
     return;
 }
 
-async fn editor_open(keys: Keymap, theme: Rc<SpecTheme>, path: String, select: Option<String>) -> Rc<dyn Panel> {
+async fn editor_open(
+    keys: Keymap,
+    theme: Rc<SpecTheme>,
+    host: PanelHost,
+    path: String,
+    select: Option<String>,
+) -> Rc<dyn Panel> {
     let opened = match client_send(ReqOpen { path: path.clone() }).await {
         Ok(opened) => opened,
         Err(e) => return Rc::new(ErrorPanel::error_new(path, false, &e)),
@@ -256,17 +280,18 @@ async fn editor_open(keys: Keymap, theme: Rc<SpecTheme>, path: String, select: O
         let value: serde_json::Value =
             source_parse(&opened.source).map_err(|e| format!("Error parsing source JSON: {}", e))?;
         let document =
-            Rc::new(
-                match_document(
-                    &syntax,
-                    &value,
-                ).map_err(|e| format!("Source doesn't match syntax:\n{}", e.mismatch_format()))?,
-            );
+            match_document(
+                &syntax,
+                &value,
+            ).map_err(|e| format!("Source doesn't match syntax:\n{}", e.mismatch_format()))?;
         return Ok((syntax, document));
     })();
     match built {
         Ok((syntax, document)) => {
-            return Rc::new(CodePanel::code_new(keys, path, syntax, document, select.or(opened.location)));
+            return CodePanel::code_new(keys, path, syntax, document, select.or(opened.location), Some(CodeEdit {
+                host: host,
+                revision: opened.revision,
+            }));
         },
         Err(e) => return Rc::new(ErrorPanel::error_new(path, false, &e)),
     }
@@ -276,6 +301,24 @@ fn editor_result(editor: &Rc<Editor>, index: usize, result: PanelResult) -> bool
     let action = match result {
         PanelResult::Ignored => return false,
         PanelResult::Used => return true,
+        PanelResult::Detail(child) => {
+            *editor.child_request.borrow_mut() = None;
+            let count = editor.panels.borrow().len();
+            editor_splice(editor, index + 1, count - index - 1, vec![child]);
+            return true;
+        },
+        PanelResult::Replace(replacement) => {
+            let focused = editor.focus.get() == index;
+            editor_splice(editor, index, 1, vec![replacement.clone()]);
+            if focused {
+                if replacement.panel_focusable() || index == 0 {
+                    editor_focus(editor, index);
+                } else {
+                    editor_focus(editor, index - 1);
+                }
+            }
+            return true;
+        },
         PanelResult::Selected => {
             editor_sync(editor, index);
             return true;
@@ -345,7 +388,10 @@ fn editor_schedule_reload(editor: &Rc<Editor>) {
             let paths = std::mem::take(&mut *editor.changed.borrow_mut());
             let panels = editor.panels.borrow().clone();
             for panel in panels {
-                let Some(dir) = paths.iter().find_map(|p| panel.panel_changed(p)) else {
+                let Some(dir) = paths.iter().find_map(|p| match panel.panel_changed(p) {
+                    Some(PanelChange::Reload(dir)) => Some(dir),
+                    Some(PanelChange::Handled) | None => None,
+                }) else {
                     continue;
                 };
                 let path = panel.panel_path();
@@ -363,6 +409,7 @@ fn editor_schedule_reload(editor: &Rc<Editor>) {
                             editor_open(
                                 editor.keys.clone(),
                                 editor.theme.clone(),
+                                editor_host(&editor),
                                 path,
                                 panel.panel_cursor_reference(),
                             ).await
@@ -435,7 +482,7 @@ fn editor_show(editor: &Rc<Editor>) {
                         let Some(index) = editor_index(&editor, &panel) else {
                             return;
                         };
-                        if e.button() == 0 {
+                        if e.button() == 0 && panel.panel_focusable() {
                             editor_focus(&editor, index);
                         }
                         if editor_result(&editor, index, panel.panel_mouse(e)) {
@@ -499,6 +546,7 @@ fn editor_sync(editor: &Rc<Editor>, index: usize) {
     let request = spawn_rooted({
         let keys = editor.keys.clone();
         let theme = editor.theme.clone();
+        let host = editor_host(editor);
         let editor: Weak<Editor> = Rc::downgrade(editor);
         async move {
             let child: Rc<dyn Panel> = if dir {
@@ -507,7 +555,7 @@ fn editor_sync(editor: &Rc<Editor>, index: usize) {
                 };
                 editor_list(&editor, path, None).await
             } else {
-                editor_open(keys, theme, path, None).await
+                editor_open(keys, theme, host, path, None).await
             };
             let Some(editor) = editor.upgrade() else {
                 return;

@@ -1,6 +1,7 @@
 use {
     crate::panels::{
         Panel,
+        PanelChange,
         PanelResult,
         list::{
             List,
@@ -31,6 +32,7 @@ impl FilesystemPanel {
     pub fn filesystem_new(keys: Keymap, listing: RespList, select: Option<String>) -> FilesystemPanel {
         let selected = select.and_then(|path| listing.entries.iter().position(|e| e.path == path));
         let rows = listing.entries.iter().map(|entry| ListRow {
+            spans: vec![],
             icon: Some(if entry.dir {
                 "\u{e2c7}"
             } else {
@@ -53,10 +55,10 @@ impl Panel for FilesystemPanel {
         return self.0.borrow_mut().list.list_attach();
     }
 
-    fn panel_changed(&self, path: &str) -> Option<bool> {
+    fn panel_changed(&self, path: &str) -> Option<PanelChange> {
         let s = self.0.borrow();
         if path == s.dir || panel_path_parent(path) == Some(s.dir.as_str()) {
-            return Some(true);
+            return Some(PanelChange::Reload(true));
         }
         return None;
     }

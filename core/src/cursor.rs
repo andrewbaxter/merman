@@ -37,7 +37,7 @@ use {
     },
 };
 
-fn back_of_field<'a>(back: &'a SpecBack, field: &str) -> Option<&'a SpecBack> {
+pub fn back_of_field<'a>(back: &'a SpecBack, field: &str) -> Option<&'a SpecBack> {
     match back {
         SpecBack::String(f) | SpecBack::Number(f) | SpecBack::Literal(f) => {
             return if f.id == field {
@@ -108,6 +108,7 @@ pub struct CursorAtom {
 pub enum CursorKind {
     Array,
     Atom,
+    Gap,
     Primitive,
 }
 
@@ -712,6 +713,14 @@ impl Context {
         }
     }
 
+    pub fn cursor_visual(&self, id: CursorId) -> VisualId {
+        match self.cursor_get(id) {
+            Cursor::Atom(c) => return c.visual,
+            Cursor::Array(c) => return c.visual,
+            Cursor::Primitive(c) => return c.visual,
+        }
+    }
+
     fn cursor_destroy(&mut self, id: CursorId) {
         let Some(cursor) = self.cursors[id].take() else {
             return;
@@ -855,7 +864,13 @@ impl Context {
 
     pub fn field_array_select_into(&mut self, visual: VisualId, lead_first: bool, start: usize, end: usize) -> bool {
         if self.array_elements(visual).is_empty() {
-            return false;
+            if !self.config.editable {
+                return false;
+            }
+            let (atom, field) = self.array_field(visual);
+            self.edit_record(None, |ctx| ctx.array_insert_default(atom, &field, 0));
+            self.array_select(visual, true, 0, 0);
+            return true;
         }
         self.array_select(visual, lead_first, start, end);
         return true;
@@ -916,7 +931,7 @@ impl Context {
             },
             Hoverable::ArrayPlaceholder { visual, .. } => {
                 let v = *visual;
-                self.array_select(v, true, 0, 0);
+                self.field_array_select_into(v, true, 0, 0);
             },
             Hoverable::Primitive(p) => {
                 let (v, b, e) = (p.visual, p.range.begin_offset, p.range.end_offset);

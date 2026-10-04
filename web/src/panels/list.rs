@@ -29,6 +29,7 @@ use {
 
 pub struct ListRow {
     pub icon: Option<&'static str>,
+    pub spans: Vec<(String, String, String)>,
     pub text: String,
 }
 
@@ -93,6 +94,14 @@ impl List {
             if let Some(icon) = entry.icon {
                 row.ref_push(el("span").classes(&["merman_icon"]).text(icon));
             }
+            for (text, color, font) in &entry.spans {
+                row.ref_push(
+                    el("span")
+                        .classes(&["merman_span"])
+                        .attr("style", &format!("color: {}; font-family: {}; white-space: pre", color, font))
+                        .text(text),
+                );
+            }
             row.ref_push(el("span").classes(&["merman_name"]).text(&entry.text));
             return row;
         }).collect::<Vec<_>>();
@@ -136,8 +145,8 @@ impl List {
             panel_key_stroke(e, DirectionConvert::new(SpecDirection::Right, SpecDirection::Down)) else {
                 return PanelResult::Ignored;
             };
-        let action = match self.keys.keymap_read(&mut self.pending, stroke, Some(CursorKind::Array)) {
-            KeyResolve::Unbound => return PanelResult::Ignored,
+        let action = match self.keys.keymap_read(&mut self.pending, stroke, Some(CursorKind::Array), false) {
+            KeyResolve::Unbound | KeyResolve::Type => return PanelResult::Ignored,
             KeyResolve::Pending => return PanelResult::Used,
             KeyResolve::Action(a) => a,
         };

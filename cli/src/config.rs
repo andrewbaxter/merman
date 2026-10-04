@@ -46,7 +46,6 @@ pub fn config_load(dir: &Path, cwd: &Path) -> Result<Config, loga::Error> {
     let mut sources = vec![];
     let mut background = None;
     let mut cursor = None;
-    let mut error_color = None;
     let mut font_family = None;
     let mut font_size = None;
     let mut hover = None;
@@ -104,7 +103,6 @@ pub fn config_load(dir: &Path, cwd: &Path) -> Result<Config, loga::Error> {
             }
             background = background.or(spec.background);
             cursor = cursor.or(spec.cursor);
-            error_color = error_color.or(spec.error_color);
             font_family = font_family.or(spec.font_family);
             font_size = font_size.or(spec.font_size);
             hover = hover.or(spec.hover);
@@ -125,13 +123,18 @@ pub fn config_load(dir: &Path, cwd: &Path) -> Result<Config, loga::Error> {
             SpecTheme {
                 background: background.unwrap_or(default.background),
                 cursor: cursor.unwrap_or(default.cursor),
-                error_color: error_color.unwrap_or(default.error_color),
                 font_family: font_family.unwrap_or(default.font_family),
                 font_size: font_size.unwrap_or(default.font_size),
                 hover: hover.unwrap_or(default.hover),
                 icon_color: icon_color.unwrap_or(default.icon_color),
                 text_color: text_color.unwrap_or(default.text_color),
-                text_styles: text_styles,
+                text_styles: {
+                    let mut text_styles = text_styles;
+                    for (name, style) in default.text_styles {
+                        text_styles.entry(name).or_insert(style);
+                    }
+                    text_styles
+                },
             }
         },
     });
@@ -151,7 +154,6 @@ pub fn normalize_ext(ext: &str) -> String {
 pub struct SpecConfig {
     pub background: Option<String>,
     pub cursor: Option<SpecObbox>,
-    pub error_color: Option<String>,
     #[serde(default)]
     pub extensions: HashMap<String, PathBuf>,
     pub font_family: Option<String>,

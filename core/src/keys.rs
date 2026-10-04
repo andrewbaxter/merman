@@ -17,8 +17,25 @@ use {
     std::collections::HashMap,
 };
 
-pub const ACTIONS: [(Action, &str); 57] =
+pub const ACTIONS: [(Action, &str); 74] =
     [
+        (Action::Undo, "undo"),
+        (Action::Redo, "redo"),
+        (Action::Delete, "delete"),
+        (Action::Cut, "cut"),
+        (Action::Paste, "paste"),
+        (Action::Suffix, "suffix"),
+        (Action::InsertBefore, "insert_before"),
+        (Action::InsertAfter, "insert_after"),
+        (Action::MoveBefore, "move_before"),
+        (Action::MoveAfter, "move_after"),
+        (Action::DeletePrevious, "delete_previous"),
+        (Action::DeleteNext, "delete_next"),
+        (Action::SplitLines, "split_lines"),
+        (Action::JoinLines, "join_lines"),
+        (Action::ChoiceNext, "choice_next"),
+        (Action::ChoicePrevious, "choice_previous"),
+        (Action::Choose, "choose"),
         (Action::Enter, "enter"),
         (Action::Exit, "exit"),
         (Action::Copy, "copy"),
@@ -249,8 +266,15 @@ const NAMED_KEYS: [(&str, KeyName); 164] =
 pub enum Action {
     AiOpen,
     AiOpenReference,
+    ChoiceNext,
+    ChoicePrevious,
+    Choose,
     ClearWindow,
     Copy,
+    Cut,
+    Delete,
+    DeleteNext,
+    DeletePrevious,
     Enter,
     Exit,
     FirstElement,
@@ -267,18 +291,25 @@ pub enum Action {
     GatherPreviousLine,
     GatherPreviousLineStart,
     GatherPreviousWord,
+    InsertAfter,
+    InsertBefore,
+    JoinLines,
     LastElement,
     LastGlyph,
     LineBegin,
     LineEnd,
+    MoveAfter,
+    MoveBefore,
     NextElement,
     NextGlyph,
     NextLine,
     NextWord,
+    Paste,
     PreviousElement,
     PreviousGlyph,
     PreviousLine,
     PreviousWord,
+    Redo,
     ReleaseAll,
     ReleaseNext,
     ReleaseNextGlyph,
@@ -301,6 +332,9 @@ pub enum Action {
     SelectPrevious,
     SelectPreviousGlyph,
     SelectPreviousWord,
+    SplitLines,
+    Suffix,
+    Undo,
     Window,
     WindowTowardsCursor,
     WindowTowardsRoot,
@@ -336,6 +370,7 @@ pub struct Keymap {
     array: Section,
     atom: Section,
     common: Section,
+    gap: Section,
     primitive: Section,
 }
 
@@ -345,12 +380,26 @@ impl Keymap {
         pending: &mut Vec<KeyStroke>,
         stroke: KeyStroke,
         cursor: Option<CursorKind>,
+        typing: bool,
     ) -> KeyResolve {
+        let plain =
+            !stroke.ctrl && !stroke.alt && !stroke.meta && matches!(stroke.key, KeyName::Char(_) | KeyName::Space);
+        if typing && plain && pending.is_empty() {
+            let typed_sections: Vec<&Section> = match cursor {
+                Some(CursorKind::Gap) => vec![&self.gap, &self.primitive],
+                _ => vec![&self.primitive],
+            };
+            let bound = typed_sections.iter().any(|section| section.iter().any(|(chord, _)| chord[0] == stroke));
+            if !bound {
+                return KeyResolve::Type;
+            }
+        }
         pending.push(stroke);
         let sections: Vec<&Section> = match cursor {
             Some(CursorKind::Atom) => vec![&self.common, &self.atom],
             Some(CursorKind::Array) => vec![&self.common, &self.array],
             Some(CursorKind::Primitive) => vec![&self.common, &self.primitive],
+            Some(CursorKind::Gap) => vec![&self.common, &self.gap, &self.primitive],
             None => vec![&self.common, &self.atom, &self.array, &self.primitive],
         };
         let mut prefix = false;
@@ -382,8 +431,10 @@ impl Keymap {
                         meta: true,
                         ..KeyStroke::key_stroke_new(KeyName::Char('c'))
                     }]]),
-                    (Action::AiOpen, &[&[plain(KeyName::Char('a'))]]),
-                    (Action::AiOpenReference, &[&[shift(KeyName::Char('a'))]]),
+                    (Action::AiOpen, &[&[plain(KeyName::Char('o'))]]),
+                    (Action::AiOpenReference, &[&[shift(KeyName::Char('o'))]]),
+                    (Action::Undo, &[&[ctrl(KeyName::Char('z'))]]),
+                    (Action::Redo, &[&[ctrl_shift(KeyName::Char('z'))], &[ctrl(KeyName::Char('y'))]]),
                 ],
                 &mut errors,
             );
@@ -396,6 +447,12 @@ impl Keymap {
                     (Action::NextElement, &[&[plain(KeyName::Next)], &[plain(KeyName::Char('j'))]]),
                     (Action::PreviousElement, &[&[plain(KeyName::Previous)], &[plain(KeyName::Char('k'))]]),
                     (Action::Copy, &[&[plain(KeyName::Char('c'))]]),
+                    (Action::Delete, &[&[plain(KeyName::Delete)], &[plain(KeyName::Char('x'))]]),
+                    (Action::Cut, &[&[ctrl(KeyName::Char('x'))], &[ctrl(KeyName::Delete)]]),
+                    (Action::Paste, &[&[plain(KeyName::Char('v'))], &[ctrl(KeyName::Char('v'))]]),
+                    (Action::Suffix, &[&[plain(KeyName::Char('s'))]]),
+                    (Action::InsertBefore, &[&[plain(KeyName::Char('b'))]]),
+                    (Action::InsertAfter, &[&[plain(KeyName::Char('a'))]]),
                 ],
                 &mut errors,
             );
@@ -412,6 +469,14 @@ impl Keymap {
                     (Action::FirstElement, &[&[plain(KeyName::Char('i'))]]),
                     (Action::LastElement, &[&[plain(KeyName::Char('u'))]]),
                     (Action::Copy, &[&[plain(KeyName::Char('c'))]]),
+                    (Action::Delete, &[&[plain(KeyName::Delete)], &[plain(KeyName::Char('x'))]]),
+                    (Action::Cut, &[&[ctrl(KeyName::Char('x'))], &[ctrl(KeyName::Delete)]]),
+                    (Action::Paste, &[&[plain(KeyName::Char('v'))], &[ctrl(KeyName::Char('v'))]]),
+                    (Action::Suffix, &[&[plain(KeyName::Char('s'))]]),
+                    (Action::InsertBefore, &[&[plain(KeyName::Char('b'))]]),
+                    (Action::InsertAfter, &[&[plain(KeyName::Char('a'))]]),
+                    (Action::MoveBefore, &[&[ctrl(KeyName::Previous)], &[ctrl(KeyName::Char('k'))]]),
+                    (Action::MoveAfter, &[&[ctrl(KeyName::Next)], &[ctrl(KeyName::Char('j'))]]),
                 ],
                 &mut errors,
             );
@@ -430,10 +495,26 @@ impl Keymap {
                     (Action::SelectPreviousWord, &[&[ctrl_shift(KeyName::Surface)]]),
                     (Action::LineBegin, &[&[plain(KeyName::Home)]]),
                     (Action::LineEnd, &[&[plain(KeyName::End)]]),
+                    (Action::DeletePrevious, &[&[plain(KeyName::Backspace)]]),
+                    (Action::DeleteNext, &[&[plain(KeyName::Delete)]]),
+                    (Action::Cut, &[&[ctrl(KeyName::Char('x'))]]),
+                    (Action::Paste, &[&[ctrl(KeyName::Char('v'))]]),
+                    (Action::SplitLines, &[&[plain(KeyName::Enter)]]),
+                    (Action::JoinLines, &[&[ctrl(KeyName::Char('j'))]]),
                 ],
                 &mut errors,
             );
-        for section in [&atom, &array, &primitive] {
+        let gap =
+            section_resolve(
+                &spec.gap,
+                &[
+                    (Action::ChoiceNext, &[&[plain(KeyName::Next)]]),
+                    (Action::ChoicePrevious, &[&[plain(KeyName::Previous)]]),
+                    (Action::Choose, &[&[plain(KeyName::Enter)]]),
+                ],
+                &mut errors,
+            );
+        for section in [&atom, &array, &primitive, &gap] {
             let searched = common.iter().chain(section.iter()).collect::<Vec<_>>();
             for (i, (chord, action)) in searched.iter().enumerate() {
                 for (other, other_action) in &searched[i + 1..] {
@@ -467,6 +548,7 @@ impl Keymap {
             common: common,
             atom: atom,
             array: array,
+            gap: gap,
             primitive: primitive,
         });
     }
@@ -755,6 +837,7 @@ impl<'de> Deserialize<'de> for KeyName {
 pub enum KeyResolve {
     Action(Action),
     Pending,
+    Type,
     Unbound,
 }
 
@@ -876,6 +959,8 @@ pub struct SpecKeys {
     pub atom: SpecSection,
     #[serde(default)]
     pub common: SpecSection,
+    #[serde(default)]
+    pub gap: SpecSection,
     #[serde(default)]
     pub primitive: SpecSection,
 }

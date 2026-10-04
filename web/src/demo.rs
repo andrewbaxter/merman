@@ -70,13 +70,11 @@ pub fn start_demo() {
                 &read_embedded("merman-source")?,
             ).map_err(|e| format!("Error parsing source JSON: {}", e))?;
         let document_ =
-            Rc::new(
-                match_document(
-                    &syntax,
-                    &value,
-                ).map_err(|e| format!("Source doesn't match syntax:\n{}", e.mismatch_format()))?,
-            );
-        let panel = Rc::new(CodePanel::code_new(keys, String::new(), syntax, document_, None));
+            match_document(
+                &syntax,
+                &value,
+            ).map_err(|e| format!("Source doesn't match syntax:\n{}", e.mismatch_format()))?;
+        let panel = CodePanel::code_new(keys, String::new(), syntax, document_, None, None);
         let element = panel.panel_attach();
         element.ref_classes(&["merman_panel_focus"]);
         element.ref_own(

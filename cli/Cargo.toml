@@ -18,7 +18,7 @@ path = "src/tool.rs"
 merman_core = { path = "../core" }
 merman_api = { path = "../api" }
 aargvark = "0.12"
-serde_json = { version = "1", features = ["preserve_order", "unbounded_depth"] }
+serde_json = { version = "1", features = ["arbitrary_precision", "preserve_order", "unbounded_depth"] }
 htwrap = "0.15"
 http = "1"
 http-body-util = "0.1"
@@ -38,3 +38,8 @@ foyer = "0.22.6"
 regex = "1"
 uuid = { version = "1.26.1", features = ["v4"] }
 notify-rust = { version = "4.18.0", default-features = false, features = ["z-with-tokio"] }
+good-ormning = { version = "0.5.16", features = ["sqlite"] }
+rusqlite = "0.37"
+
+[build-dependencies]
+good-ormning = { version = "0.5.16", features = ["sqlite"] }

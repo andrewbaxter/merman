@@ -9,6 +9,9 @@ use {
         },
         spec::SpecBack,
         syntax::{
+            GAP_PAIR_KEY_PREFIX,
+            GROUP_JSON,
+            GROUP_JSON_PAIRS,
             Syntax,
             TYPE_ROOT,
             TypeId,
@@ -84,20 +87,66 @@ pub fn source_parse(text: &str) -> Result<Value, serde_json::Error> {
     return Ok(value);
 }
 
+pub const INVALID_LITERAL_PREFIX: &str = "invalid_json_literal:";
+pub const INVALID_NUMBER_PREFIX: &str = "invalid_json_dec:";
+
+fn literal_invalid(value: &Value, number_only: bool) -> Option<String> {
+    let Value::String(text) = value else {
+        return None;
+    };
+    let prefix = if number_only {
+        INVALID_NUMBER_PREFIX
+    } else {
+        INVALID_LITERAL_PREFIX
+    };
+    return text.strip_prefix(prefix).map(|t| t.to_string());
+}
+
 pub fn match_document(syntax: &Syntax, value: &Value) -> Result<Document, Mismatch> {
+    let mut atoms = vec![];
     let mut m = Matcher {
         syntax: syntax,
-        atoms: vec![],
+        atoms: &mut atoms,
     };
-    let root = m.match_type(TYPE_ROOT, value, "")?;
+    let root = match m.match_type(TYPE_ROOT, value, "") {
+        Ok(root) => root,
+        Err(_) => m.match_type(syntax.type_json_root, value, "")?,
+    };
     return Ok(Document {
-        atoms: m.atoms,
+        atoms: atoms,
         root: root,
     });
 }
 
+pub fn match_group_into(
+    syntax: &Syntax,
+    document: &mut Document,
+    group: &str,
+    value: &Value,
+) -> Result<AtomId, Mismatch> {
+    let mut m = Matcher {
+        syntax: syntax,
+        atoms: &mut document.atoms,
+    };
+    return m.match_group(group, value, "");
+}
+
+pub fn match_pair_into(
+    syntax: &Syntax,
+    document: &mut Document,
+    group: &str,
+    key: &str,
+    value: &Value,
+) -> Result<AtomId, Mismatch> {
+    let mut m = Matcher {
+        syntax: syntax,
+        atoms: &mut document.atoms,
+    };
+    return m.match_pair(group, key, value, "");
+}
+
 struct Matcher<'a> {
-    atoms: Vec<Atom>,
+    atoms: &'a mut Vec<Atom>,
     syntax: &'a Syntax,
 }
 
@@ -125,6 +174,11 @@ impl<'a> Matcher<'a> {
             },
             SpecBack::String(f) => match value {
                 Value::String(s) => {
+                    if !self.match_pattern(owner, &f.id, s) {
+                        return Err(
+                            Mismatch::leaf(path, format!("string {:?} doesn't match the field's pattern", s)),
+                        );
+                    }
                     fields.insert(f.id.clone(), Field::Primitive(s.clone()));
                     return Ok(());
                 },
@@ -132,16 +186,23 @@ impl<'a> Matcher<'a> {
                     return Err(Mismatch::leaf(path, format!("expected a string, got {}", describe(value))))
                 },
             },
-            SpecBack::Number(f) => match value {
-                Value::Number(n) => {
+            SpecBack::Number(f) => match (value, literal_invalid(value, true)) {
+                (Value::Number(n), _) => {
+                    if !self.match_pattern(owner, &f.id, &n.to_string()) {
+                        return Err(Mismatch::leaf(path, format!("number {} doesn't match the field's pattern", n)));
+                    }
                     fields.insert(f.id.clone(), Field::Primitive(n.to_string()));
+                    return Ok(());
+                },
+                (_, Some(text)) => {
+                    fields.insert(f.id.clone(), Field::Primitive(text));
                     return Ok(());
                 },
                 _ => {
                     return Err(Mismatch::leaf(path, format!("expected a number, got {}", describe(value))))
                 },
             },
-            SpecBack::Literal(f) => match literal_text(value) {
+            SpecBack::Literal(f) => match literal_text(value).or_else(|| literal_invalid(value, false)) {
                 Some(t) => {
                     fields.insert(f.id.clone(), Field::Primitive(t));
                     return Ok(());
@@ -236,66 +297,7 @@ impl<'a> Matcher<'a> {
                 };
                 let mut out = vec![];
                 for (i, (k, v)) in o.iter().enumerate() {
-                    let group = &a.element;
-                    let key = k;
-                    let value = v;
-                    let path = &format!("{}/{}", path, k);
-                    let candidates =
-                        self
-                            .syntax
-                            .groups
-                            .get(group)
-                            .unwrap_or_else(
-                                || panic!("unknown group `{}`; syntax validation should have caught this", group),
-                            )
-                            .clone();
-                    let mut alternatives = vec![];
-                    let child = 'match_group_pair: {
-                        for t in candidates {
-                            let res = 'match_type_pair: {
-                                let mark = self.atoms.len();
-                                let id = mark;
-                                self.atoms.push(Atom {
-                                    back_ids: vec![],
-                                    unique_id: None,
-                                    path: path.to_string(),
-                                    type_: t,
-                                    fields: HashMap::new(),
-                                    parent: None,
-                                });
-                                let mut fields = HashMap::new();
-                                let SpecBack::Pair(pair) = &self.syntax.syntax_type(t).back else {
-                                    panic!(
-                                        "record element type is not a pair; syntax validation should have caught this"
-                                    );
-                                };
-                                let key_value = Value::String(key.to_string());
-                                let res =
-                                    self
-                                        .match_back(&pair.key, &key_value, &format!("{}(key)", path), id, &mut fields)
-                                        .and_then(|_| self.match_back(&pair.value, value, path, id, &mut fields));
-                                match res {
-                                    Ok(()) => {
-                                        self.atoms[id].fields = fields;
-                                        break 'match_type_pair Ok(id);
-                                    },
-                                    Err(e) => {
-                                        self.atoms.truncate(mark);
-                                        break 'match_type_pair Err(e);
-                                    },
-                                }
-                            };
-                            match res {
-                                Ok(a) => break 'match_group_pair Ok(a),
-                                Err(e) => alternatives.push((self.syntax.syntax_type(t).id.clone(), e)),
-                            }
-                        }
-                        break 'match_group_pair Err(Mismatch {
-                            path: path.to_string(),
-                            message: format!("entry `{}` matched no type in `{}`", key, group),
-                            alternatives: alternatives,
-                        });
-                    }?;
+                    let child = self.match_pair(&a.element, k, v, &format!("{}/{}", path, k))?;
                     self.atoms[child].parent = Some(AtomParent {
                         atom: owner,
                         field: a.id.clone(),
@@ -383,14 +385,35 @@ impl<'a> Matcher<'a> {
         }
     }
 
+    fn match_pattern(&self, atom: AtomId, field: &str, text: &str) -> bool {
+        let Some(pattern) = self.syntax.syntax_type(self.atoms[atom].type_).patterns.get(field) else {
+            return true;
+        };
+        let glyphs: Vec<String> =
+            unicode_segmentation::UnicodeSegmentation::graphemes(text, true).map(|g| g.to_string()).collect();
+        return pattern.pattern_matches(&glyphs, false);
+    }
+
     fn match_group(&mut self, group: &str, value: &Value, path: &str) -> Result<AtomId, Mismatch> {
-        let candidates =
+        let is_gap =
+            matches!(
+                value,
+                Value:: Object(o) if o.len() == 1 &&(o.contains_key("__gap") || o.contains_key("__suffix_gap"))
+            );
+        let mut candidates = vec![];
+        if is_gap {
+            candidates.extend([self.syntax.type_gap, self.syntax.type_suffix_gap]);
+        }
+        candidates.extend(
             self
                 .syntax
                 .groups
                 .get(group)
-                .unwrap_or_else(|| panic!("unknown group `{}`; syntax validation should have caught this", group))
-                .clone();
+                .unwrap_or_else(|| panic!("unknown group `{}`; syntax validation should have caught this", group)),
+        );
+        if group != GROUP_JSON {
+            candidates.extend(&self.syntax.groups[GROUP_JSON]);
+        }
         let mut alternatives = vec![];
         for t in candidates {
             match self.match_type(t, value, path) {
@@ -401,6 +424,59 @@ impl<'a> Matcher<'a> {
         return Err(Mismatch {
             path: path.to_string(),
             message: format!("{} matched no type in `{}`", describe(value), group),
+            alternatives: alternatives,
+        });
+    }
+
+    fn match_pair(&mut self, group: &str, key: &str, value: &Value, path: &str) -> Result<AtomId, Mismatch> {
+        let mut candidates = vec![];
+        if key.starts_with(GAP_PAIR_KEY_PREFIX) {
+            candidates.push(self.syntax.type_gap_pair);
+        }
+        candidates.extend(
+            self
+                .syntax
+                .groups
+                .get(group)
+                .unwrap_or_else(|| panic!("unknown group `{}`; syntax validation should have caught this", group)),
+        );
+        if group != GROUP_JSON_PAIRS {
+            candidates.extend(&self.syntax.groups[GROUP_JSON_PAIRS]);
+        }
+        let mut alternatives = vec![];
+        for t in candidates {
+            let mark = self.atoms.len();
+            self.atoms.push(Atom {
+                back_ids: vec![],
+                unique_id: None,
+                path: path.to_string(),
+                type_: t,
+                fields: HashMap::new(),
+                parent: None,
+            });
+            let mut fields = HashMap::new();
+            let SpecBack::Pair(pair) = &self.syntax.syntax_type(t).back else {
+                panic!("record element type is not a pair; syntax validation should have caught this");
+            };
+            let key_value = Value::String(key.to_string());
+            let res =
+                self
+                    .match_back(&pair.key, &key_value, &format!("{}(key)", path), mark, &mut fields)
+                    .and_then(|_| self.match_back(&pair.value, value, path, mark, &mut fields));
+            match res {
+                Ok(()) => {
+                    self.atoms[mark].fields = fields;
+                    return Ok(mark);
+                },
+                Err(e) => {
+                    self.atoms.truncate(mark);
+                    alternatives.push((self.syntax.syntax_type(t).id.clone(), e));
+                },
+            }
+        }
+        return Err(Mismatch {
+            path: path.to_string(),
+            message: format!("entry `{}` matched no type in `{}`", key, group),
             alternatives: alternatives,
         });
     }

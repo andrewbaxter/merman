@@ -1,5 +1,6 @@
 mod ai;
 mod events;
+mod history;
 
 use {
     aargvark::{
@@ -7,6 +8,11 @@ use {
         vark,
     },
     foyer::DeviceBuilder,
+    good_ormning::sqlite::{
+        good_query,
+        good_query_opt,
+    },
+    history::dbm,
     futures::{
         SinkExt,
         StreamExt,
@@ -56,10 +62,16 @@ use {
         RespAiResume,
         RespAiSend,
         RespAiSessions,
+        RespEdit,
+        RespFlush,
+        RespHistoryStep,
         RespList,
         RespLocationSet,
         RespOpen,
+        RespRedo,
         RespStart,
+        RespSync,
+        RespUndo,
         WS_PATH,
         WsClient,
         WsServer,
@@ -125,6 +137,7 @@ struct HandlerRoot {
     dir: PathBuf,
     events: Arc<events::Events>,
     file: Option<PathBuf>,
+    history: Arc<history::History>,
     html: Vec<u8>,
     keys: String,
     locations: foyer::HybridCache<String, String>,
@@ -132,6 +145,68 @@ struct HandlerRoot {
 }
 
 impl HandlerRoot {
+    fn history_step(
+        &self,
+        path: &str,
+        revision: u64,
+        redo: bool,
+    ) -> Result<(u64, Option<RespHistoryStep>), loga::Error> {
+        let path = self.dir_contains(Path::new(path))?;
+        let path: &Path = &path;
+        let history = &self.history;
+        let mut db = history.db.lock().unwrap();
+        let mut files = history.files.lock().unwrap();
+        let state = history.history_state(&mut db, &mut files, path)?;
+        if state.revision != revision {
+            return Ok((state.revision, None));
+        }
+        let seq = if redo {
+            state.position
+        } else {
+            state.position - 1
+        };
+        let level = good_query_opt!(
+            dbm,
+            "select steps, select_before, select_after from level where file = ${i64 = state.id} and seq = ${i64 = seq}";
+            &mut *db
+        ).map_err(|e| loga::err(e.to_string()))?;
+        let Some(level) = level else {
+            return Ok((state.revision, Some(RespHistoryStep {
+                patches: "[]".to_string(),
+                select: None,
+            })));
+        };
+        let steps: Vec<(merman_core::patch::Patch, merman_core::patch::Patch)> =
+            serde_json::from_str(&level.steps).context("Error reading an undo level")?;
+        let (patches, select) = if redo {
+            (steps.into_iter().map(|(forward, _)| forward).collect::<Vec<_>>(), level.select_after)
+        } else {
+            (steps.into_iter().rev().map(|(_, reverse)| reverse).collect::<Vec<_>>(), level.select_before)
+        };
+        history::apply_all(&mut state.value, &patches).map_err(|e| loga::err_with(e, ea!(path = path.display())))?;
+        state.position = if redo {
+            state.position + 1
+        } else {
+            state.position - 1
+        };
+        good_query!(
+            dbm,
+            "update file set position = ${i64 = state.position} where rowid = ${i64 = state.id}";
+            &mut *db
+        ).map_err(|e| loga::err(e.to_string()))?;
+        state.revision += 1;
+        state.dirty = true;
+        state.mergeable = false;
+        let revision = state.revision;
+        drop(files);
+        drop(db);
+        history.history_schedule_write(path);
+        return Ok((revision, Some(RespHistoryStep {
+            patches: serde_json::to_string(&patches).unwrap(),
+            select: select,
+        })));
+    }
+
     fn dir_contains(&self, path: &Path) -> Result<PathBuf, loga::Error> {
         let path = std::fs::canonicalize(path).context_with("Error resolving path", ea!(path = path.display()))?;
         if !path.starts_with(&self.dir) {
@@ -440,13 +515,31 @@ impl Handler<Body> for HandlerRoot {
                             ea!(syntax = mapping.syntax.display(), config = mapping.config.display()),
                         )?;
                     self.events.events_stamp(&path);
-                    let source =
-                        std::fs::read_to_string(
-                            &path,
-                        ).context_with("Error reading file", ea!(path = path.display()))?;
+                    let history = &self.history;
+                    let (source, revision) = (|| -> Result<(String, u64), loga::Error> {
+                        let path: &Path = &path;
+                        let mut db = history.db.lock().unwrap();
+                        let mut files = history.files.lock().unwrap();
+                        let state = history.history_state(&mut db, &mut files, path)?;
+                        history::history_take_disk(&mut db, state, path)?;
+                        let source = if state.dirty {
+                            history::format_document(&state.value)
+                        } else {
+                            state.disk.clone()
+                        };
+                        let recovered = state.dirty && state.write.is_none();
+                        let revision = state.revision;
+                        drop(files);
+                        drop(db);
+                        if recovered {
+                            history.history_schedule_write(path);
+                        }
+                        return Ok((source, revision));
+                    })()?;
                     return Ok((RespOpen {
                         syntax: syntax,
                         source: source,
+                        revision: revision,
                         location: None,
                     }, display(&path)));
                 })() {
@@ -457,6 +550,129 @@ impl Handler<Body> for HandlerRoot {
                         },
                         Err(e) => ServerResp::err(format!("Error reading the location cache: {}", e)),
                     },
+                    Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
+                },
+                ServerReq::Edit(respond, req) => match (|| -> Result<RespEdit, loga::Error> {
+                    let path = self.dir_contains(Path::new(&req.path))?;
+                    let patches = serde_json::from_str(&req.patches).context("Error parsing the patches")?;
+                    let history = &self.history;
+                    let revision = (|| -> Result<Option<u64>, loga::Error> {
+                        let path: &Path = &path;
+                        let patches: Vec<merman_core::patch::Patch> = patches;
+                        let (revision, new_level, select_before, select_after) =
+                            (req.revision, req.new_level, req.select_before.clone(), req.select_after.clone());
+                        let mut db = history.db.lock().unwrap();
+                        let mut files = history.files.lock().unwrap();
+                        let state = history.history_state(&mut db, &mut files, path)?;
+                        if state.revision != revision {
+                            return Ok(None);
+                        }
+                        let mut steps =
+                            history::apply_all(
+                                &mut state.value,
+                                &patches,
+                            ).map_err(|e| loga::err_with(e, ea!(path = path.display())))?;
+                        let top = if !new_level && state.mergeable && state.position > 0 {
+                            good_query_opt!(
+                                dbm,
+                                "select rowid, steps from level where file = ${i64 = state.id} and seq = ${i64 = state.position - 1}";
+                                &mut *db
+                            ).map_err(|e| loga::err(e.to_string()))?
+                        } else {
+                            None
+                        };
+                        match top {
+                            Some(top) => {
+                                let mut merged: Vec<(merman_core::patch::Patch, merman_core::patch::Patch)> =
+                                    serde_json::from_str(&top.steps).context("Error reading an undo level")?;
+                                for step in steps.drain(..) {
+                                    if let Some(last) = merged.last_mut() {
+                                        if merman_core::patch::patch_merge(last, &step) {
+                                            continue;
+                                        }
+                                    }
+                                    merged.push(step);
+                                }
+                                good_query!(
+                                    dbm,
+                                    "update level set steps = ${string = &serde_json::to_string(&merged).unwrap()}, select_after = ${opt string = select_after.as_deref()} where rowid = ${i64 = top.rowid}";
+                                    &mut *db
+                                ).map_err(|e| loga::err(e.to_string()))?;
+                            },
+                            None => {
+                                history::history_level_push(&mut db, state, &steps, select_before, select_after)?;
+                            },
+                        }
+                        state.revision += 1;
+                        state.dirty = true;
+                        state.mergeable = true;
+                        let revision = state.revision;
+                        drop(files);
+                        drop(db);
+                        history.history_schedule_write(path);
+                        return Ok(Some(revision));
+                    })()?;
+                    return Ok(match revision {
+                        Some(revision) => RespEdit {
+                            accepted: true,
+                            revision: revision,
+                        },
+                        None => RespEdit {
+                            accepted: false,
+                            revision: req.revision,
+                        },
+                    });
+                })() {
+                    Ok(v) => respond(v),
+                    Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
+                },
+                ServerReq::Undo(respond, req) => match self.history_step(&req.path, req.revision, false) {
+                    Ok((revision, step)) => respond(RespUndo {
+                        revision: revision,
+                        step: step,
+                    }),
+                    Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
+                },
+                ServerReq::Redo(respond, req) => match self.history_step(&req.path, req.revision, true) {
+                    Ok((revision, step)) => respond(RespRedo {
+                        revision: revision,
+                        step: step,
+                    }),
+                    Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
+                },
+                ServerReq::Sync(respond, req) => match (|| -> Result<RespSync, loga::Error> {
+                    let path = self.dir_contains(Path::new(&req.path))?;
+                    let history = &self.history;
+                    let (revision, source, unwritten) = (|| -> Result<(u64, Option<String>, bool), loga::Error> {
+                        let path: &Path = &path;
+                        let revision = req.revision;
+                        let mut db = history.db.lock().unwrap();
+                        let mut files = history.files.lock().unwrap();
+                        let state = history.history_state(&mut db, &mut files, path)?;
+                        history::history_take_disk(&mut db, state, path)?;
+                        if state.revision == revision {
+                            return Ok((state.revision, None, false));
+                        }
+                        let source = if state.dirty {
+                            history::format_document(&state.value)
+                        } else {
+                            state.disk.clone()
+                        };
+                        return Ok((state.revision, Some(source), state.unwritten_revision > revision));
+                    })()?;
+                    return Ok(RespSync {
+                        revision: revision,
+                        source: source,
+                        unwritten: unwritten,
+                    });
+                })() {
+                    Ok(v) => respond(v),
+                    Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
+                },
+                ServerReq::Flush(respond, req) => match self
+                    .dir_contains(Path::new(&req.path))
+                    .and_then(|path| self.history.history_write(&path)) {
+                    Ok(()) => respond(RespFlush {}),
                     Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
                 },
             };
@@ -607,6 +823,23 @@ fn main() {
             }
             return format!("%{:02X}", c as u32);
         }).collect::<String>());
+        let history_path = base_dirs.data_local_dir().join("merman").join("history.sqlite");
+        std::fs::create_dir_all(
+            history_path.parent().unwrap(),
+        ).context_with("Error creating the undo history directory", ea!(path = history_path.display()))?;
+        let db =
+            rusqlite::Connection::open(
+                &history_path,
+            ).context_with("Error opening the undo history database", ea!(path = history_path.display()))?;
+        let db =
+            history::dbm::migrate(
+                db,
+                None,
+            ).map_err(|e| loga::err_with(e.to_string(), ea!(path = history_path.display())))?;
+        let history = Arc::new(history::History {
+            db: std::sync::Mutex::new(db),
+            files: std::sync::Mutex::new(std::collections::HashMap::new()),
+        });
         let ai = Arc::new(ai::Ai {
             configs: config
                 .sources
@@ -632,6 +865,7 @@ fn main() {
             theme: theme_text,
             events: events,
             ai: ai,
+            history: history.clone(),
             locations: locations,
         });
         let log = loga::Log::new_root(loga::INFO);
@@ -829,6 +1063,12 @@ fn main() {
             event_loop.run(move |event, _, control_flow| {
                 *control_flow = ControlFlow::Wait;
                 if let Event::WindowEvent { event: WindowEvent::CloseRequested, .. } = event {
+                    let paths: Vec<PathBuf> = history.files.lock().unwrap().keys().cloned().collect();
+                    for path in paths {
+                        if let Err(e) = history.history_write(&path) {
+                            eprintln!("Error writing {}: {}", path.display(), e);
+                        }
+                    }
                     *control_flow = ControlFlow::Exit;
                 }
             })

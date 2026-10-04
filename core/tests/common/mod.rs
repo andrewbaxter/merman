@@ -19,7 +19,7 @@ use {
 
 pub fn build(
     syntax: Rc<Syntax>,
-    document: Rc<Document>,
+    document: Document,
     converse: f64,
     transverse: f64,
 ) -> (Context, DisplayTest, EnvironmentTest) {
@@ -32,9 +32,9 @@ pub fn build(
     return (context, display, environment);
 }
 
-pub fn load_document(syntax: &Syntax, text: &str) -> Rc<Document> {
+pub fn load_document(syntax: &Syntax, text: &str) -> Document {
     let value: serde_json::Value = serde_json::from_str(text).unwrap();
-    return Rc::new(match_document(syntax, &value).unwrap_or_else(|e| panic!("{}", e.mismatch_format())));
+    return match_document(syntax, &value).unwrap_or_else(|e| panic!("{}", e.mismatch_format()));
 }
 
 pub fn load_syntax(json: &str) -> Rc<Syntax> {

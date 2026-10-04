@@ -5,6 +5,10 @@ use {
             Document,
             Field,
         },
+        matcher::{
+            INVALID_LITERAL_PREFIX,
+            INVALID_NUMBER_PREFIX,
+        },
         spec::SpecBack,
         syntax::Syntax,
     },
@@ -15,16 +19,21 @@ use {
     },
 };
 
-fn literal(text: &str) -> Value {
-    match text {
-        "null" => return Value::Null,
-        "true" => return Value::Bool(true),
-        "false" => return Value::Bool(false),
-        _ => match text.parse::<Number>() {
-            Ok(n) => return Value::Number(n),
-            Err(_) => panic!("literal field `{}` is not null, a boolean or a number", text),
-        },
-    }
+pub fn serialize_literal(text: &str, number_only: bool) -> Value {
+    let value = match text {
+        "null" if !number_only => Some(Value::Null),
+        "true" if !number_only => Some(Value::Bool(true)),
+        "false" if !number_only => Some(Value::Bool(false)),
+        _ => text.parse::<Number>().ok().map(Value::Number),
+    };
+    return value.unwrap_or_else(|| {
+        let prefix = if number_only {
+            INVALID_NUMBER_PREFIX
+        } else {
+            INVALID_LITERAL_PREFIX
+        };
+        return Value::String(format!("{}{}", prefix, text));
+    });
 }
 
 pub fn serialize_atom(syntax: &Syntax, document: &Document, atom: AtomId) -> Value {
@@ -52,7 +61,7 @@ fn write_back(syntax: &Syntax, document: &Document, atom: AtomId, back: &SpecBac
     };
     match back {
         SpecBack::FixedString(s) => return Value::String(s.clone()),
-        SpecBack::FixedLiteral(s) => return literal(s),
+        SpecBack::FixedLiteral(s) => return serialize_literal(s, false),
         SpecBack::String(f) => {
             let Field::Primitive(s) = field(&f.id) else {
                 panic!("field `{}` is not a primitive", f.id);
@@ -63,7 +72,7 @@ fn write_back(syntax: &Syntax, document: &Document, atom: AtomId, back: &SpecBac
             let Field::Primitive(s) = field(&f.id) else {
                 panic!("field `{}` is not a primitive", f.id);
             };
-            return literal(s);
+            return serialize_literal(s, matches!(back, SpecBack::Number(_)));
         },
         SpecBack::Atom(f) => {
             let Field::Atom(child) = field(&f.id) else {

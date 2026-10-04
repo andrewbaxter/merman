@@ -1,6 +1,7 @@
 use {
     crate::panels::{
         Panel,
+        PanelChange,
         PanelResult,
         panel_path_parent,
     },
@@ -35,9 +36,9 @@ impl Panel for ErrorPanel {
         return el("pre").classes(&["merman_panel", "merman_error"]).text(&self.message);
     }
 
-    fn panel_changed(&self, path: &str) -> Option<bool> {
+    fn panel_changed(&self, path: &str) -> Option<PanelChange> {
         if path == self.path || (self.dir && panel_path_parent(path) == Some(self.path.as_str())) {
-            return Some(self.dir);
+            return Some(PanelChange::Reload(self.dir));
         }
         return None;
     }

@@ -1,4 +1,6 @@
+pub mod choices;
 pub mod code;
+pub mod conflict;
 pub mod error;
 pub mod filesystem;
 pub mod list;
@@ -15,6 +17,7 @@ use {
         spec::{
             SpecDirection,
             SpecTheme,
+            default_invalid_style,
         },
     },
     gloo_utils::document,
@@ -30,7 +33,7 @@ use {
 
 pub trait Panel {
     fn panel_attach(&self) -> El;
-    fn panel_changed(&self, path: &str) -> Option<bool>;
+    fn panel_changed(&self, path: &str) -> Option<PanelChange>;
     fn panel_cursor_reference(&self) -> Option<String>;
     fn panel_detach(&self);
     fn panel_focusable(&self) -> bool;
@@ -173,7 +176,14 @@ pub fn panel_theme_apply(theme: &SpecTheme) {
     ) in [
         ("--merman-background", theme.background.clone()),
         ("--merman-cursor-color", theme.cursor.line_color.clone()),
-        ("--merman-error-color", theme.error_color.clone()),
+        (
+            "--merman-invalid-color",
+            theme
+                .text_styles
+                .get("invalid")
+                .map(|s| s.color.clone())
+                .unwrap_or_else(|| default_invalid_style().color),
+        ),
         ("--merman-font-family", theme.font_family.clone()),
         ("--merman-font-size", format!("{}mm", theme.font_size)),
         ("--merman-hover-color", theme.hover.line_color.clone()),
@@ -194,9 +204,19 @@ pub fn panel_path_parent(path: &str) -> Option<&str> {
     return Some(parent);
 }
 
+pub enum PanelChange {
+    Handled,
+    Reload(bool),
+}
+
+#[derive(Clone)]
+pub struct PanelHost(pub Rc<dyn Fn(Rc<dyn Panel>, PanelResult)>);
+
 pub enum PanelResult {
+    Detail(Rc<dyn Panel>),
     Ignored,
     Open(Rc<dyn Panel>),
+    Replace(Rc<dyn Panel>),
     Selected,
     Unused(Action),
     Used,

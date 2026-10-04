@@ -22,7 +22,46 @@ fn default_ellipsis() -> SpecSymbol {
         alignment: None,
         split_alignment: None,
         condition: None,
+        gap_key: None,
     });
+}
+
+fn default_empty_gap_symbol(text: &str) -> Vec<SpecSymbol> {
+    return vec![SpecSymbol::Text(SpecSymbolText {
+        text: text.to_string(),
+        style: None,
+        split: SpecSplit::Never,
+        alignment: None,
+        split_alignment: None,
+        condition: Some(SpecCondition::Empty(SpecConditionEmpty {
+            field: "gap".to_string(),
+            invert: false,
+        })),
+        gap_key: None,
+    })];
+}
+
+fn default_gap() -> SpecGap {
+    return SpecGap {
+        prefix: vec![],
+        style: None,
+        suffix: default_gap_suffix(),
+    };
+}
+
+fn default_gap_suffix() -> Vec<SpecSymbol> {
+    return default_empty_gap_symbol("￮");
+}
+
+pub fn default_invalid_style() -> SpecTextStyle {
+    return SpecTextStyle {
+        ascent: None,
+        color: "#ff8080".to_string(),
+        descent: None,
+        font_family: None,
+        font_size: None,
+        padding: SpecPadding::default(),
+    };
 }
 
 fn default_one() -> f64 {
@@ -31,6 +70,19 @@ fn default_one() -> f64 {
 
 fn default_precedence() -> i64 {
     return i64::MAX;
+}
+
+fn default_suffix_gap() -> SpecSuffixGap {
+    return SpecSuffixGap {
+        preceding_prefix: vec![],
+        prefix: vec![],
+        style: None,
+        suffix: default_suffix_gap_suffix(),
+    };
+}
+
+fn default_suffix_gap_suffix() -> Vec<SpecSymbol> {
+    return default_empty_gap_symbol("▹");
 }
 
 fn default_transverse_direction() -> SpecDirection {
@@ -126,6 +178,7 @@ pub struct SpecBackEntry {
 #[serde(deny_unknown_fields)]
 pub struct SpecBackField {
     pub id: String,
+    pub pattern: Option<SpecPattern>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -237,11 +290,22 @@ pub struct SpecFrontPrimitive {
     pub first_split_alignment: Option<String>,
     /// Alignment of lines after a newline in the text.
     pub hard_split_alignment: Option<String>,
+    pub invalid_style: Option<String>,
     /// Alignment of lines created by wrapping.
     pub soft_split_alignment: Option<String>,
     #[serde(default)]
     pub split: SpecSplit,
     pub style: Option<String>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct SpecGap {
+    #[serde(default)]
+    pub prefix: Vec<SpecSymbol>,
+    pub style: Option<String>,
+    #[serde(default = "default_gap_suffix")]
+    pub suffix: Vec<SpecSymbol>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -313,6 +377,24 @@ pub struct SpecPadding {
     pub transverse_start: f64,
 }
 
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum SpecPattern {
+    Any,
+    CharacterClass(Vec<(String, String)>),
+    Digits,
+    Integer,
+    JsonDecimal,
+    Letters,
+    Maybe(Box<SpecPattern>),
+    Repeat0(Box<SpecPattern>),
+    Repeat1(Box<SpecPattern>),
+    Sequence(Vec<SpecPattern>),
+    String(String),
+    SymbolCharacter,
+    Union(Vec<SpecPattern>),
+}
+
 #[derive(Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum SpecSplit {
@@ -335,6 +417,18 @@ pub struct SpecTextStyle {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct SpecSuffixGap {
+    #[serde(default)]
+    pub preceding_prefix: Vec<SpecSymbol>,
+    #[serde(default)]
+    pub prefix: Vec<SpecSymbol>,
+    pub style: Option<String>,
+    #[serde(default = "default_suffix_gap_suffix")]
+    pub suffix: Vec<SpecSymbol>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum SpecSymbol {
     Space(SpecSymbolSpace),
@@ -350,6 +444,7 @@ pub struct SpecSymbolSpace {
     pub condition: Option<SpecCondition>,
     #[serde(default)]
     pub descent: f64,
+    pub gap_key: Option<String>,
     #[serde(default)]
     pub split: SpecSplit,
     pub split_alignment: Option<String>,
@@ -362,6 +457,7 @@ pub struct SpecSymbolSpace {
 pub struct SpecSymbolText {
     pub alignment: Option<String>,
     pub condition: Option<SpecCondition>,
+    pub gap_key: Option<String>,
     #[serde(default)]
     pub split: SpecSplit,
     pub split_alignment: Option<String>,
@@ -376,11 +472,15 @@ pub struct SpecSyntax {
     pub converse_direction: SpecDirection,
     #[serde(default)]
     pub course_transverse_stride: f64,
+    #[serde(default = "default_gap")]
+    pub gap: SpecGap,
     #[serde(default)]
     pub groups: Vec<SpecGroup>,
     #[serde(default)]
     pub pad: SpecPadding,
     pub root: SpecTypeRoot,
+    #[serde(default = "default_suffix_gap")]
+    pub suffix_gap: SpecSuffixGap,
     #[serde(default = "default_transverse_direction")]
     pub transverse_direction: SpecDirection,
     pub types: Vec<SpecType>,
@@ -393,7 +493,6 @@ pub struct SpecSyntax {
 pub struct SpecTheme {
     pub background: String,
     pub cursor: SpecObbox,
-    pub error_color: String,
     pub font_family: String,
     pub font_size: f64,
     pub hover: SpecObbox,
@@ -421,13 +520,12 @@ impl Default for SpecTheme {
         return SpecTheme {
             background: "#2b2b2b".to_string(),
             cursor: obbox("#ffffff"),
-            error_color: "#ff8080".to_string(),
             font_family: "monospace".to_string(),
             font_size: 4.,
             hover: obbox("#888888"),
             icon_color: "#e0c060".to_string(),
             text_color: "#cacaca".to_string(),
-            text_styles: BTreeMap::new(),
+            text_styles: BTreeMap::from([("invalid".to_string(), default_invalid_style())]),
         };
     }
 }
@@ -439,6 +537,8 @@ pub struct SpecType {
     pub alignments: BTreeMap<String, SpecAlignment>,
     #[serde(default)]
     pub associate_forward: bool,
+    #[serde(default = "default_true")]
+    pub auto_choose_unambiguous: bool,
     pub back: SpecBack,
     #[serde(default)]
     pub default_selection: Option<String>,
@@ -450,6 +550,8 @@ pub struct SpecType {
     pub name: Option<String>,
     #[serde(default = "default_precedence")]
     pub precedence: i64,
+    #[serde(default)]
+    pub suffix_on_pattern_mismatch: bool,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]

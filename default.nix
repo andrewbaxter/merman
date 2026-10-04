@@ -56,6 +56,7 @@ let
     cp -r ${./web} $out/web
     cp -r ${./cli/src} $out/cli/src
     cp ${./cli/Cargo.toml} $out/cli/Cargo.toml
+    cp ${./cli/build.rs} $out/cli/build.rs
     cp ${./cli/static/demo.html} $out/cli/static/demo.html
     cp ${./cli/static/editor.html} $out/cli/static/editor.html
     cp ${./cli/static/merman.css} $out/cli/static/merman.css

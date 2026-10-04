@@ -21,7 +21,12 @@ use {
             AtomId,
             Document,
         },
+        edit::{
+            EditBatch,
+            EditUnique,
+        },
         environment::Environment,
+        gap::GapChoices,
         iteration::{
             QueueEntry,
             Task,
@@ -30,6 +35,7 @@ use {
             KeyStroke,
             Keymap,
         },
+        patch::Patch,
         stylist::{
             Stylist,
             StylistDirect,
@@ -43,7 +49,10 @@ use {
         },
     },
     std::{
-        collections::BinaryHeap,
+        collections::{
+            BinaryHeap,
+            HashSet,
+        },
         rc::Rc,
     },
 };
@@ -65,16 +74,22 @@ pub struct Context {
     pub cursor: Option<CursorId>,
     pub cursors: Vec<Option<Cursor>>,
     pub display: Box<dyn Display>,
-    pub document: Rc<Document>,
+    pub document: Document,
     pub drag_select: Option<DragSelect>,
     pub drawings: Vec<Option<Drawing>>,
     pub edge: f64,
+    pub edit_last: Option<(EditUnique, f64)>,
+    pub edit_outbox: Vec<EditBatch>,
+    pub edit_patches: Option<Vec<Patch>>,
     pub environment: Box<dyn Environment>,
+    pub gap_choices: Option<GapChoices>,
     pub hover: Option<HoverableId>,
     pub hover_brick: Option<BrickId>,
     pub hover_idle: Option<TaskId>,
     pub hoverables: Vec<Option<Hoverable>>,
     pub idle_lay_bricks: Option<TaskId>,
+    pub ids_next: i64,
+    pub ids_used: HashSet<i64>,
     pub iteration_pending: bool,
     pub iteration_timer: bool,
     pub key_pending: Vec<KeyStroke>,
@@ -134,7 +149,7 @@ impl Context {
 
     pub fn context_new(
         syntax: Rc<Syntax>,
-        document: Rc<Document>,
+        document: Document,
         config: ContextConfig,
         mut display: Box<dyn Display>,
         environment: Box<dyn Environment>,
@@ -195,7 +210,15 @@ impl Context {
             select_token: 0,
             drag_select: None,
             key_pending: vec![],
+            edit_last: None,
+            edit_outbox: vec![],
+            edit_patches: None,
+            gap_choices: None,
+            ids_next: 0,
+            ids_used: HashSet::new(),
         };
+        let root = c.document.root;
+        c.ids_take_existing(root);
         c.edge = c.edge_from_converse_size(converse_size);
         c.wall.mod_old_edge = c.edge;
         c.transverse_edge = transverse_size;
@@ -316,6 +339,7 @@ impl Context {
 
 pub struct ContextConfig {
     pub animate_course_placement: bool,
+    pub editable: bool,
     pub ellipsize_threshold: i64,
     pub keys: Keymap,
     pub lay_beyond_view: f64,
@@ -334,6 +358,7 @@ impl Default for ContextConfig {
             retry_expand_factor: 1.25,
             ellipsize_threshold: i64::MAX,
             animate_course_placement: false,
+            editable: false,
             start_windowed: false,
             scroll_factor: 0.1,
             scroll_alot_factor: 0.8,

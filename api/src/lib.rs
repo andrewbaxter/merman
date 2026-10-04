@@ -16,6 +16,11 @@ glove::reqresp!(pub api {
     AiSessions(ReqAiSessions) => RespAiSessions,
     AiResume(ReqAiResume) => RespAiResume,
     LocationSet(ReqLocationSet) => RespLocationSet,
+    Edit(ReqEdit) => RespEdit,
+    Undo(ReqUndo) => RespUndo,
+    Redo(ReqRedo) => RespRedo,
+    Sync(ReqSync) => RespSync,
+    Flush(ReqFlush) => RespFlush,
 });
 
 pub const API_PATH: &str = "/api";
@@ -103,6 +108,23 @@ pub struct ReqAiSessions {}
 
 #[derive(Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+pub struct ReqEdit {
+    pub new_level: bool,
+    pub patches: String,
+    pub path: String,
+    pub revision: u64,
+    pub select_after: Option<String>,
+    pub select_before: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReqFlush {
+    pub path: String,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ReqList {
     pub dir: String,
 }
@@ -122,7 +144,28 @@ pub struct ReqOpen {
 
 #[derive(Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+pub struct ReqRedo {
+    pub path: String,
+    pub revision: u64,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ReqStart {}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReqSync {
+    pub path: String,
+    pub revision: u64,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReqUndo {
+    pub path: String,
+    pub revision: u64,
+}
 
 #[derive(Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -151,6 +194,24 @@ pub struct RespAiSessions {
 
 #[derive(Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+pub struct RespEdit {
+    pub accepted: bool,
+    pub revision: u64,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RespFlush {}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RespHistoryStep {
+    pub patches: String,
+    pub select: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct RespList {
     pub dir: String,
     pub entries: Vec<ListEntry>,
@@ -166,8 +227,16 @@ pub struct RespLocationSet {}
 #[serde(deny_unknown_fields)]
 pub struct RespOpen {
     pub location: Option<String>,
+    pub revision: u64,
     pub source: String,
     pub syntax: String,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RespRedo {
+    pub revision: u64,
+    pub step: Option<RespHistoryStep>,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema)]
@@ -177,6 +246,21 @@ pub struct RespStart {
     pub file: Option<String>,
     pub keys: String,
     pub theme: String,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RespSync {
+    pub revision: u64,
+    pub source: Option<String>,
+    pub unwritten: bool,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RespUndo {
+    pub revision: u64,
+    pub step: Option<RespHistoryStep>,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema)]

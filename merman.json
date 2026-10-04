@@ -8,7 +8,6 @@
   "font_size": 4,
   "text_color": "#cacaca",
   "icon_color": "#e0c060",
-  "error_color": "#ff8080",
   "cursor": {
     "padding": {"converse_start": 1, "converse_end": 1, "transverse_start": 1, "transverse_end": 1},
     "round_start": true,
@@ -35,6 +34,7 @@
     "symbol_fade": {"color": "#67556e"},
     "string": {"color": "#f79578"},
     "number": {"color": "#95fa94"},
-    "special": {"color": "#7dd4fb"}
+    "special": {"color": "#7dd4fb"},
+    "invalid": {"color": "#ff8080"}
   }
 }

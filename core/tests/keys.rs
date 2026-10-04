@@ -266,7 +266,7 @@ fn press_all(ctx: &mut Context, key: KeyName, ctrl: bool, shift: bool, alt: bool
     stroke.shift = shift;
     stroke.alt = alt;
     let handled = match ctx.key_resolve(stroke) {
-        KeyResolve::Unbound => false,
+        KeyResolve::Unbound | KeyResolve::Type => false,
         KeyResolve::Pending => true,
         KeyResolve::Action(action) => {
             let handled = ctx.key_action(action);

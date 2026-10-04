@@ -9,6 +9,7 @@ use {
             MultiError,
         },
         measure::FontSpec,
+        pattern::PatternMatcher,
         spec::{
             SpecAlignment,
             SpecBack,
@@ -19,6 +20,11 @@ use {
             SpecFrontArrayAsAtom,
             SpecFrontAtom,
             SpecFrontPrimitive,
+            SpecPattern,
+            SpecBackArray,
+            SpecBackEntry,
+            SpecBackField,
+            SpecBackPair,
             SpecObbox,
             SpecPadding,
             SpecSplit,
@@ -27,10 +33,12 @@ use {
             SpecTheme,
             SpecType,
             SpecTypeRoot,
+            default_invalid_style,
         },
     },
     std::{
         collections::{
+            BTreeMap,
             HashMap,
             HashSet,
         },
@@ -40,6 +48,11 @@ use {
 
 /// Type index of the document root.
 pub const TYPE_ROOT: TypeId = 0;
+pub const GROUP_ANY: &str = "__any";
+pub const GAP_PAIR_KEY_PREFIX: &str = "__gap_pair_";
+pub const GROUP_JSON: &str = "__json";
+pub const GROUP_JSON_PAIRS: &str = "__json_pairs";
+pub const STYLE_INVALID: &str = "invalid";
 
 pub fn back_sub_array_slots(elems: &[SpecBack]) -> (usize, Option<usize>) {
     let mut fixed = 0;
@@ -73,16 +86,16 @@ fn build_symbol(
     fields: &HashMap<String, FieldKind>,
     s: &SpecSymbol,
 ) -> Symbol {
-    let (kind, split, alignment, split_alignment, condition) = match s {
+    let (kind, split, alignment, split_alignment, condition, gap_key) = match s {
         SpecSymbol::Text(t) => (SymbolKind::Text {
             text: t.text.clone(),
             style: styles.lookup(errors, path, &t.style),
-        }, t.split, t.alignment.clone(), t.split_alignment.clone(), t.condition.clone()),
+        }, t.split, t.alignment.clone(), t.split_alignment.clone(), t.condition.clone(), t.gap_key.clone()),
         SpecSymbol::Space(t) => (SymbolKind::Space {
             width: t.width,
             ascent: t.ascent,
             descent: t.descent,
-        }, t.split, t.alignment.clone(), t.split_alignment.clone(), t.condition.clone()),
+        }, t.split, t.alignment.clone(), t.split_alignment.clone(), t.condition.clone(), t.gap_key.clone()),
     };
     if let Some(SpecCondition::Empty(c)) = &condition {
         match fields.get(&c.field) {
@@ -101,10 +114,11 @@ fn build_symbol(
         alignment: alignment,
         split_alignment: split_alignment,
         condition: condition,
+        gap_key: gap_key,
     };
 }
 
-fn build_type(errors: &mut Errors, styles: &StyleTable, path: &str, t: SpecType) -> TypeDef {
+fn build_type(errors: &mut Errors, styles: &StyleTable, path: &str, t: SpecType, gap: GapKind) -> TypeDef {
     let mut fields = HashMap::new();
     collect_fields(errors, &format!("{}.back", path), &t.back, true, &mut fields);
     let is_pair = matches!(t.back, SpecBack::Pair(_));
@@ -137,12 +151,18 @@ fn build_type(errors: &mut Errors, styles: &StyleTable, path: &str, t: SpecType)
                     first_split_alignment,
                     hard_split_alignment,
                     soft_split_alignment,
+                    invalid_style,
                 },
             ) => {
                 check_field(errors, &fpath, field, FieldKind::Primitive);
+                let style = styles.lookup(errors, &fpath, style);
                 front.push(Front::Primitive(FrontPrimitive {
                     field: field.clone(),
-                    style: styles.lookup(errors, &fpath, style),
+                    invalid_style: match invalid_style {
+                        Some(_) => styles.lookup(errors, &fpath, invalid_style),
+                        None => styles.invalid,
+                    },
+                    style: style,
                     split: *split,
                     first_alignment: first_alignment.clone(),
                     first_split_alignment: first_split_alignment.clone(),
@@ -208,11 +228,37 @@ fn build_type(errors: &mut Errors, styles: &StyleTable, path: &str, t: SpecType)
             }
         }
     }
+    let mut patterns = HashMap::new();
+    for (id, kind) in &fields {
+        if *kind != FieldKind::Primitive {
+            continue;
+        }
+        let one = |s: &str| SpecPattern::String(s.to_string());
+        let pattern = match crate::cursor::back_of_field(&t.back, id) {
+            Some(SpecBack::String(f)) => f.pattern.clone(),
+            Some(SpecBack::Number(f)) => Some(f.pattern.clone().unwrap_or(SpecPattern::JsonDecimal)),
+            Some(SpecBack::Literal(f)) => Some(
+                f
+                    .pattern
+                    .clone()
+                    .unwrap_or(
+                        SpecPattern::Union(vec![one("null"), one("true"), one("false"), SpecPattern::JsonDecimal]),
+                    ),
+            ),
+            _ => None,
+        };
+        if let Some(pattern) = pattern {
+            patterns.insert(id.clone(), Rc::new(PatternMatcher::pattern_new(&pattern)));
+        }
+    }
     return TypeDef {
+        patterns: patterns,
+        suffix_on_pattern_mismatch: t.suffix_on_pattern_mismatch,
         name: t.name.clone().unwrap_or_else(|| t.id.clone()),
         id: t.id,
         precedence: t.precedence,
         associate_forward: t.associate_forward,
+        auto_choose_unambiguous: t.auto_choose_unambiguous,
         default_selection: t.default_selection,
         depth_score: t.depth_score,
         alignments: t.alignments.into_iter().collect(),
@@ -220,6 +266,7 @@ fn build_type(errors: &mut Errors, styles: &StyleTable, path: &str, t: SpecType)
         front: front,
         fields: fields,
         is_pair: is_pair,
+        gap: gap,
     };
 }
 
@@ -371,6 +418,14 @@ pub enum FieldKind {
     Primitive,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GapKind {
+    Gap,
+    GapPair,
+    None,
+    SuffixGap,
+}
+
 pub enum Front {
     Array(FrontArray),
     Atom(FrontAtom),
@@ -397,6 +452,7 @@ pub struct FrontAtom {
 pub struct FrontPrimitive {
     pub field: String,
     pub first_alignment: Option<String>,
+    pub invalid_style: StyleId,
     pub first_split_alignment: Option<String>,
     pub hard_split_alignment: Option<String>,
     pub soft_split_alignment: Option<String>,
@@ -447,6 +503,7 @@ pub type StyleId = usize;
 
 struct StyleTable {
     ids: HashMap<String, StyleId>,
+    invalid: StyleId,
 }
 
 impl StyleTable {
@@ -467,6 +524,7 @@ impl StyleTable {
 pub struct Symbol {
     pub alignment: Option<String>,
     pub condition: Option<SpecCondition>,
+    pub gap_key: Option<String>,
     pub kind: SymbolKind,
     pub split: SpecSplit,
     pub split_alignment: Option<String>,
@@ -507,6 +565,10 @@ pub struct Syntax {
     pub groups: HashMap<String, Vec<TypeId>>,
     pub spec_root: SpecSyntaxSettings,
     pub styles: Vec<Style>,
+    pub type_gap: TypeId,
+    pub type_json_root: TypeId,
+    pub type_gap_pair: TypeId,
+    pub type_suffix_gap: TypeId,
     pub types: Vec<TypeDef>,
 }
 
@@ -536,7 +598,9 @@ impl Syntax {
             descent: None,
         }];
         let mut style_ids = HashMap::new();
-        for (name, s) in &theme.text_styles {
+        let mut text_styles = theme.text_styles.clone();
+        text_styles.entry(STYLE_INVALID.to_string()).or_insert_with(default_invalid_style);
+        for (name, s) in &text_styles {
             style_ids.insert(name.clone(), styles.len());
             styles.push(Style {
                 font: FontSpec {
@@ -549,7 +613,11 @@ impl Syntax {
                 descent: s.descent.map(|d| d * to_pixels),
             });
         }
-        let style_table = StyleTable { ids: style_ids };
+        let invalid = style_ids[STYLE_INVALID];
+        let style_table = StyleTable {
+            ids: style_ids,
+            invalid: invalid,
+        };
 
         // Types
         let mut types = vec![];
@@ -561,12 +629,14 @@ impl Syntax {
                 name: Some("root".to_string()),
                 precedence: i64::MIN,
                 associate_forward: false,
+                auto_choose_unambiguous: false,
+                suffix_on_pattern_mismatch: false,
                 default_selection: None,
                 depth_score: 0,
                 alignments: alignments,
                 back: back,
                 front: front,
-            }));
+            }, GapKind::None));
         }
         for (i, t) in spec.types.into_iter().enumerate() {
             let path = format!("types[{}]({})", i, t.id);
@@ -576,8 +646,302 @@ impl Syntax {
             if type_ids.insert(t.id.clone(), types.len()).is_some() {
                 errors.multi_error_add(&path, ErrorKind::DuplicateAtomTypeIds { atom_type: t.id.clone() });
             }
-            types.push(build_type(&mut errors, &style_table, &path, t));
+            types.push(build_type(&mut errors, &style_table, &path, t, GapKind::None));
         }
+        let gap_text = |style: &Option<String>| SpecFront::Primitive(SpecFrontPrimitive {
+            field: "gap".to_string(),
+            style: style.clone(),
+            split: SpecSplit::Never,
+            first_alignment: None,
+            first_split_alignment: None,
+            hard_split_alignment: None,
+            soft_split_alignment: None,
+            invalid_style: None,
+        });
+        let gap_back = || SpecBack::FixedRecord(vec![SpecBackEntry {
+            key: "__gap".to_string(),
+            value: Some(SpecBack::String(SpecBackField {
+                id: "gap".to_string(),
+                pattern: None,
+            })),
+        }]);
+        let symbols =
+            |symbols: &Vec<SpecSymbol>| symbols.iter().cloned().map(SpecFront::Symbol).collect::<Vec<_>>();
+        let builtin = |id: &str, name: &str, back: SpecBack, front: Vec<SpecFront>| SpecType {
+            id: id.to_string(),
+            name: Some(name.to_string()),
+            precedence: 1_000_000,
+            associate_forward: false,
+            auto_choose_unambiguous: false,
+            suffix_on_pattern_mismatch: false,
+            default_selection: None,
+            depth_score: 0,
+            alignments: BTreeMap::new(),
+            back: back,
+            front: front,
+        };
+        let gap_front =
+            [symbols(&spec.gap.prefix), vec![gap_text(&spec.gap.style)], symbols(&spec.gap.suffix)].concat();
+        let type_gap = types.len();
+        types.push(
+            build_type(
+                &mut errors,
+                &style_table,
+                "gap",
+                builtin("__gap", "Gap", gap_back(), gap_front.clone()),
+                GapKind::Gap,
+            ),
+        );
+        let type_gap_pair = types.len();
+        types.push(
+            build_type(
+                &mut Errors::default(),
+                &style_table,
+                "gap",
+                builtin("__gap_pair", "Gap", SpecBack::Pair(SpecBackPair {
+                    key: Box::new(SpecBack::String(SpecBackField {
+                        id: "key".to_string(),
+                        pattern: None,
+                    })),
+                    value: Box::new(gap_back()),
+                }), gap_front),
+                GapKind::GapPair,
+            ),
+        );
+        let container_alignments = serde_json::json!({
+            "base": {
+                "relative": {
+                    "base": "indent",
+                    "offset": 0
+                }
+            },
+            "indent": {
+                "relative": {
+                    "base": "indent",
+                    "offset": 9.6,
+                    "collapse": true
+                }
+            }
+        });
+        let container_front = |open: &str, field: &str, close: &str| serde_json::json!([{
+            "symbol": {
+                "text": {
+                    "text": open,
+                    "style": STYLE_INVALID
+                }
+            }
+        }, {
+            "array": {
+                "field": field,
+                "prefix":[{
+                    "space": {
+                        "split": "compact",
+                        "split_alignment": "indent"
+                    }
+                }],
+                "separator":[{
+                    "text": {
+                        "text": ", ",
+                        "style": STYLE_INVALID
+                    }
+                }],
+                "forward_alignments":["indent"]
+            }
+        }, {
+            "symbol": {
+                "text": {
+                    "text": close,
+                    "style": STYLE_INVALID,
+                    "split": "compact",
+                    "split_alignment": "base"
+                }
+            }
+        }]);
+        let literal = |text: &str| serde_json::json!({
+            "back": {
+                "fixed_literal": text
+            },
+            "front":[{
+                "symbol": {
+                    "text": {
+                        "text": text,
+                        "style": STYLE_INVALID
+                    }
+                }
+            }]
+        });
+        let json_types =
+            [
+                ("__json_object", "JSON object", serde_json::json!({
+                    "back": {
+                        "record": {
+                            "id": "entries",
+                            "element": GROUP_JSON_PAIRS
+                        }
+                    },
+                    "alignments": container_alignments,
+                    "front": container_front("{", "entries", "}")
+                })),
+                ("__json_pair", "JSON entry", serde_json::json!({
+                    "back": {
+                        "pair": {
+                            "key": {
+                                "string": {
+                                    "id": "key"
+                                }
+                            },
+                            "value": {
+                                "atom": {
+                                    "id": "value",
+                                    "type": GROUP_JSON
+                                }
+                            }
+                        }
+                    },
+                    "front":[{
+                        "primitive": {
+                            "field": "key",
+                            "style": STYLE_INVALID
+                        }
+                    }, {
+                        "symbol": {
+                            "text": {
+                                "text": ": ",
+                                "style": STYLE_INVALID
+                            }
+                        }
+                    }, {
+                        "atom": {
+                            "field": "value"
+                        }
+                    }]
+                })),
+                ("__json_array", "JSON array", serde_json::json!({
+                    "back": {
+                        "array": {
+                            "id": "elements",
+                            "element": GROUP_JSON
+                        }
+                    },
+                    "alignments": container_alignments,
+                    "front": container_front("[", "elements", "]")
+                })),
+                ("__json_string", "JSON string", serde_json::json!({
+                    "back": {
+                        "string": {
+                            "id": "value"
+                        }
+                    },
+                    "front":[{
+                        "symbol": {
+                            "text": {
+                                "text": "\"",
+                                "style": STYLE_INVALID
+                            }
+                        }
+                    }, {
+                        "primitive": {
+                            "field": "value",
+                            "style": STYLE_INVALID,
+                            "soft_split_alignment": "indent"
+                        }
+                    }, {
+                        "symbol": {
+                            "text": {
+                                "text": "\"",
+                                "style": STYLE_INVALID
+                            }
+                        }
+                    }]
+                })),
+                ("__json_number", "JSON number", serde_json::json!({
+                    "back": {
+                        "number": {
+                            "id": "value"
+                        }
+                    },
+                    "front":[{
+                        "primitive": {
+                            "field": "value",
+                            "style": STYLE_INVALID
+                        }
+                    }]
+                })),
+                ("__json_true", "JSON true", literal("true")),
+                ("__json_false", "JSON false", literal("false")),
+                ("__json_null", "JSON null", literal("null")),
+            ];
+        let mut json_group = vec![];
+        let mut json_pairs = vec![];
+        for (id, name, mut spec) in json_types {
+            spec["id"] = serde_json::Value::String(id.to_string());
+            spec["name"] = serde_json::Value::String(name.to_string());
+            let spec: SpecType = serde_json::from_value(spec).expect("built in JSON type is invalid");
+            if matches!(spec.back, SpecBack::Pair(_)) {
+                json_pairs.push(types.len());
+            } else {
+                json_group.push(types.len());
+            }
+            types.push(build_type(&mut errors, &style_table, "json", spec, GapKind::None));
+        }
+        let type_json_root = types.len();
+        types.push(build_type(&mut errors, &style_table, "json", serde_json::from_value(serde_json::json!({
+            "id": "__json_root",
+            "name": "JSON",
+            "back": {
+                "atom": {
+                    "id": "value",
+                    "type": GROUP_JSON
+                }
+            },
+            "front":[{
+                "atom": {
+                    "field": "value"
+                }
+            }]
+        })).expect("built in JSON type is invalid"), GapKind::None));
+        let type_suffix_gap = types.len();
+        types.push(
+            build_type(
+                &mut errors,
+                &style_table,
+                "suffix_gap",
+                builtin(
+                    "__suffix_gap",
+                    "Suffix gap",
+                    SpecBack::FixedRecord(vec![SpecBackEntry {
+                        key: "__suffix_gap".to_string(),
+                        value: Some(SpecBack::FixedRecord(vec![SpecBackEntry {
+                            key: "text".to_string(),
+                            value: Some(SpecBack::String(SpecBackField {
+                                id: "gap".to_string(),
+                                pattern: None,
+                            })),
+                        }, SpecBackEntry {
+                            key: "preceding".to_string(),
+                            value: Some(SpecBack::Array(SpecBackArray {
+                                id: "preceding".to_string(),
+                                element: GROUP_ANY.to_string(),
+                            })),
+                        }])),
+                    }]),
+                    [
+                        vec![SpecFront::Array(SpecFrontArray {
+                            field: "preceding".to_string(),
+                            empty: None,
+                            forward_alignments: vec![],
+                            prefix: spec.suffix_gap.preceding_prefix.clone(),
+                            separator: vec![],
+                            suffix: vec![],
+                        })],
+                        symbols(&spec.suffix_gap.prefix),
+                        vec![gap_text(&spec.suffix_gap.style)],
+                        symbols(&spec.suffix_gap.suffix),
+                    ].concat(),
+                ),
+                GapKind::SuffixGap,
+            ),
+        );
 
         // Groups
         let mut groups: HashMap<String, Vec<TypeId>> = HashMap::new();
@@ -644,6 +1008,17 @@ impl Syntax {
                 groups.insert(g.id.clone(), out);
             }
         }
+        groups.insert(GROUP_JSON.to_string(), json_group);
+        groups.insert(GROUP_JSON_PAIRS.to_string(), json_pairs);
+        groups.insert(
+            GROUP_ANY.to_string(),
+            (0 .. types.len())
+                .filter(
+                    |t| *t != TYPE_ROOT && *t != type_json_root && types[*t].gap == GapKind::None &&
+                        !types[*t].is_pair,
+                )
+                .collect(),
+        );
 
         // Cross references between types
         for (ti, t) in types.iter().enumerate() {
@@ -673,7 +1048,40 @@ impl Syntax {
             types: types,
             groups: groups,
             styles: styles,
+            type_gap: type_gap,
+            type_json_root: type_json_root,
+            type_gap_pair: type_gap_pair,
+            type_suffix_gap: type_suffix_gap,
         });
+    }
+
+    pub fn syntax_group_types(&self, group: &str) -> Vec<TypeId> {
+        let members = self.groups.get(group).unwrap_or_else(|| panic!("unknown group `{}`", group));
+        let mut out = members.clone();
+        if members.first().is_some_and(|t| self.types[*t].is_pair) {
+            out.push(self.type_gap_pair);
+        } else {
+            out.push(self.type_gap);
+            out.push(self.type_suffix_gap);
+        }
+        return out;
+    }
+
+    pub fn syntax_primitive_valid(&self, type_: TypeId, field: &str, text: &str) -> bool {
+        let t = self.syntax_type(type_);
+        let Some(pattern) = t.patterns.get(field) else {
+            return true;
+        };
+        let glyphs: Vec<String> =
+            unicode_segmentation::UnicodeSegmentation::graphemes(text, true).map(|g| g.to_string()).collect();
+        if !pattern.pattern_matches(&glyphs, false) {
+            return false;
+        }
+        match crate::cursor::back_of_field(&t.back, field) {
+            Some(SpecBack::Number(_)) => return !crate::serialize::serialize_literal(text, true).is_string(),
+            Some(SpecBack::Literal(_)) => return !crate::serialize::serialize_literal(text, false).is_string(),
+            _ => return true,
+        }
     }
 
     pub fn syntax_style(&self, id: StyleId) -> &Style {
@@ -688,15 +1096,19 @@ impl Syntax {
 pub struct TypeDef {
     pub alignments: Vec<(String, SpecAlignment)>,
     pub associate_forward: bool,
+    pub auto_choose_unambiguous: bool,
     pub back: SpecBack,
     pub default_selection: Option<String>,
     pub depth_score: i64,
     pub fields: HashMap<String, FieldKind>,
     pub front: Vec<Front>,
+    pub gap: GapKind,
     pub id: String,
     pub is_pair: bool,
     pub name: String,
+    pub patterns: HashMap<String, Rc<PatternMatcher>>,
     pub precedence: i64,
+    pub suffix_on_pattern_mismatch: bool,
 }
 
 pub type TypeId = usize;

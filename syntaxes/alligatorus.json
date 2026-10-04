@@ -123,6 +123,7 @@
       "id": "scope_use_static",
       "depth_score": 1,
       "name": "Variable",
+      "suffix_on_pattern_mismatch": true,
       "alignments": {
         "base": {
           "relative": {
@@ -200,7 +201,8 @@
                                                       "key": "value",
                                                       "value": {
                                                         "string": {
-                                                          "id": "key"
+                                                          "id": "key",
+                                                          "pattern": {"repeat1": {"union": ["symbol_character", {"string": "_"}]}}
                                                         }
                                                       }
                                                     }
@@ -240,6 +242,7 @@
       "id": "field_static",
       "depth_score": 1,
       "name": "Field",
+      "suffix_on_pattern_mismatch": true,
       "precedence": 500,
       "alignments": {
         "base": {
@@ -327,7 +330,8 @@
                                                       "key": "value",
                                                       "value": {
                                                         "string": {
-                                                          "id": "key"
+                                                          "id": "key",
+                                                          "pattern": {"repeat1": {"union": ["symbol_character", {"string": "_"}]}}
                                                         }
                                                       }
                                                     }
@@ -689,7 +693,8 @@
                         "key": "name",
                         "value": {
                           "string": {
-                            "id": "name"
+                            "id": "name",
+                            "pattern": {"repeat1": {"union": ["symbol_character", {"string": "_"}]}}
                           }
                         }
                       },

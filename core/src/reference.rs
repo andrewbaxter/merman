@@ -1,3 +1,8 @@
+use serde::{
+    Deserialize,
+    Serialize,
+};
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Reference {
     pub id: Option<i64>,
@@ -120,7 +125,8 @@ impl Reference {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
 pub enum Segment {
     Index(usize),
     Key(String),

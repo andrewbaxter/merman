@@ -4,6 +4,7 @@ use {
         client::client_send,
         panels::{
             Panel,
+            PanelChange,
             PanelResult,
             list::{
                 List,
@@ -80,6 +81,7 @@ impl SessionsPanel {
                             .as_string()
                             .unwrap_or_default();
                     return ListRow {
+                        spans: vec![],
                         icon: None,
                         text: format!("{} \u{2014} {} ({} messages)", time, first, session.messages),
                     };
@@ -100,7 +102,7 @@ impl Panel for SessionsPanel {
         return self.0.borrow_mut().list.list_attach();
     }
 
-    fn panel_changed(&self, _path: &str) -> Option<bool> {
+    fn panel_changed(&self, _path: &str) -> Option<PanelChange> {
         return None;
     }
 

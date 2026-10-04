@@ -5,6 +5,7 @@ use {
     std::collections::HashMap,
 };
 
+#[derive(Clone)]
 pub struct Atom {
     pub back_ids: Vec<i64>,
     pub fields: HashMap<String, Field>,
@@ -17,6 +18,7 @@ pub struct Atom {
 
 pub type AtomId = usize;
 
+#[derive(Clone)]
 pub struct AtomParent {
     pub atom: AtomId,
     pub field: String,
@@ -24,14 +26,55 @@ pub struct AtomParent {
     pub index: usize,
 }
 
+#[derive(Clone)]
 pub struct Document {
     pub atoms: Vec<Atom>,
     pub root: AtomId,
 }
 
 impl Document {
+    pub fn document_array_splice(
+        &mut self,
+        atom: AtomId,
+        field: &str,
+        index: usize,
+        remove: usize,
+        add: Vec<AtomId>,
+    ) -> Vec<AtomId> {
+        let Some(Field::Array(elements)) = self.atoms[atom].fields.get_mut(field) else {
+            panic!("field `{}` is not an array", field);
+        };
+        let removed: Vec<AtomId> = elements.splice(index .. index + remove, add).collect();
+        let renumber = elements[index..].to_vec();
+        for r in &removed {
+            self.atoms[*r].parent = None;
+        }
+        for (i, a) in renumber.into_iter().enumerate() {
+            self.atoms[a].parent = Some(AtomParent {
+                atom: atom,
+                field: field.to_string(),
+                index: index + i,
+            });
+        }
+        return removed;
+    }
+
     pub fn document_atom(&self, id: AtomId) -> &Atom {
         return &self.atoms[id];
+    }
+
+    pub fn document_atom_set(&mut self, atom: AtomId, field: &str, value: AtomId) -> AtomId {
+        let Some(Field::Atom(child)) = self.atoms[atom].fields.get_mut(field) else {
+            panic!("field `{}` is not an atom", field);
+        };
+        let old = std::mem::replace(child, value);
+        self.atoms[old].parent = None;
+        self.atoms[value].parent = Some(AtomParent {
+            atom: atom,
+            field: field.to_string(),
+            index: 0,
+        });
+        return old;
     }
 
     pub fn document_locate(&self, from: AtomId, path: &[String]) -> Option<Located> {
@@ -74,8 +117,25 @@ impl Document {
     }
 }
 
+#[derive(Clone)]
 pub enum Field {
     Array(Vec<AtomId>),
     Atom(AtomId),
     Primitive(String),
+}
+
+impl Document {
+    pub fn document_primitive<'a>(&'a self, atom: AtomId, field: &str) -> &'a str {
+        let Some(Field::Primitive(text)) = self.atoms[atom].fields.get(field) else {
+            panic!("field `{}` is not a primitive", field);
+        };
+        return text;
+    }
+
+    pub fn document_primitive_splice(&mut self, atom: AtomId, field: &str, index: usize, remove: usize, add: &str) {
+        let Some(Field::Primitive(text)) = self.atoms[atom].fields.get_mut(field) else {
+            panic!("field `{}` is not a primitive", field);
+        };
+        text.replace_range(index .. index + remove, add);
+    }
 }

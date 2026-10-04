@@ -5,6 +5,7 @@ use crate::{
     },
     cursor::{
         Cursor,
+        CursorKind,
         DragSelect,
         Located,
         RangeLoc,
@@ -243,6 +244,22 @@ impl Context {
                 self.scroll_visible();
                 return true;
             },
+            Action::Delete |
+            Action::Cut |
+            Action::Suffix |
+            Action::InsertBefore |
+            Action::InsertAfter |
+            Action::MoveBefore |
+            Action::MoveAfter |
+            Action::DeletePrevious |
+            Action::DeleteNext |
+            Action::SplitLines |
+            Action::JoinLines |
+            Action::ChoiceNext |
+            Action::ChoicePrevious |
+            Action::Choose => return self.edit_action(
+                action,
+            ),
             _ => { },
         }
         let Some(cursor) = self.cursor else {
@@ -443,6 +460,9 @@ impl Context {
                         return point(self, new);
                     },
                     Action::Exit => {
+                        if self.config.editable && self.gap_cursor().is_some() {
+                            return self.gap_exit();
+                        }
                         let (atom, field) = self.primitive_field(visual);
                         return self.field_parent_select_parent(atom, &field);
                     },
@@ -535,8 +555,12 @@ impl Context {
 
     pub fn key_resolve(&mut self, stroke: KeyStroke) -> KeyResolve {
         let mut pending = std::mem::take(&mut self.key_pending);
-        let cursor = self.cursor.map(|c| self.cursor_get(c).cursor_kind());
-        let resolved = self.config.keys.keymap_read(&mut pending, stroke, cursor);
+        let mut cursor = self.cursor.map(|c| self.cursor_get(c).cursor_kind());
+        if cursor == Some(CursorKind::Primitive) && self.gap_cursor().is_some() {
+            cursor = Some(CursorKind::Gap);
+        }
+        let typing = self.config.editable && matches!(cursor, Some(CursorKind::Primitive | CursorKind::Gap));
+        let resolved = self.config.keys.keymap_read(&mut pending, stroke, cursor, typing);
         self.key_pending = pending;
         return resolved;
     }

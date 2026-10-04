@@ -27,6 +27,7 @@ use {
             FrontPrimitive,
             Symbol,
             SymbolKind,
+            Syntax,
             TypeId,
         },
         wall::{
@@ -41,6 +42,13 @@ use {
         rc::Rc,
     },
 };
+
+fn front_array_of(syntax: &Syntax, type_: TypeId, front: usize) -> &FrontArray {
+    let Front::Array(a) = &syntax.syntax_type(type_).front[front] else {
+        panic!("front {} of type {} is not an array", front, type_);
+    };
+    return a;
+}
 
 pub fn empty_forward() -> Rc<HashSet<String>> {
     return Rc::new(HashSet::new());
@@ -173,6 +181,80 @@ impl Context {
         };
         a.empty = Some(brick);
         return Some(brick);
+    }
+
+    pub fn array_create_element(&mut self, v: VisualId, element: AtomId, group_index: usize) -> VisualId {
+        let (atom, type_, front) = {
+            let a = self.visual_field_array(v);
+            (a.atom, a.type_, a.front)
+        };
+        let depth = self.visuals[v].depth;
+        let depth_score = self.visual_atom(self.visual_containing_atom(v).expect("array without atom")).depth_score;
+        let syntax = self.syntax.clone();
+        let f = front_array_of(&syntax, type_, front);
+        let group = self.push_visual(VisualKind::Group(VisualGroup { children: vec![] }), Some(VisualParent {
+            visual: v,
+            index: group_index,
+        }), depth + 1);
+        let mut children = vec![];
+        for (j, s) in f.prefix.iter().enumerate() {
+            children.push(self.visual_new_symbol(SymbolRef {
+                type_: type_,
+                front: front,
+                part: SymbolPart::Prefix(j),
+            }, &s.condition, atom, Some(VisualParent {
+                visual: group,
+                index: children.len(),
+            }), depth + 2));
+        }
+        children.push(self.visual_ensure_atom(element, Some(VisualParent {
+            visual: group,
+            index: children.len(),
+        }), depth + 3, depth_score));
+        for (j, s) in f.suffix.iter().enumerate() {
+            children.push(self.visual_new_symbol(SymbolRef {
+                type_: type_,
+                front: front,
+                part: SymbolPart::Suffix(j),
+            }, &s.condition, atom, Some(VisualParent {
+                visual: group,
+                index: children.len(),
+            }), depth + 2));
+        }
+        let VisualKind::Group(g) = &mut self.visuals[group].kind else {
+            unreachable!();
+        };
+        g.children = children;
+        return group;
+    }
+
+    pub fn array_create_separator(&mut self, v: VisualId, group_index: usize) -> VisualId {
+        let (atom, type_, front) = {
+            let a = self.visual_field_array(v);
+            (a.atom, a.type_, a.front)
+        };
+        let depth = self.visuals[v].depth;
+        let syntax = self.syntax.clone();
+        let f = front_array_of(&syntax, type_, front);
+        let group = self.push_visual(VisualKind::Group(VisualGroup { children: vec![] }), Some(VisualParent {
+            visual: v,
+            index: group_index,
+        }), depth + 1);
+        for (j, s) in f.separator.iter().enumerate() {
+            let child = self.visual_new_symbol(SymbolRef {
+                type_: type_,
+                front: front,
+                part: SymbolPart::Separator(j),
+            }, &s.condition, atom, Some(VisualParent {
+                visual: group,
+                index: j,
+            }), depth + 2);
+            let VisualKind::Group(g) = &mut self.visuals[group].kind else {
+                unreachable!();
+            };
+            g.children.push(child);
+        }
+        return group;
     }
 
     pub fn array_element_visual(&self, array: VisualId, index: usize) -> VisualId {
@@ -381,7 +463,12 @@ impl Context {
             }))
         };
         let p = self.visual_primitive(v);
-        let style = self.front_primitive_spec(p.type_, p.front).style;
+        let spec = self.front_primitive_spec(p.type_, p.front);
+        let style = if self.syntax.syntax_primitive_valid(p.type_, &spec.field, &p.value) {
+            spec.style
+        } else {
+            spec.invalid_style
+        };
         let text = p.lines[index].text.clone();
         let line_count = p.lines.len();
         let brick = self.brick_new(BrickKind::Line(BrickText {
@@ -588,7 +675,7 @@ impl Context {
         }
     }
 
-    fn parent_lay_bricks_around(&mut self, v: VisualId) {
+    pub(crate) fn parent_lay_bricks_around(&mut self, v: VisualId) {
         if let Some(b) = self.parent_find_previous_brick(v) {
             self.trigger_idle_lay_bricks_after_end(b);
         }
@@ -682,7 +769,7 @@ impl Context {
         return p.lines.len();
     }
 
-    fn primitive_lines_shifted(&mut self, v: VisualId, from: usize) {
+    pub(crate) fn primitive_lines_shifted(&mut self, v: VisualId, from: usize) {
         let bricks: Vec<(usize, BrickId)> =
             self
                 .visual_primitive(v)
@@ -929,6 +1016,98 @@ impl Context {
         return brick;
     }
 
+    pub fn symbol_condition_value(&self, c: &SpecCondition, atom: AtomId) -> bool {
+        let a = self.document.document_atom(atom);
+        return match c {
+            SpecCondition::Empty(c) => {
+                let empty = match a.fields.get(&c.field) {
+                    Some(Field::Primitive(s)) => s.is_empty(),
+                    Some(Field::Array(v)) => v.is_empty(),
+                    _ => panic!("condition field `{}` is not a primitive or array", c.field),
+                };
+                empty != c.invert
+            },
+            SpecCondition::Precedent(c) => {
+                let is_precedent = 'is_precedent: {
+                    let a = self.document.document_atom(atom);
+                    let Some(parent_ref) = &a.parent else {
+                        break 'is_precedent true;
+                    };
+                    let parent = self.document.document_atom(parent_ref.atom);
+                    let parent_type = self.syntax.syntax_type(parent.type_);
+                    let own_type = self.syntax.syntax_type(a.type_);
+                    let mut fore_child = true;
+                    let mut back_child = true;
+                    let mut found = false;
+                    for front in &parent_type.front {
+                        match front {
+                            Front::Symbol(s) => {
+                                if s.symbol_delimits() {
+                                    if !found {
+                                        back_child = false;
+                                    } else {
+                                        fore_child = false;
+                                    }
+                                }
+                            },
+                            Front::Primitive(_) => {
+                                if !found {
+                                    back_child = false;
+                                } else {
+                                    fore_child = false;
+                                }
+                            },
+                            Front::Array(f) => {
+                                if !found {
+                                    for p in &f.prefix {
+                                        if p.symbol_delimits() {
+                                            back_child = false;
+                                        }
+                                    }
+                                }
+                                if f.field == parent_ref.field {
+                                    let Some(Field::Array(siblings)) = parent.fields.get(&f.field) else {
+                                        panic!("array field `{}` missing", f.field);
+                                    };
+                                    if parent_ref.index > 0 {
+                                        back_child = false;
+                                    }
+                                    found = true;
+                                    if parent_ref.index + 1 < siblings.len() {
+                                        fore_child = false;
+                                    }
+                                }
+                                if found {
+                                    for s in &f.suffix {
+                                        if s.symbol_delimits() {
+                                            fore_child = false;
+                                        }
+                                    }
+                                }
+                            },
+                            Front::Atom(f) => {
+                                if f.field == parent_ref.field {
+                                    found = true;
+                                }
+                            },
+                        }
+                    }
+                    if !back_child && !fore_child {
+                        break 'is_precedent true;
+                    }
+                    if parent_type.precedence < own_type.precedence {
+                        break 'is_precedent true;
+                    }
+                    if parent_type.precedence == own_type.precedence && fore_child == parent_type.associate_forward {
+                        break 'is_precedent true;
+                    }
+                    false
+                };
+                is_precedent != c.invert
+            },
+        };
+    }
+
     pub fn symbol_spec(&self, r: SymbolRef) -> &Symbol {
         let front = &self.syntax.syntax_type(r.type_).front[r.front];
         match (front, r.part) {
@@ -955,7 +1134,7 @@ impl Context {
         return a;
     }
 
-    fn visual_children(&self, v: VisualId) -> Vec<VisualId> {
+    pub(crate) fn visual_children(&self, v: VisualId) -> Vec<VisualId> {
         match &self.visuals[v].kind {
             VisualKind::Atom(a) => return a.children.clone(),
             VisualKind::Group(g) => return g.children.clone(),
@@ -1179,9 +1358,8 @@ impl Context {
             return v;
         }
         let syntax = self.syntax.clone();
-        let document = self.document.clone();
-        let a = document.document_atom(atom);
-        let type_ = syntax.syntax_type(a.type_);
+        let atom_type = self.document.document_atom(atom).type_;
+        let type_ = syntax.syntax_type(atom_type);
         let (depth, depth_score) = if parent.is_none() {
             (0, 0)
         } else {
@@ -1189,7 +1367,7 @@ impl Context {
         };
         let vid = self.push_visual(VisualKind::Atom(VisualAtom {
             atom: atom,
-            type_: a.type_,
+            type_: atom_type,
             children: vec![],
             selectable: vec![],
             alignments: vec![],
@@ -1214,41 +1392,32 @@ impl Context {
             });
             let child = match front {
                 Front::Symbol(s) => self.visual_new_symbol(SymbolRef {
-                    type_: a.type_,
+                    type_: atom_type,
                     front: index,
                     part: SymbolPart::Front,
                 }, &s.condition, atom, child_parent, depth + 1),
                 Front::Primitive(p) => {
-                    let Some(Field::Primitive(text)) = a.fields.get(&p.field) else {
-                        panic!("primitive field `{}` missing", p.field);
-                    };
+                    let Some(Field::Primitive(text)) =
+                        self.document.document_atom(atom).fields.get(&p.field) else {
+                            panic!("primitive field `{}` missing", p.field);
+                        };
+                    let text = text.clone();
                     let v = self.push_visual(VisualKind::Primitive(VisualPrimitive {
                         atom: atom,
-                        type_: a.type_,
+                        type_: atom_type,
                         front: index,
                         value: text.clone(),
                         lines: vec![],
                         hard_line_count: 0,
                     }), child_parent, depth + 1);
                     {
-                        let unprintable = self.syntax.spec_root.unprintable.clone();
                         let mut lines = vec![];
                         let mut offset = 0;
                         for raw in text.split('\n') {
                             lines.push(Line {
                                 hard: true,
                                 offset: offset,
-                                text: {
-                                    let mut out = String::with_capacity(raw.len());
-                                    for c in raw.chars() {
-                                        if c.is_control() {
-                                            out.push_str(&unprintable);
-                                        } else {
-                                            out.push(c);
-                                        }
-                                    }
-                                    out
-                                },
+                                text: raw.to_string(),
                                 brick: None,
                             });
                             offset += 1 + raw.len();
@@ -1261,14 +1430,14 @@ impl Context {
                     v
                 },
                 Front::Atom(f) => {
-                    let child_atom = match a.fields.get(&f.field) {
+                    let child_atom = match self.document.document_atom(atom).fields.get(&f.field) {
                         Some(Field::Atom(child)) => Some(*child),
                         Some(Field::Array(elements)) if f.from_array => elements.first().copied(),
                         _ => panic!("atom field `{}` missing", f.field),
                     };
                     let v = self.push_visual(VisualKind::FieldAtom(VisualFieldAtom {
                         atom: atom,
-                        type_: a.type_,
+                        type_: atom_type,
                         front: index,
                         body: usize::MAX,
                         ellipsis: None,
@@ -1290,98 +1459,27 @@ impl Context {
                 Front::Array(f) => {
                     let v = self.push_visual(VisualKind::FieldArray(VisualFieldArray {
                         atom: atom,
-                        type_: a.type_,
+                        type_: atom_type,
                         front: index,
                         children: vec![],
                         empty: None,
                     }), child_parent, depth + 1);
-                    {
-                        let (atom, type_, front) = {
-                            let a = self.visual_field_array(v);
-                            (a.atom, a.type_, a.front)
-                        };
-                        let depth = self.visuals[v].depth;
-                        let elements = self.array_elements(v);
-                        let syntax = self.syntax.clone();
-                        let spec = syntax.syntax_type(type_);
-                        let Front::Array(f) = &spec.front[front] else {
-                            unreachable!();
-                        };
-                        for (i, element) in elements.iter().enumerate() {
-                            if !f.separator.is_empty() && i > 0 {
-                                let group_index = self.visual_field_array(v).children.len();
-                                let group =
-                                    self.push_visual(
-                                        VisualKind::Group(VisualGroup { children: vec![] }),
-                                        Some(VisualParent {
-                                            visual: v,
-                                            index: group_index,
-                                        }),
-                                        depth + 1,
-                                    );
-                                for (j, s) in f.separator.iter().enumerate() {
-                                    let child = self.visual_new_symbol(SymbolRef {
-                                        type_: type_,
-                                        front: front,
-                                        part: SymbolPart::Separator(j),
-                                    }, &s.condition, atom, Some(VisualParent {
-                                        visual: group,
-                                        index: j,
-                                    }), depth + 2);
-                                    let VisualKind::Group(g) = &mut self.visuals[group].kind else {
-                                        unreachable!();
-                                    };
-                                    g.children.push(child);
-                                }
-                                let VisualKind::FieldArray(a) = &mut self.visuals[v].kind else {
-                                    unreachable!();
-                                };
-                                a.children.push(group);
-                            }
+                    for element in self.array_elements(v) {
+                        let separate = !f.separator.is_empty() && !self.visual_field_array(v).children.is_empty();
+                        if separate {
                             let group_index = self.visual_field_array(v).children.len();
-                            let group =
-                                self.push_visual(
-                                    VisualKind::Group(VisualGroup { children: vec![] }),
-                                    Some(VisualParent {
-                                        visual: v,
-                                        index: group_index,
-                                    }),
-                                    depth + 1,
-                                );
-                            let mut children = vec![];
-                            for (j, s) in f.prefix.iter().enumerate() {
-                                children.push(self.visual_new_symbol(SymbolRef {
-                                    type_: type_,
-                                    front: front,
-                                    part: SymbolPart::Prefix(j),
-                                }, &s.condition, atom, Some(VisualParent {
-                                    visual: group,
-                                    index: children.len(),
-                                }), depth + 2));
-                            }
-                            children.push(self.visual_ensure_atom(*element, Some(VisualParent {
-                                visual: group,
-                                index: children.len(),
-                            }), depth + 3, depth_score));
-                            for (j, s) in f.suffix.iter().enumerate() {
-                                children.push(self.visual_new_symbol(SymbolRef {
-                                    type_: type_,
-                                    front: front,
-                                    part: SymbolPart::Suffix(j),
-                                }, &s.condition, atom, Some(VisualParent {
-                                    visual: group,
-                                    index: children.len(),
-                                }), depth + 2));
-                            }
-                            let VisualKind::Group(g) = &mut self.visuals[group].kind else {
-                                unreachable!();
-                            };
-                            g.children = children;
+                            let separator = self.array_create_separator(v, group_index);
                             let VisualKind::FieldArray(a) = &mut self.visuals[v].kind else {
                                 unreachable!();
                             };
-                            a.children.push(group);
+                            a.children.push(separator);
                         }
+                        let group_index = self.visual_field_array(v).children.len();
+                        let group = self.array_create_element(v, element, group_index);
+                        let VisualKind::FieldArray(a) = &mut self.visuals[v].kind else {
+                            unreachable!();
+                        };
+                        a.children.push(group);
                     }
                     self.visual_atom_mut(vid).selectable.push((f.field.clone(), v));
                     v
@@ -1568,98 +1666,7 @@ impl Context {
         parent: Option<VisualParent>,
         depth: usize,
     ) -> VisualId {
-        let condition = condition.as_ref().map(|c| {
-            let a = self.document.document_atom(atom);
-            return match c {
-                SpecCondition::Empty(c) => {
-                    let empty = match a.fields.get(&c.field) {
-                        Some(Field::Primitive(s)) => s.is_empty(),
-                        Some(Field::Array(v)) => v.is_empty(),
-                        _ => panic!("condition field `{}` is not a primitive or array", c.field),
-                    };
-                    empty != c.invert
-                },
-                SpecCondition::Precedent(c) => {
-                    let is_precedent = 'is_precedent: {
-                        let a = self.document.document_atom(atom);
-                        let Some(parent_ref) = &a.parent else {
-                            break 'is_precedent true;
-                        };
-                        let parent = self.document.document_atom(parent_ref.atom);
-                        let parent_type = self.syntax.syntax_type(parent.type_);
-                        let own_type = self.syntax.syntax_type(a.type_);
-                        let mut fore_child = true;
-                        let mut back_child = true;
-                        let mut found = false;
-                        for front in &parent_type.front {
-                            match front {
-                                Front::Symbol(s) => {
-                                    if s.symbol_delimits() {
-                                        if !found {
-                                            back_child = false;
-                                        } else {
-                                            fore_child = false;
-                                        }
-                                    }
-                                },
-                                Front::Primitive(_) => {
-                                    if !found {
-                                        back_child = false;
-                                    } else {
-                                        fore_child = false;
-                                    }
-                                },
-                                Front::Array(f) => {
-                                    if !found {
-                                        for p in &f.prefix {
-                                            if p.symbol_delimits() {
-                                                back_child = false;
-                                            }
-                                        }
-                                    }
-                                    if f.field == parent_ref.field {
-                                        let Some(Field::Array(siblings)) = parent.fields.get(&f.field) else {
-                                            panic!("array field `{}` missing", f.field);
-                                        };
-                                        if parent_ref.index > 0 {
-                                            back_child = false;
-                                        }
-                                        found = true;
-                                        if parent_ref.index + 1 < siblings.len() {
-                                            fore_child = false;
-                                        }
-                                    }
-                                    if found {
-                                        for s in &f.suffix {
-                                            if s.symbol_delimits() {
-                                                fore_child = false;
-                                            }
-                                        }
-                                    }
-                                },
-                                Front::Atom(f) => {
-                                    if f.field == parent_ref.field {
-                                        found = true;
-                                    }
-                                },
-                            }
-                        }
-                        if !back_child && !fore_child {
-                            break 'is_precedent true;
-                        }
-                        if parent_type.precedence < own_type.precedence {
-                            break 'is_precedent true;
-                        }
-                        if parent_type.precedence == own_type.precedence &&
-                            fore_child == parent_type.associate_forward {
-                            break 'is_precedent true;
-                        }
-                        false
-                    };
-                    is_precedent != c.invert
-                },
-            };
-        });
+        let condition = condition.as_ref().map(|c| self.symbol_condition_value(c, atom));
         return self.push_visual(VisualKind::Symbol(VisualSymbol {
             symbol: symbol,
             brick: None,

@@ -3,6 +3,7 @@ use {
         client::client_send,
         panels::{
             Panel,
+            PanelChange,
             PanelResult,
             panel_key_stroke,
             sessions::SessionsPanel,
@@ -321,7 +322,7 @@ impl Panel for Ai {
         return el("div").classes(&["merman_panel", "merman_panel_ai"]).push(self.element.clone());
     }
 
-    fn panel_changed(&self, _path: &str) -> Option<bool> {
+    fn panel_changed(&self, _path: &str) -> Option<PanelChange> {
         return None;
     }
 
@@ -400,7 +401,7 @@ impl Panel for Ai {
                 return PanelResult::Ignored;
             };
         let KeyResolve::Action(Action::Exit) =
-            self.keys.keymap_read(&mut vec![], stroke, Some(CursorKind::Primitive)) else {
+            self.keys.keymap_read(&mut vec![], stroke, Some(CursorKind::Primitive), false) else {
                 return PanelResult::Ignored;
             };
         return PanelResult::Unused(Action::Exit);
