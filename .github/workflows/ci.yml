@@ -1,0 +1,67 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+# Pinned so cached builds stay valid between runs. rust-ai-lint links against
+# rustc's internals, so it has to come from the same nixpkgs (and so the same
+# rustc) as the shell it runs in.
+env:
+  NIX_PATH: nixpkgs=https://github.com/NixOS/nixpkgs/archive/d58a46e3bc02d91ebe04667f8397752a749c0024.tar.gz
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v31
+
+      # Uploads everything built here to the actions cache and serves it back as
+      # a substituter, so later runs only build what changed.
+      - uses: DeterminateSystems/magic-nix-cache-action@v15
+        with:
+          use-flakehub: false
+          use-gha-cache: true
+
+      - uses: actions/cache@v4
+        with:
+          path: target
+          key: target-lint-${{ hashFiles('Cargo.lock') }}
+          restore-keys: target-lint-
+
+      - name: Build
+        run: |
+          nix-build https://github.com/andrewbaxter/rust-ai-lint/archive/master.tar.gz --out-link "$RUNNER_TEMP/rust-ai-lint"
+          echo "$RUNNER_TEMP/rust-ai-lint/bin" >> "$GITHUB_PATH"
+          nix-build default.nix -A web --out-link "$RUNNER_TEMP/web"
+          # The cli embeds the viewer, which isn't checked in.
+          install -m644 "$RUNNER_TEMP/web/merman_web.js" "$RUNNER_TEMP/web/merman_web_bg.wasm" cli/static/
+
+      # The shell is started from a temp dir because its setup hooks leave empty
+      # directories in the working directory. The linter rewrites what it can fix
+      # instead of reporting it, so any diff it leaves behind is a failure too.
+      - name: Lint
+        run: |
+          cd "$(mktemp -d)"
+          nix-shell "$GITHUB_WORKSPACE/default.nix" --run "cd '$GITHUB_WORKSPACE' && rust-ai-lint"
+          cd "$GITHUB_WORKSPACE"
+          git diff --exit-code
+
+  # The engine has no native dependencies, so it skips the cli's gtk shell.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v31
+
+      - uses: actions/cache@v4
+        with:
+          path: target
+          key: target-test-${{ hashFiles('Cargo.lock') }}
+          restore-keys: target-test-
+
+      - name: Test
+        run: nix-shell -p cargo rustc --run 'cargo test --locked -p merman_core'
