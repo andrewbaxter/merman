@@ -441,6 +441,8 @@ pub struct SpecType {
     pub associate_forward: bool,
     pub back: SpecBack,
     #[serde(default)]
+    pub default_selection: Option<String>,
+    #[serde(default)]
     pub depth_score: i64,
     pub front: Vec<SpecFront>,
     pub id: String,

@@ -277,6 +277,9 @@ impl Context {
         if let Some(c) = self.cursor {
             if let Cursor::Array(ca) = self.cursor_get(c) {
                 if ca.visual == visual {
+                    if let Cursor::Array(ca) = self.cursor_get_mut(c) {
+                        ca.lead_first = lead_first;
+                    }
                     self.cursor_array_set_range(c, start, end);
                     return;
                 }

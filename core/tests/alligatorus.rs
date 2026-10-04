@@ -75,10 +75,11 @@ fn ids_round_trip() {
 #[test]
 fn a_selected_expression_is_referenced_by_its_own_id() {
     let syntax = load_syntax(include_str!("../../syntaxes/alligatorus.json"));
-    let doc = load_document(&syntax, &format!(r#"{{"v1":{{"expr":{}}}}}"#, sub(5, &number(6, 1.), &number(7, 2.))));
+    let doc =
+        load_document(&syntax, &format!(r#"{{"v1":{{"exprs":[{}]}}}}"#, sub(5, &number(6, 1.), &number(7, 2.))));
     let (mut ctx, _display, _environment) = build(syntax, doc, 2000., 800.);
     settle(&mut ctx);
-    assert!(ctx.cursor_select_reference(&Reference::reference_parse("#.v1.expr").unwrap()));
+    assert!(ctx.cursor_select_reference(&Reference::reference_parse("#.v1.exprs[0]").unwrap()));
     settle(&mut ctx);
     assert_eq!(ctx.cursor_reference().unwrap().reference_format(), "#5");
     assert!(ctx.cursor_select_reference(&Reference::reference_parse("#5.variant.operator_binary.base").unwrap()));
@@ -185,22 +186,23 @@ fn profile_large_document() {
 
 fn render_module(expr: &str) -> String {
     let syntax = load_syntax(include_str!("../../syntaxes/alligatorus.json"));
-    let doc = load_document(&syntax, &format!(r#"{{"v1":{{"expr":{}}}}}"#, expr));
+    let doc = load_document(&syntax, &format!(r#"{{"v1":{{"exprs":[{}]}}}}"#, expr));
     let (mut ctx, display, _environment) = build(syntax, doc, 2000., 800.);
     settle(&mut ctx);
     let rows = display.display_test_rows();
     assert_eq!(rows.len(), 1);
-    return rows[0].bricks.iter().map(|b| b.text.as_str()).collect::<Vec<_>>().concat();
+    let text = rows[0].bricks.iter().map(|b| b.text.as_str()).collect::<Vec<_>>().concat();
+    return text.strip_suffix("; ").unwrap_or(&text).to_string();
 }
 
 fn repeated(source: &str, times: usize) -> String {
     let mut value: serde_json::Value = serde_json::from_str(source).unwrap();
-    let exprs = value["v1"]["expr"]["variant"]["seq"]["exprs"].as_array().unwrap().clone();
+    let exprs = value["v1"]["exprs"].as_array().unwrap().clone();
     let mut grown = vec![];
     for _ in 0 .. times {
         grown.extend(exprs.iter().cloned());
     }
-    value["v1"]["expr"]["variant"]["seq"]["exprs"] = serde_json::Value::Array(grown);
+    value["v1"]["exprs"] = serde_json::Value::Array(grown);
     return serde_json::to_string(&value).unwrap();
 }
 

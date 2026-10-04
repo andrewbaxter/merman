@@ -171,6 +171,7 @@ impl Handler<Body> for HandlerRoot {
                 }),
                 ServerReq::List(respond, req) => match (|| -> Result<RespList, loga::Error> {
                     let dir = self.dir_contains(Path::new(&req.dir))?;
+                    self.events.events_stamp(&dir);
                     let mut dirs = vec![];
                     let mut files = vec![];
                     for entry in std::fs::read_dir(
@@ -438,6 +439,7 @@ impl Handler<Body> for HandlerRoot {
                             "Error reading the syntax configured for this file",
                             ea!(syntax = mapping.syntax.display(), config = mapping.config.display()),
                         )?;
+                    self.events.events_stamp(&path);
                     let source =
                         std::fs::read_to_string(
                             &path,
@@ -542,6 +544,7 @@ fn main() {
         let events = Arc::new(events::Events {
             buffer: std::sync::Mutex::new((ai::now_ms(), std::collections::VecDeque::new())),
             tx: broadcast::channel(1024).0,
+            stamps: std::sync::Mutex::new(std::collections::HashMap::new()),
         });
         let mut watcher = notify::recommended_watcher({
             let events = events.clone();
@@ -553,6 +556,10 @@ fn main() {
                         return;
                     },
                 };
+                if event.need_rescan() {
+                    events.events_poll();
+                    return;
+                }
                 if let EventKind::Access(_) = event.kind {
                     return;
                 }
@@ -569,6 +576,16 @@ fn main() {
                 .enable_all()
                 .build()
                 .context("Error starting async runtime")?;
+        rt.spawn({
+            let events = events.clone();
+            async move {
+                let mut interval = tokio::time::interval(std::time::Duration::from_secs(10));
+                loop {
+                    interval.tick().await;
+                    events.events_poll();
+                }
+            }
+        });
         let base_dirs = directories::BaseDirs::new().context("Error finding the home directory")?;
         let locations_dir = base_dirs.cache_dir().join("merman").join("locations");
         std::fs::create_dir_all(

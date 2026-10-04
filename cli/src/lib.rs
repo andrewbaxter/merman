@@ -7,7 +7,10 @@ use {
     },
     merman_core::{
         document::Document,
-        matcher::match_document,
+        matcher::{
+            match_document,
+            source_parse,
+        },
         spec::SpecSyntax,
         syntax::Syntax,
     },
@@ -58,10 +61,7 @@ pub fn load_document(
     };
     let source_text =
         std::fs::read_to_string(source).context_with("Error reading file", ea!(path = source.display()))?;
-    let value =
-        serde_json::from_str::<serde_json::Value>(
-            &source_text,
-        ).context_with("Error parsing source", ea!(source = source.display()))?;
+    let value = source_parse(&source_text).context_with("Error parsing source", ea!(source = source.display()))?;
     let document = match match_document(&syntax, &value) {
         Ok(d) => d,
         Err(e) => {

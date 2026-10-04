@@ -145,6 +145,38 @@ fn function_keys_and_insert_can_be_bound() {
 }
 
 #[test]
+fn dragging_sets_which_end_the_arrows_move() {
+    let (mut ctx, display, environment) = json_context(Keymap::default());
+    let copied = |ctx: &mut Context| -> String {
+        press_char(ctx, 'c');
+        return environment.0.borrow_mut().clipboard.take().unwrap();
+    };
+    drag(&mut ctx, &display, "true", "null");
+    assert!(press(&mut ctx, KeyName::Char('k'), true), "select_previous");
+    assert_eq!(copied(&mut ctx), "[\n  true\n]", "dragging down leaves the start where the drag began");
+    drag(&mut ctx, &display, "null", "true");
+    assert!(press(&mut ctx, KeyName::Char('j'), true), "select_next");
+    assert_eq!(copied(&mut ctx), "[\n  null\n]", "dragging up leaves the end where the drag began");
+}
+
+fn drag(ctx: &mut Context, display: &DisplayTest, from: &str, to: &str) {
+    let rows = display.display_test_rows();
+    let row = &rows[0];
+    let pad = ctx.syntax.spec_root.pad.converse_start;
+    let at = |text: &str| -> Vector {
+        let brick = row.bricks.iter().find(|b| b.text == text).unwrap();
+        return Vector::new(brick.converse + 1. + pad, row.transverse + 1.);
+    };
+    ctx.mouse_moved(at(from));
+    settle(ctx);
+    assert!(ctx.mouse_button(true));
+    ctx.mouse_moved(at(to));
+    settle(ctx);
+    assert!(ctx.mouse_button(false));
+    settle(ctx);
+}
+
+#[test]
 fn hover_resolves_during_the_move() {
     let (mut ctx, display, _environment) = json_context(Keymap::default());
     assert_eq!(render_text(&display, UNIT), vec!["{a: 1, b: [true, null]}".to_string()]);
@@ -312,6 +344,50 @@ fn selects_text_by_word_from_either_end() {
         path(&ctx),
         vec!["named", "value", "named", "entries", "0", "named", "key", "0"],
         "releasing collapses onto the lead"
+    );
+}
+
+#[test]
+fn shift_from_a_caret_grows_either_way() {
+    let (mut ctx, _display, environment) = json_context(Keymap::default());
+    for key in ['j', 'l', 'l', 'l'] {
+        press_char(&mut ctx, key);
+    }
+    assert!(press(&mut ctx, KeyName::Surface, false), "previous_glyph");
+    assert!(press(&mut ctx, KeyName::Dive, true), "select_next_glyph from a caret whose lead was first");
+    press_all(&mut ctx, KeyName::Char('c'), true, false, false);
+    assert_eq!(environment.0.borrow_mut().clipboard.take().unwrap(), "a");
+}
+
+#[test]
+fn entering_an_atom_selects_its_default_child() {
+    let mut spec: serde_json::Value = serde_json::from_str(include_str!("../../syntaxes/json.json")).unwrap();
+    for t in spec["types"].as_array_mut().unwrap() {
+        if t["id"] == "record_pair" {
+            t["default_selection"] = "value".into();
+        }
+    }
+    let syntax = load_syntax(&spec.to_string());
+    let document = load_document(&syntax, SOURCE);
+    let (mut ctx, _display, _environment) = build(syntax, document, 600., 600.);
+    settle(&mut ctx);
+    for key in ['j', 'l', 'l'] {
+        press_char(&mut ctx, key);
+    }
+    assert_eq!(path(&ctx), vec!["named", "value", "named", "entries", "0", "named", "value"]);
+    for t in spec["types"].as_array_mut().unwrap() {
+        if t["id"] == "record_pair" {
+            t["default_selection"] = "missing".into();
+        }
+    }
+    let errors =
+        merman_core::syntax::Syntax::syntax_resolve(serde_json::from_value(spec).unwrap(), &common::theme())
+            .err()
+            .expect("should not resolve");
+    assert!(
+        errors.0.iter().any(|e| e.kind == ErrorKind::NonexistentDefaultSelection { field: "missing".to_string() }),
+        "got {}",
+        errors
     );
 }
 

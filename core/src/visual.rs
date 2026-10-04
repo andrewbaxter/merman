@@ -1395,7 +1395,13 @@ impl Context {
                 need_intermediate = true;
             }
             va.need_intermediate_cursor = need_intermediate;
-            va.default_selection = 0;
+            va.default_selection =
+                type_
+                    .default_selection
+                    .as_ref()
+                    .filter(|_| need_intermediate)
+                    .and_then(|d| va.selectable.iter().position(|(f, _)| f == d))
+                    .unwrap_or(0);
         }
         return vid;
     }

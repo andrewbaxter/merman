@@ -484,28 +484,28 @@ impl Context {
                     Action::ReleaseNextWord => return set_end(self, begin.max(words.word_start_before(end))),
                     Action::ReleasePreviousWord => return set_begin(self, end.min(words.word_start_after(begin))),
                     Action::SelectNextGlyph => {
-                        if lead_first {
+                        if lead_first && begin != end {
                             return set_begin(self, end.min(glyphs.glyph_after(begin)));
                         }
                         return set_end(self, glyphs.glyph_after(end));
                     },
                     Action::SelectPreviousGlyph => {
-                        if lead_first {
-                            return set_begin(self, glyphs.glyph_before(begin));
+                        if !lead_first && begin != end {
+                            return set_end(self, begin.max(glyphs.glyph_before(end)));
                         }
-                        return set_end(self, begin.max(glyphs.glyph_before(end)));
+                        return set_begin(self, glyphs.glyph_before(begin));
                     },
                     Action::SelectNextWord => {
-                        if lead_first {
+                        if lead_first && begin != end {
                             return set_begin(self, end.min(words.word_start_after(begin)));
                         }
                         return set_end(self, words.word_end_after(end));
                     },
                     Action::SelectPreviousWord => {
-                        if lead_first {
-                            return set_begin(self, words.word_start_before(begin));
+                        if !lead_first && begin != end {
+                            return set_end(self, begin.max(words.word_start_before(end)));
                         }
-                        return set_end(self, begin.max(words.word_start_before(end)));
+                        return set_begin(self, words.word_start_before(begin));
                     },
                     Action::ReleaseNextLine => {
                         let new = self.primitive_line_shift(visual, end, false);

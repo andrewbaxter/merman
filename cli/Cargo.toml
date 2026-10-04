@@ -18,7 +18,7 @@ path = "src/tool.rs"
 merman_core = { path = "../core" }
 merman_api = { path = "../api" }
 aargvark = "0.12"
-serde_json = { version = "1", features = ["preserve_order"] }
+serde_json = { version = "1", features = ["preserve_order", "unbounded_depth"] }
 htwrap = "0.15"
 http = "1"
 http-body-util = "0.1"

@@ -37,6 +37,7 @@ impl Display for Error {
             ErrorKind::MissingBack { .. } => "missing back",
             ErrorKind::UnusedBackData { .. } => "unused data from back fields",
             ErrorKind::EmptyAlignmentBase => "alignment base name is empty",
+            ErrorKind::NonexistentDefaultSelection { .. } => "field specified for default selection doesn't exist",
             ErrorKind::EmptyKeyBinding { .. } => "key binding has no strokes",
             ErrorKind::UnknownAction { .. } => "action doesn't exist",
             ErrorKind::AmbiguousKeyBinding { .. } => "key binding runs two actions on one cursor",
@@ -79,6 +80,7 @@ impl Display for Error {
             ErrorKind::RecordDiscardDuplicateKey { key } => vec![("key", key.clone())],
             ErrorKind::MissingBack { field } => vec![("field", field.clone())],
             ErrorKind::UnusedBackData { unused } => vec![("unused", unused.clone())],
+            ErrorKind::NonexistentDefaultSelection { field } => vec![("defaultSelection", field.clone())],
             ErrorKind::EmptyKeyBinding { action } => vec![("action", action.clone())],
             ErrorKind::UnknownAction { action, known } => vec![
                 ("action", action.clone()),
@@ -150,6 +152,9 @@ pub enum ErrorKind {
         atom_type: String,
     },
     MissingBack {
+        field: String,
+    },
+    NonexistentDefaultSelection {
         field: String,
     },
     NonKeyInvalidAtLocation {

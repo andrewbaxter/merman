@@ -193,6 +193,14 @@ fn build_type(errors: &mut Errors, styles: &StyleTable, path: &str, t: SpecType)
             errors.multi_error_add(path, ErrorKind::UnusedBackData { unused: id.clone() });
         }
     }
+    if let Some(field) = &t.default_selection {
+        if !fields.contains_key(field) {
+            errors.multi_error_add(
+                format!("{}.default_selection", path),
+                ErrorKind::NonexistentDefaultSelection { field: field.clone() },
+            );
+        }
+    }
     for (name, a) in &t.alignments {
         if let SpecAlignment::Relative(r) = a {
             if r.base.is_empty() {
@@ -205,6 +213,7 @@ fn build_type(errors: &mut Errors, styles: &StyleTable, path: &str, t: SpecType)
         id: t.id,
         precedence: t.precedence,
         associate_forward: t.associate_forward,
+        default_selection: t.default_selection,
         depth_score: t.depth_score,
         alignments: t.alignments.into_iter().collect(),
         back: t.back,
@@ -552,6 +561,7 @@ impl Syntax {
                 name: Some("root".to_string()),
                 precedence: i64::MIN,
                 associate_forward: false,
+                default_selection: None,
                 depth_score: 0,
                 alignments: alignments,
                 back: back,
@@ -679,6 +689,7 @@ pub struct TypeDef {
     pub alignments: Vec<(String, SpecAlignment)>,
     pub associate_forward: bool,
     pub back: SpecBack,
+    pub default_selection: Option<String>,
     pub depth_score: i64,
     pub fields: HashMap<String, FieldKind>,
     pub front: Vec<Front>,

@@ -18,7 +18,10 @@ use {
         },
         cursor::Located,
         document::Document,
-        matcher::match_document,
+        matcher::{
+            match_document,
+            source_parse,
+        },
         reference::{
             Reference,
             Segment,
@@ -399,7 +402,7 @@ fn main() {
                 let (path, range) = reference_path(&loaded, &reference)?;
                 let mut text = String::new();
                 std::io::stdin().read_to_string(&mut text).context("Error reading the new value from stdin")?;
-                let new = serde_json::from_str::<Value>(&text).context("The new value on stdin isn't valid JSON")?;
+                let new = source_parse(&text).context("The new value on stdin isn't valid JSON")?;
                 let mut root = root_serialize(&loaded);
                 let at = value_walk(&mut root, &path);
                 let mut slice = None;

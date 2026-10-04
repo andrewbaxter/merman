@@ -14,6 +14,7 @@ use {
             TypeId,
         },
     },
+    serde::Deserialize,
     serde_json::Value,
     std::{
         collections::HashMap,
@@ -41,6 +42,46 @@ fn literal_text(value: &Value) -> Option<String> {
         Value::Number(n) => return Some(n.to_string()),
         _ => return None,
     }
+}
+
+const SOURCE_DEPTH_MAX: usize = 512;
+
+pub fn source_parse(text: &str) -> Result<Value, serde_json::Error> {
+    let mut depth = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+    for b in text.bytes() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if b == b'\\' {
+                escaped = true;
+            } else if b == b'"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match b {
+            b'"' => in_string = true,
+            b'[' | b'{' => {
+                depth += 1;
+                if depth > SOURCE_DEPTH_MAX {
+                    return Err(
+                        <serde_json::Error as serde::de::Error>::custom(
+                            format!("nesting is deeper than {} levels", SOURCE_DEPTH_MAX),
+                        ),
+                    );
+                }
+            },
+            b']' | b'}' => depth = depth.saturating_sub(1),
+            _ => { },
+        }
+    }
+    let mut deserializer = serde_json::Deserializer::from_str(text);
+    deserializer.disable_recursion_limit();
+    let value = Value::deserialize(&mut deserializer)?;
+    deserializer.end()?;
+    return Ok(value);
 }
 
 pub fn match_document(syntax: &Syntax, value: &Value) -> Result<Document, Mismatch> {

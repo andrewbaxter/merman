@@ -63,6 +63,14 @@
     }
   ],
   "root": {
+    "alignments": {
+      "indent": {
+        "relative": {
+          "base": "indent",
+          "offset": 0
+        }
+      }
+    },
     "back": {
       "fixed_record": [
         {
@@ -70,11 +78,11 @@
           "value": {
             "fixed_record": [
               {
-                "key": "expr",
+                "key": "exprs",
                 "value": {
-                  "atom": {
-                    "id": "expr",
-                    "type": "expr"
+                  "array": {
+                    "id": "exprs",
+                    "element": "expr"
                   }
                 }
               }
@@ -85,8 +93,24 @@
     },
     "front": [
       {
-        "atom": {
-          "field": "expr",
+        "array": {
+          "field": "exprs",
+          "prefix": [
+            {
+              "space": {
+                "split": "compact",
+                "split_alignment": "indent"
+              }
+            }
+          ],
+          "suffix": [
+            {
+              "text": {
+                "text": "; ",
+                "style": "symbol"
+              }
+            }
+          ],
           "forward_alignments": [
             "indent"
           ]
@@ -617,6 +641,7 @@
     },
     {
       "id": "bind",
+      "default_selection": "value",
       "depth_score": 1,
       "name": "Bind",
       "precedence": 0,
@@ -2002,6 +2027,7 @@
     },
     {
       "id": "return",
+      "default_selection": "value",
       "depth_score": 1,
       "name": "Return",
       "precedence": 0,
@@ -5471,6 +5497,7 @@
     },
     {
       "id": "record_entry_static",
+      "default_selection": "value",
       "depth_score": 1,
       "name": "Record entry",
       "precedence": 0,
@@ -5593,6 +5620,7 @@
     },
     {
       "id": "record_entry_dynamic",
+      "default_selection": "value",
       "depth_score": 1,
       "name": "Dynamic record entry",
       "precedence": 0,

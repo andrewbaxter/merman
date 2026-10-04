@@ -10,7 +10,7 @@ crate-type = ["cdylib"]
 merman_core = { path = "../core" }
 merman_api = { path = "../api" }
 glove = "0.5"
-serde_json = { version = "1", features = ["preserve_order"] }
+serde_json = { version = "1", features = ["preserve_order", "unbounded_depth"] }
 wasm-bindgen = "=0.2.121"
 wasm-bindgen-futures = "0.4"
 futures = "0.3"

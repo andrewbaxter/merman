@@ -37,7 +37,10 @@ use {
             Keymap,
             SpecKeys,
         },
-        matcher::match_document,
+        matcher::{
+            match_document,
+            source_parse,
+        },
         spec::{
             SpecSyntax,
             SpecTheme,
@@ -251,7 +254,7 @@ async fn editor_open(keys: Keymap, theme: Rc<SpecTheme>, path: String, select: O
             serde_json::from_str(&opened.syntax).map_err(|e| format!("Error parsing syntax JSON: {}", e))?;
         let syntax = Rc::new(Syntax::syntax_resolve(spec, &theme).map_err(|e| format!("Syntax errors:\n{}", e))?);
         let value: serde_json::Value =
-            serde_json::from_str(&opened.source).map_err(|e| format!("Error parsing source JSON: {}", e))?;
+            source_parse(&opened.source).map_err(|e| format!("Error parsing source JSON: {}", e))?;
         let document =
             Rc::new(
                 match_document(

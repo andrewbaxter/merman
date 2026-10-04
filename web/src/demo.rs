@@ -15,7 +15,10 @@ use {
             Keymap,
             SpecKeys,
         },
-        matcher::match_document,
+        matcher::{
+            match_document,
+            source_parse,
+        },
         spec::{
             SpecSyntax,
             SpecTheme,
@@ -63,7 +66,7 @@ pub fn start_demo() {
         };
         let keys = Keymap::keymap_resolve(&keys).map_err(|e| format!("Errors in key bindings:\n{}", e))?;
         let value: serde_json::Value =
-            serde_json::from_str(
+            source_parse(
                 &read_embedded("merman-source")?,
             ).map_err(|e| format!("Error parsing source JSON: {}", e))?;
         let document_ =
