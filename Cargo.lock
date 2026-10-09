@@ -3851,7 +3851,9 @@ dependencies = [
 
 [[package]]
 name = "schemask_core"
-version = "0.1.5"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c25c6129d53bb3e21be3c6666414329b23cd5008a1155109d21c9b7c3b604c3"
 dependencies = [
  "genemichaels-lib 0.8.6",
  "heck 0.5.0",
@@ -3865,7 +3867,9 @@ dependencies = [
 
 [[package]]
 name = "schemask_derive"
-version = "0.1.5"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "296a70d3eadf7e387d8078b03145c3739b32d6a5439ae429693570ffcba5749d"
 dependencies = [
  "proc-macro-crate 3.5.0",
  "proc-macro2",

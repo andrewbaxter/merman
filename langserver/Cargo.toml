@@ -5,8 +5,8 @@ version.workspace = true
 
 [dependencies]
 schemars = "1"
-schemask_core = { path = "../../../schemask/source/schemask_core" }
-schemask_derive = { path = "../../../schemask/source/schemask_derive" }
+schemask_core = "0.1.6"
+schemask_derive = "0.1.6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
