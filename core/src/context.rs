@@ -73,6 +73,7 @@ pub struct Context {
     pub courses: Vec<Course>,
     pub cursor: Option<CursorId>,
     pub cursors: Vec<Option<Cursor>>,
+    pub details: Option<(DisplayNodeId, usize, f64)>,
     pub display: Box<dyn Display>,
     pub document: Document,
     pub drag_select: Option<DragSelect>,
@@ -179,6 +180,7 @@ impl Context {
             root_visual: 0,
             window: false,
             window_atom: 0,
+            details: None,
             bricks: vec![],
             courses: vec![],
             wall: Wall::default(),
@@ -241,6 +243,7 @@ impl Context {
         self.edge = self.edge_from_converse_size(converse_size);
         if self.edge != old_edge {
             self.wall_converse_edge_changed(old_edge, self.edge);
+            self.details_place();
         }
         if transverse_size != self.transverse_edge {
             self.transverse_edge = transverse_size;

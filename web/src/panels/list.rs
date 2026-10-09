@@ -200,7 +200,7 @@ impl List {
         return self.list_select(index as usize);
     }
 
-    fn list_select(&mut self, index: usize) -> PanelResult {
+    pub fn list_select(&mut self, index: usize) -> PanelResult {
         if self.selected == Some(index) {
             return PanelResult::Used;
         }

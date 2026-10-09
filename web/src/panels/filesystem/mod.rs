@@ -111,13 +111,22 @@ impl Panel for FilesystemPanel {
         return self.panel_selection().map(|(_, path)| path);
     }
 
+    fn panel_select(&self, location: &str) {
+        let mut s = self.0.borrow_mut();
+        let Some(index) = s.entries.iter().position(|e| e.path == location) else {
+            return;
+        };
+        s.list.list_select(index);
+        return;
+    }
+
     fn panel_selection(&self) -> Option<(bool, String)> {
         let s = self.0.borrow();
         return s.list.selected.map(|i| (s.entries[i].dir, s.entries[i].path.clone()));
     }
 
     fn panel_size(&self) -> f64 {
-        return 2.;
+        return 8.;
     }
 }
 

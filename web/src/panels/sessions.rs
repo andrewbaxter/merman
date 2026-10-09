@@ -127,36 +127,19 @@ impl Panel for SessionsPanel {
     }
 
     fn panel_key(&self, e: &KeyboardEvent) -> PanelResult {
-        let mut s = self.0.borrow_mut();
-        match s.list.list_key(e) {
-            PanelResult::Unused(Action::Enter) => {
-                let Some(selected) = s.list.selected else {
-                    return PanelResult::Unused(Action::Enter);
-                };
-                let id = s.ids[selected].clone();
-                let ai = s.ai.clone();
-                wasm_bindgen_futures::spawn_local(async move {
-                    let result = client_send(ReqAiResume { id: id }).await;
-                    let Some(ai) = ai.upgrade() else {
-                        return;
-                    };
-                    match result {
-                        Ok(_) => ai.ai_load(),
-                        Err(e) => ai.ai_message(AiMessage {
-                            role: AiRole::System,
-                            text: e,
-                            time: js_sys::Date::now() as u64,
-                        }),
-                    }
-                });
-                return PanelResult::Unused(Action::Exit);
-            },
+        let result = self.0.borrow_mut().list.list_key(e);
+        match result {
+            PanelResult::Unused(Action::Enter) => return sessions_resume(&self.0.borrow()),
             result => return result,
         }
     }
 
     fn panel_mouse(&self, e: &MouseEvent) -> PanelResult {
-        return self.0.borrow_mut().list.list_mouse(e);
+        let result = self.0.borrow_mut().list.list_mouse(e);
+        match result {
+            PanelResult::Selected | PanelResult::Used => return sessions_resume(&self.0.borrow()),
+            result => return result,
+        }
     }
 
     fn panel_parent(&self) -> Option<String> {
@@ -171,13 +154,38 @@ impl Panel for SessionsPanel {
         return None;
     }
 
+    fn panel_select(&self, _location: &str) { }
+
     fn panel_selection(&self) -> Option<(bool, String)> {
         return None;
     }
 
     fn panel_size(&self) -> f64 {
-        return 2.;
+        return 15.;
     }
+}
+
+fn sessions_resume(s: &State) -> PanelResult {
+    let Some(selected) = s.list.selected else {
+        return PanelResult::Unused(Action::Enter);
+    };
+    let id = s.ids[selected].clone();
+    let ai = s.ai.clone();
+    wasm_bindgen_futures::spawn_local(async move {
+        let result = client_send(ReqAiResume { id: id }).await;
+        let Some(ai) = ai.upgrade() else {
+            return;
+        };
+        match result {
+            Ok(_) => ai.ai_load(),
+            Err(e) => ai.ai_message(AiMessage {
+                role: AiRole::System,
+                text: e,
+                time: js_sys::Date::now() as u64,
+            }),
+        }
+    });
+    return PanelResult::Unused(Action::Exit);
 }
 
 struct State {

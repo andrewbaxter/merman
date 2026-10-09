@@ -43,6 +43,7 @@ use {
     hyper_tungstenite::tungstenite::Message,
     hyper_util::rt::TokioIo,
     loga::{
+        ErrContext,
         ResultContext,
         ea,
     },
@@ -81,7 +82,13 @@ use {
             ServerResp,
         },
     },
-    merman_core::keys::Keymap,
+    merman_core::{
+        keys::Keymap,
+        spec::{
+            SpecCompression,
+            SpecSyntax,
+        },
+    },
     notify::{
         EventKind,
         RecursiveMode,
@@ -156,7 +163,7 @@ impl HandlerRoot {
         let history = &self.history;
         let mut db = history.db.lock().unwrap();
         let mut files = history.files.lock().unwrap();
-        let state = history.history_state(&mut db, &mut files, path)?;
+        let state = history.history_state(&mut db, &mut files, path, || self.compression_for(path))?;
         if state.revision != revision {
             return Ok((state.revision, None));
         }
@@ -205,6 +212,26 @@ impl HandlerRoot {
             patches: serde_json::to_string(&patches).unwrap(),
             select: select,
         })));
+    }
+
+    fn compression_for(&self, path: &Path) -> Result<SpecCompression, loga::Error> {
+        let Some(mapping) = self.config.config_mapping(path) else {
+            return Err(
+                loga::err_with("No syntax is configured for this file's extension", ea!(source = path.display())),
+            );
+        };
+        let syntax_text =
+            std::fs::read_to_string(
+                &mapping.syntax,
+            ).context_with(
+                "Error reading the syntax configured for this file",
+                ea!(syntax = mapping.syntax.display(), config = mapping.config.display()),
+            )?;
+        let spec =
+            serde_json::from_str::<SpecSyntax>(
+                &syntax_text,
+            ).context_with("Error parsing syntax", ea!(syntax = mapping.syntax.display()))?;
+        return Ok(spec.compression);
     }
 
     fn dir_contains(&self, path: &Path) -> Result<PathBuf, loga::Error> {
@@ -520,10 +547,10 @@ impl Handler<Body> for HandlerRoot {
                         let path: &Path = &path;
                         let mut db = history.db.lock().unwrap();
                         let mut files = history.files.lock().unwrap();
-                        let state = history.history_state(&mut db, &mut files, path)?;
+                        let state = history.history_state(&mut db, &mut files, path, || self.compression_for(path))?;
                         history::history_take_disk(&mut db, state, path)?;
                         let source = if state.dirty {
-                            history::format_document(&state.value)
+                            merman::compress::format_document(&state.value)
                         } else {
                             state.disk.clone()
                         };
@@ -563,7 +590,7 @@ impl Handler<Body> for HandlerRoot {
                             (req.revision, req.new_level, req.select_before.clone(), req.select_after.clone());
                         let mut db = history.db.lock().unwrap();
                         let mut files = history.files.lock().unwrap();
-                        let state = history.history_state(&mut db, &mut files, path)?;
+                        let state = history.history_state(&mut db, &mut files, path, || self.compression_for(path))?;
                         if state.revision != revision {
                             return Ok(None);
                         }
@@ -648,13 +675,13 @@ impl Handler<Body> for HandlerRoot {
                         let revision = req.revision;
                         let mut db = history.db.lock().unwrap();
                         let mut files = history.files.lock().unwrap();
-                        let state = history.history_state(&mut db, &mut files, path)?;
+                        let state = history.history_state(&mut db, &mut files, path, || self.compression_for(path))?;
                         history::history_take_disk(&mut db, state, path)?;
                         if state.revision == revision {
                             return Ok((state.revision, None, false));
                         }
                         let source = if state.dirty {
-                            history::format_document(&state.value)
+                            merman::compress::format_document(&state.value)
                         } else {
                             state.disk.clone()
                         };
@@ -690,9 +717,9 @@ impl Handler<Body> for HandlerRoot {
                 include_bytes!("../static/merman_web_bg.wasm"),
                 "application/wasm",
             ),
-            "/MaterialIcons-Regular.ttf" => response_bytes(
-                include_bytes!("../static/MaterialIcons-Regular.ttf"),
-                "font/ttf",
+            "/MaterialSymbolsOutlined-Light.woff2" => response_bytes(
+                include_bytes!("../static/MaterialSymbolsOutlined-Light.woff2"),
+                "font/woff2",
             ),
             _ => response_404(),
         };
@@ -703,8 +730,14 @@ fn main() {
     match (|| -> Result<(), loga::Error> {
         let args = vark::<Args>();
         let cwd = std::env::current_dir().context("Error getting the working directory")?;
-        let source = args.source.unwrap_or_else(|| cwd.clone());
-        let source_abs = std::fs::canonicalize(&source).unwrap_or_else(|_| source.clone());
+        let source = cwd.join(args.source.unwrap_or_else(|| cwd.clone()));
+        if !source.exists() {
+            return Err(loga::err_with("The source file doesn't exist", ea!(source = source.display())));
+        }
+        let source_abs =
+            std::fs::canonicalize(
+                &source,
+            ).context_with("Error resolving the source file", ea!(source = source.display()))?;
         let file = if source_abs.is_dir() {
             None
         } else {
@@ -747,7 +780,8 @@ fn main() {
                     ),
                 );
             };
-            let (syntax_text, _, source_text, document) = load_document(&config, source)?;
+            let loaded = load_document(&config, source)?;
+            let (syntax_text, source_text, document) = (loaded.syntax_text, loaded.source_text, loaded.document);
             eprintln!("Matched {} atoms", document.atoms.len());
             include_str!("../static/demo.html")
                 .replace("__MERMAN_SYNTAX__", &embed_json(&syntax_text))
@@ -762,13 +796,15 @@ fn main() {
             tx: broadcast::channel(1024).0,
             stamps: std::sync::Mutex::new(std::collections::HashMap::new()),
         });
-        let mut watcher = notify::recommended_watcher({
+        let log = loga::Log::new_root(loga::INFO);
+        let mut watcher = notify::RecommendedWatcher::new({
             let events = events.clone();
+            let log = log.clone();
             move |res: Result<notify::Event, notify::Error>| {
                 let event = match res {
                     Ok(e) => e,
                     Err(e) => {
-                        eprintln!("Error watching files: {}", e);
+                        log.log_err(loga::WARN, notify_error("Error watching files", e));
                         return;
                     },
                 };
@@ -783,10 +819,16 @@ fn main() {
                     events.events_publish(merman_api::Event::FileChanged { path: display(&path) });
                 }
             }
-        }).context("Error creating file watcher")?;
-        watcher
-            .watch(&dir, RecursiveMode::Recursive)
-            .context_with("Error watching directory", ea!(dir = dir.display()))?;
+        }, notify::Config::default().with_follow_symlinks(false)).context("Error creating file watcher")?;
+        if let Err(e) = watcher.watch(&dir, RecursiveMode::Recursive) {
+            log.log_err(
+                loga::WARN,
+                notify_error(
+                    &format!("Error watching {}, changes made outside the editor may be missed", dir.display()),
+                    e,
+                ),
+            );
+        }
         let rt =
             tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
@@ -868,7 +910,6 @@ fn main() {
             history: history.clone(),
             locations: locations,
         });
-        let log = loga::Log::new_root(loga::INFO);
         let listener =
             rt
                 .block_on(tokio::net::TcpListener::bind(("127.0.0.1", args.port.unwrap_or(0))))
@@ -1047,7 +1088,8 @@ fn main() {
             }?;
             let window =
                 WindowBuilder::new().with_title(&title).build(&event_loop).context("Error creating window")?;
-            let builder = WebViewBuilder::new().with_url(&url);
+            let builder =
+                WebViewBuilder::new().with_url(&url).with_initialization_script("window.mermanWebview = true;");
             #[cfg(any(target_os = "windows", target_os = "macos", target_os = "ios", target_os = "android"))]
             let _webview = builder.build(&window).context("Error creating webview")?;
             #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "ios", target_os = "android")))]
@@ -1077,6 +1119,12 @@ fn main() {
         Ok(_) => (),
         Err(e) => loga::fatal(e),
     }
+}
+
+fn notify_error(message: &str, mut e: notify::Error) -> loga::Error {
+    let paths =
+        std::mem::take(&mut e.paths).iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join(", ");
+    return e.context_with(message, ea!(paths = paths));
 }
 
 fn response_bytes(data: &'static [u8], content_type: &str) -> Response<Body> {

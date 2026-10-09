@@ -1,5 +1,6 @@
 use {
     crate::{
+        attachment::DrawingLayer,
         back::{
             back_locate,
             back_reference,
@@ -226,7 +227,7 @@ impl Context {
             Some(h) if matches!(&self.hoverables[h], Some(Hoverable::Array { visual, .. }) if * visual == array) => h,
             _ => {
                 changed = true;
-                let border = self.border_new(self.stylist.style_obbox(ObboxType::Hover));
+                let border = self.border_new(self.stylist.style_obbox(ObboxType::Hover), DrawingLayer::Hover);
                 self.hoverable_push(Hoverable::Array {
                     visual: array,
                     index: index,
@@ -254,7 +255,7 @@ impl Context {
     }
 
     pub fn array_hover_placeholder(&mut self, array: VisualId, brick: BrickId) -> (HoverableId, bool) {
-        let border = self.border_new(self.stylist.style_obbox(ObboxType::Hover));
+        let border = self.border_new(self.stylist.style_obbox(ObboxType::Hover), DrawingLayer::Hover);
         let id = self.hoverable_push(Hoverable::ArrayPlaceholder {
             visual: array,
             border: border,
@@ -286,7 +287,7 @@ impl Context {
                 }
             }
         }
-        let border = self.border_new(self.stylist.style_obbox(ObboxType::Cursor));
+        let border = self.border_new(self.stylist.style_obbox(ObboxType::Cursor), DrawingLayer::Background);
         let id = self.set_cursor(Cursor::Array(CursorArray {
             visual: visual,
             begin_index: start,
@@ -295,6 +296,19 @@ impl Context {
             border: border,
         }));
         self.cursor_array_set_range(id, start, end);
+    }
+
+    pub fn atom_ancestor_select_array(&mut self, atom: AtomId) -> bool {
+        let mut child = atom;
+        while let Some(parent_ref) = &self.document.document_atom(child).parent {
+            let parent_atom = parent_ref.atom;
+            let parent_type = self.syntax.syntax_type(self.document.document_atom(parent_atom).type_);
+            if matches!(parent_type.fields.get(&parent_ref.field), Some(FieldKind::Array)) {
+                return self.atom_parent_select_field(child);
+            }
+            child = parent_atom;
+        }
+        return false;
     }
 
     pub fn atom_hover_selectable(&mut self, atom: VisualId, index: usize) -> (HoverableId, bool) {
@@ -309,7 +323,7 @@ impl Context {
                 }
             }
         }
-        let border = self.border_new(self.stylist.style_obbox(ObboxType::Hover));
+        let border = self.border_new(self.stylist.style_obbox(ObboxType::Hover), DrawingLayer::Hover);
         let id = self.hoverable_push(Hoverable::Atom {
             visual: atom,
             index: index,
@@ -375,7 +389,7 @@ impl Context {
                 }
             }
         }
-        let border = self.border_new(self.stylist.style_obbox(ObboxType::Cursor));
+        let border = self.border_new(self.stylist.style_obbox(ObboxType::Cursor), DrawingLayer::Background);
         let id = self.set_cursor(Cursor::Atom(CursorAtom {
             visual: visual,
             index: index,

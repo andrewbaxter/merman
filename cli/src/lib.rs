@@ -1,4 +1,5 @@
 pub mod config;
+pub mod compress;
 
 use {
     loga::{
@@ -11,16 +12,24 @@ use {
             match_document,
             source_parse,
         },
-        spec::SpecSyntax,
+        spec::{
+            SpecCompression,
+            SpecSyntax,
+        },
         syntax::Syntax,
     },
     std::path::Path,
 };
 
-pub fn load_document(
-    config: &config::Config,
-    source: &Path,
-) -> Result<(String, Syntax, String, Document), loga::Error> {
+pub struct LoadedDocument {
+    pub syntax_text: String,
+    pub syntax: Syntax,
+    pub compression: SpecCompression,
+    pub source_text: String,
+    pub document: Document,
+}
+
+pub fn load_document(config: &config::Config, source: &Path) -> Result<LoadedDocument, loga::Error> {
     let Some(mapping) = config.config_mapping(source) else {
         let mut known = config.extensions.keys().cloned().collect::<Vec<_>>();
         known.sort();
@@ -47,6 +56,7 @@ pub fn load_document(
         serde_json::from_str::<SpecSyntax>(
             &syntax_text,
         ).context_with("Error parsing syntax", ea!(syntax = syntax_path.display()))?;
+    let compression = spec.compression;
     let syntax = match Syntax::syntax_resolve(spec, &config.theme) {
         Ok(s) => s,
         Err(errors) => {
@@ -59,8 +69,7 @@ pub fn load_document(
             );
         },
     };
-    let source_text =
-        std::fs::read_to_string(source).context_with("Error reading file", ea!(path = source.display()))?;
+    let source_text = compress::read_document(source, compression)?;
     let value = source_parse(&source_text).context_with("Error parsing source", ea!(source = source.display()))?;
     let document = match match_document(&syntax, &value) {
         Ok(d) => d,
@@ -73,5 +82,11 @@ pub fn load_document(
             );
         },
     };
-    return Ok((syntax_text, syntax, source_text, document));
+    return Ok(LoadedDocument {
+        syntax_text: syntax_text,
+        syntax: syntax,
+        compression: compression,
+        source_text: source_text,
+        document: document,
+    });
 }

@@ -328,7 +328,7 @@ pub struct SpecObbox {
     #[serde(default = "default_black")]
     pub line_color: String,
     #[serde(default = "default_one")]
-    pub line_thickness: f64,
+    pub line_thickness_px: f64,
     #[serde(default)]
     pub padding: SpecPadding,
     #[serde(default)]
@@ -357,7 +357,7 @@ impl Default for SpecObbox {
             round_radius: 0.,
             line: true,
             line_color: default_black(),
-            line_thickness: 1.,
+            line_thickness_px: 1.,
             fill: false,
             fill_color: default_white(),
         };
@@ -417,6 +417,44 @@ pub struct SpecTextStyle {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(default, deny_unknown_fields)]
+pub struct SpecSpacing {
+    pub ai_input: f64,
+    pub ai_message_gap: f64,
+    pub ai_toolbar: f64,
+    pub details: f64,
+    pub error: f64,
+    pub inline_gap: f64,
+    pub panel: f64,
+    pub row_converse: f64,
+    pub row_transverse: f64,
+    pub status_back_gap: f64,
+    pub status_icon: f64,
+    pub status_top: f64,
+    pub toolbar_gap: f64,
+}
+
+impl Default for SpecSpacing {
+    fn default() -> Self {
+        return SpecSpacing {
+            ai_input: 1.,
+            ai_message_gap: 2.,
+            ai_toolbar: 1.5,
+            details: 2.,
+            error: 4.,
+            inline_gap: 1.5,
+            panel: 3.,
+            row_converse: 0.8,
+            row_transverse: 0.25,
+            status_back_gap: 5.,
+            status_icon: 2.,
+            status_top: 2.,
+            toolbar_gap: 2.,
+        };
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct SpecSuffixGap {
     #[serde(default)]
@@ -465,9 +503,19 @@ pub struct SpecSymbolText {
     pub text: String,
 }
 
+#[derive(Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum SpecCompression {
+    #[default]
+    None,
+    Zstd,
+}
+
 #[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct SpecSyntax {
+    #[serde(default)]
+    pub compression: SpecCompression,
     #[serde(default = "default_converse_direction")]
     pub converse_direction: SpecDirection,
     #[serde(default)]
@@ -493,10 +541,14 @@ pub struct SpecSyntax {
 pub struct SpecTheme {
     pub background: String,
     pub cursor: SpecObbox,
+    pub details_background: String,
     pub font_family: String,
     pub font_size: f64,
     pub hover: SpecObbox,
     pub icon_color: String,
+    pub line_gap: f64,
+    #[serde(default)]
+    pub spacing: SpecSpacing,
     pub text_color: String,
     pub text_styles: BTreeMap<String, SpecTextStyle>,
 }
@@ -513,19 +565,34 @@ impl Default for SpecTheme {
             round_start: true,
             round_end: true,
             round_radius: 3.,
-            line_thickness: 0.3,
+            line_thickness_px: 1.,
             line_color: line_color.to_string(),
             ..SpecObbox::default()
         };
         return SpecTheme {
             background: "#2b2b2b".to_string(),
             cursor: obbox("#ffffff"),
+            details_background: "#19191980".to_string(),
             font_family: "monospace".to_string(),
             font_size: 4.,
             hover: obbox("#888888"),
             icon_color: "#e0c060".to_string(),
+            line_gap: 0.,
+            spacing: SpecSpacing::default(),
             text_color: "#cacaca".to_string(),
-            text_styles: BTreeMap::from([("invalid".to_string(), default_invalid_style())]),
+            text_styles: BTreeMap::from(
+                [
+                    ("ai_assistant", "#b4c6ec"),
+                    ("ai_code", "#79bf97"),
+                    ("ai_error", "#ff5555"),
+                    ("ai_heading", "#8fb4ff"),
+                    ("ai_link", "#7dd4fb"),
+                    ("ai_user", "#e6d3a3"),
+                ].map(|(name, color)| (name.to_string(), SpecTextStyle {
+                    color: color.to_string(),
+                    ..default_invalid_style()
+                })),
+            ),
         };
     }
 }

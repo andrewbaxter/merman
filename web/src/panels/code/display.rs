@@ -20,7 +20,10 @@ use {
         el,
         el_from_raw,
     },
-    std::collections::HashMap,
+    std::{
+        collections::HashMap,
+        rc::Rc,
+    },
     wasm_bindgen::JsCast,
     web_sys::{
         CanvasRenderingContext2d,
@@ -36,6 +39,7 @@ pub fn display_el(class: &str) -> El {
 pub struct DisplayWeb {
     pub background: El,
     pub convert: DirectionConvert,
+    pub details: Rc<dyn Fn() -> El>,
     pub measure: El,
     pub measure_font: String,
     pub metrics: HashMap<String, FontMetrics>,
@@ -56,7 +60,7 @@ impl DisplayWeb {
             ),
             Kind::Blank => (Vector::new(n.converse, 0.), Vector::new(n.converse_span, n.ascent + n.descent)),
             Kind::Drawing(size) => (Vector::new(n.converse, n.transverse), *size),
-            Kind::Group | Kind::Image => (
+            Kind::Details | Kind::Group | Kind::Image => (
                 Vector::new(n.converse, n.transverse),
                 Vector::new(n.converse_span, n.ascent + n.descent),
             ),
@@ -153,6 +157,20 @@ impl DisplayWeb {
 impl Display for DisplayWeb {
     fn display_blank(&mut self) -> DisplayNodeId {
         return self.new_node(display_el("merman_display_blank"), Kind::Blank);
+    }
+
+    fn display_details(&mut self) -> (DisplayNodeId, f64) {
+        let element = display_el("merman_display_details").push((self.details)());
+        let raw = element.raw();
+        _ = self.root.raw().append_child(&raw);
+        let rect = raw.get_bounding_client_rect();
+        raw.remove();
+        let (converse_span, transverse_span) = self.convert.direction_convert_span(rect.width(), rect.height());
+        let node = self.new_node(element, Kind::Details);
+        let n = self.nodes[node].as_mut().unwrap();
+        n.converse_span = converse_span;
+        n.ascent = transverse_span;
+        return (node, transverse_span);
     }
 
     fn display_destroy(&mut self, node: DisplayNodeId) {
@@ -252,7 +270,7 @@ impl Display for DisplayWeb {
         let mut offset = Vector::default();
         let mut line_color = String::from("none");
         let mut fill_color = String::from("none");
-        let mut thickness = 1.;
+        let mut thickness: f64 = 1.;
         let mut cap = "butt";
         let mut fill = false;
         let mut data = String::new();
@@ -286,15 +304,21 @@ impl Display for DisplayWeb {
                 );
                 data.clear();
             };
-        let point = |v: Vector, offset: Vector| -> (f64, f64) {
-            return convert.direction_unconvert(
-                v.converse + offset.converse,
-                v.transverse + offset.transverse,
-                0.,
-                0.,
-            );
+        let point = |v: Vector, offset: Vector, centered: bool| -> (f64, f64) {
+            if !centered {
+                return convert.direction_unconvert(
+                    v.converse + offset.converse,
+                    v.transverse + offset.transverse,
+                    0.,
+                    0.,
+                );
+            }
+            let (x, y) =
+                convert.direction_unconvert(v.converse + offset.converse, v.transverse + offset.transverse, 1., 1.);
+            return (x + 0.5, y + 0.5);
         };
         for command in commands {
+            let centered = !fill && thickness.round() % 2. == 1.;
             match command {
                 DrawCommand::Translate(v) => offset = *v,
                 DrawCommand::SetLineColor(c) => line_color = c.clone(),
@@ -311,22 +335,22 @@ impl Display for DisplayWeb {
                     fill = true;
                 },
                 DrawCommand::MoveTo(v) => {
-                    current = point(*v, offset);
+                    current = point(*v, offset, centered);
                     data.push_str(&format!("M {} {} ", current.0, current.1));
                 },
                 DrawCommand::LineTo(v) => {
-                    current = point(*v, offset);
+                    current = point(*v, offset, centered);
                     data.push_str(&format!("L {} {} ", current.0, current.1));
                 },
                 DrawCommand::SplineTo { handle1, handle2, to } => {
-                    let h1 = point(*handle1, offset);
-                    let h2 = point(*handle2, offset);
-                    current = point(*to, offset);
+                    let h1 = point(*handle1, offset, centered);
+                    let h2 = point(*handle2, offset, centered);
+                    current = point(*to, offset, centered);
                     data.push_str(&format!("C {} {} {} {} {} {} ", h1.0, h1.1, h2.0, h2.1, current.0, current.1));
                 },
                 DrawCommand::ArcTo { corner, to, radius } => {
-                    let corner = point(*corner, offset);
-                    let to = point(*to, offset);
+                    let corner = point(*corner, offset, centered);
+                    let to = point(*to, offset, centered);
                     if *radius <= 0. {
                         data.push_str(&format!("L {} {} ", corner.0, corner.1));
                         current = corner;
@@ -456,7 +480,7 @@ impl Display for DisplayWeb {
             n.descent = descent;
         }
         match self.nodes[node].as_ref() {
-            Some(Node { kind: Kind::Blank, el, .. }) => {
+            Some(Node { kind: Kind::Blank | Kind::Details, el, .. }) => {
                 let (x_span, y_span) = self.convert.direction_unconvert_span(converse_span, ascent + descent);
                 set_style(el, "width", &format!("{}px", x_span));
                 set_style(el, "height", &format!("{}px", y_span));
@@ -519,6 +543,7 @@ impl Display for DisplayWeb {
 
 enum Kind {
     Blank,
+    Details,
     Drawing(Vector),
     Group,
     Image,

@@ -2,6 +2,7 @@ pub use merman_core::keys::SpecKeys;
 use {
     merman_core::spec::{
         SpecObbox,
+        SpecSpacing,
         SpecTextStyle,
         SpecTheme,
     },
@@ -50,6 +51,9 @@ pub fn config_load(dir: &Path, cwd: &Path) -> Result<Config, loga::Error> {
     let mut font_size = None;
     let mut hover = None;
     let mut icon_color = None;
+    let mut details_background = None;
+    let mut line_gap = None;
+    let mut spacing = None;
     let mut text_color = None;
     let mut text_styles = BTreeMap::new();
     let dirs = {
@@ -107,6 +111,9 @@ pub fn config_load(dir: &Path, cwd: &Path) -> Result<Config, loga::Error> {
             font_size = font_size.or(spec.font_size);
             hover = hover.or(spec.hover);
             icon_color = icon_color.or(spec.icon_color);
+            details_background = details_background.or(spec.details_background);
+            line_gap = line_gap.or(spec.line_gap);
+            spacing = spacing.or(spec.spacing);
             text_color = text_color.or(spec.text_color);
             for (name, style) in spec.text_styles {
                 text_styles.entry(name).or_insert(style);
@@ -127,6 +134,9 @@ pub fn config_load(dir: &Path, cwd: &Path) -> Result<Config, loga::Error> {
                 font_size: font_size.unwrap_or(default.font_size),
                 hover: hover.unwrap_or(default.hover),
                 icon_color: icon_color.unwrap_or(default.icon_color),
+                details_background: details_background.unwrap_or(default.details_background),
+                line_gap: line_gap.unwrap_or(default.line_gap),
+                spacing: spacing.unwrap_or(default.spacing),
                 text_color: text_color.unwrap_or(default.text_color),
                 text_styles: {
                     let mut text_styles = text_styles;
@@ -154,6 +164,7 @@ pub fn normalize_ext(ext: &str) -> String {
 pub struct SpecConfig {
     pub background: Option<String>,
     pub cursor: Option<SpecObbox>,
+    pub details_background: Option<String>,
     #[serde(default)]
     pub extensions: HashMap<String, PathBuf>,
     pub font_family: Option<String>,
@@ -162,6 +173,8 @@ pub struct SpecConfig {
     pub icon_color: Option<String>,
     #[serde(default)]
     pub keys: SpecKeys,
+    pub line_gap: Option<f64>,
+    pub spacing: Option<SpecSpacing>,
     pub text_color: Option<String>,
     #[serde(default)]
     pub text_styles: BTreeMap<String, SpecTextStyle>,

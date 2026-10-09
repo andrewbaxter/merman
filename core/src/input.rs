@@ -290,6 +290,10 @@ impl Context {
                         let atom = self.visual_atom(visual).atom;
                         return self.atom_parent_select_field(atom);
                     },
+                    Action::ExitToArray => {
+                        let atom = self.visual_atom(visual).atom;
+                        return self.atom_ancestor_select_array(atom);
+                    },
                     Action::NextElement => return select(self, (index + 1) % count),
                     Action::PreviousElement => return select(self, (index + count - 1) % count),
                     Action::Copy => {
@@ -357,6 +361,10 @@ impl Context {
                     Action::Exit => {
                         let (atom, field) = self.array_field(visual);
                         return self.field_parent_select_parent(atom, &field);
+                    },
+                    Action::ExitToArray => {
+                        let (atom, _) = self.array_field(visual);
+                        return self.atom_ancestor_select_array(atom);
                     },
                     Action::NextElement => return position(self, (end + 1) % count),
                     Action::PreviousElement => return position(self, (begin + count - 1) % count),
@@ -465,6 +473,13 @@ impl Context {
                         }
                         let (atom, field) = self.primitive_field(visual);
                         return self.field_parent_select_parent(atom, &field);
+                    },
+                    Action::ExitToArray => {
+                        if self.config.editable && self.gap_cursor().is_some() {
+                            return self.gap_exit();
+                        }
+                        let (atom, _) = self.primitive_field(visual);
+                        return self.atom_ancestor_select_array(atom);
                     },
                     Action::GatherFirst => return set_begin(self, 0),
                     Action::GatherLast => return set_end(self, text.len()),

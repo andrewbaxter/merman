@@ -892,7 +892,7 @@ impl Context {
     }
 
     pub fn course_transverse_span(&self, c: CourseId) -> f64 {
-        return self.courses[c].ascent + self.courses[c].descent;
+        return self.courses[c].ascent + self.courses[c].descent + self.syntax.spec_root.course_transverse_gap;
     }
 
     fn expand_ordered(&self, a: VisualId, b: VisualId) -> bool {

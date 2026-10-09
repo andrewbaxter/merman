@@ -227,6 +227,26 @@ fn moves_through_an_array_and_into_atoms() {
 }
 
 #[test]
+fn exits_to_the_nearest_enclosing_array() {
+    let (mut ctx, _display, _environment) = json_context(Keymap::default());
+    for key in ['j', 'l', 'j', 'l', 'j', 'l'] {
+        press_char(&mut ctx, key);
+    }
+    assert_eq!(
+        path(&ctx),
+        vec!["named", "value", "named", "entries", "1", "named", "value", "named", "elements", "0"]
+    );
+    assert!(press(&mut ctx, KeyName::Char('h'), true));
+    assert_eq!(path(&ctx), vec!["named", "value", "named", "entries", "1"]);
+    press_char(&mut ctx, 'l');
+    press_char(&mut ctx, 'j');
+    assert_eq!(path(&ctx), vec!["named", "value", "named", "entries", "1", "named", "value"]);
+    assert!(press(&mut ctx, KeyName::Char('h'), true));
+    assert_eq!(path(&ctx), vec!["named", "value", "named", "entries", "1"]);
+    assert!(!press(&mut ctx, KeyName::Char('h'), true), "no array encloses the root's entries");
+}
+
+#[test]
 fn moves_through_text_by_glyph_and_word() {
     let (mut ctx, _display, environment) = json_context(Keymap::default());
     for key in ['j', 'l', 'l', 'l'] {
@@ -417,8 +437,8 @@ fn unusable_bindings_are_reported() {
         array: HashMap::from(
             [
                 ("nxt".to_string(), vec![parse_binding(r#"{"key": "n"}"#)]),
-                ("next_element".to_string(), vec![parse_binding(r#"{"key": "escape"}"#)]),
-                ("previous_element".to_string(), vec![parse_binding(r#"{"key": "escape"}"#)]),
+                ("next_element".to_string(), vec![parse_binding(r#"{"key": "insert"}"#)]),
+                ("previous_element".to_string(), vec![parse_binding(r#"{"key": "insert"}"#)]),
                 ("copy".to_string(), vec![parse_binding(r#"{"key": "g"}"#)]),
                 ("first_element".to_string(), vec![parse_binding(r#"[{"key": "g"}, {"key": "g"}]"#)]),
             ],

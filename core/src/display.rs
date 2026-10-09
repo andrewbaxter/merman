@@ -12,6 +12,7 @@ use {
 
 pub trait Display {
     fn display_blank(&mut self) -> DisplayNodeId;
+    fn display_details(&mut self) -> (DisplayNodeId, f64);
     fn display_destroy(&mut self, node: DisplayNodeId);
     fn display_drawing(&mut self) -> DisplayNodeId;
     fn display_font_metrics(&mut self, font: &FontSpec) -> FontMetrics;
@@ -60,6 +61,10 @@ pub type DisplayNodeId = usize;
 pub struct DisplayTest(pub std::rc::Rc<std::cell::RefCell<DisplayTestState>>);
 
 impl DisplayTest {
+    pub fn display_test_children(&self, group: DisplayNodeId) -> Vec<DisplayNodeId> {
+        return self.0.borrow().children(group);
+    }
+
     pub fn display_test_drawings(&self) -> usize {
         let s = self.0.borrow();
         return s.nodes.iter().flatten().filter(|n| matches!(n.kind, TestKind::Drawing(true))).count();
@@ -107,6 +112,10 @@ impl DisplayTest {
 impl Display for DisplayTest {
     fn display_blank(&mut self) -> DisplayNodeId {
         return self.0.borrow_mut().new_node(TestKind::Blank);
+    }
+
+    fn display_details(&mut self) -> (DisplayNodeId, f64) {
+        return (self.0.borrow_mut().new_node(TestKind::Blank), 10.);
     }
 
     fn display_destroy(&mut self, node: DisplayNodeId) {
@@ -318,7 +327,7 @@ pub fn obbox_commands(points: &[(Vector, bool)], style: &SpecObbox) -> Vec<DrawC
     if style.line {
         out.push(DrawCommand::BeginStrokePath);
         out.push(DrawCommand::SetLineColor(style.line_color.clone()));
-        out.push(DrawCommand::SetLineThickness(style.line_thickness));
+        out.push(DrawCommand::SetLineThickness(style.line_thickness_px));
         obbox_path(points, style, &mut out);
         out.push(DrawCommand::ClosePath);
     }

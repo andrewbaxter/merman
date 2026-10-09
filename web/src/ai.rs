@@ -5,8 +5,13 @@ use {
             Panel,
             PanelChange,
             PanelResult,
+            models::ModelsPanel,
             panel_key_stroke,
             sessions::SessionsPanel,
+            toolbar::{
+                toolbar_action,
+                toolbar_new,
+            },
         },
     },
     gloo_render::{
@@ -32,6 +37,12 @@ use {
             Keymap,
         },
         spec::SpecDirection,
+    },
+    pulldown_cmark::{
+        Event as MdEvent,
+        Options,
+        Parser,
+        Tag,
     },
     rooting::{
         El,
@@ -73,7 +84,6 @@ pub struct Ai {
     older: El,
     open: RefCell<HashSet<usize>>,
     start: Cell<usize>,
-    pub status: El,
     stick: Cell<bool>,
     this: Weak<Ai>,
 }
@@ -83,6 +93,27 @@ impl Ai {
         let input = html(&self.input);
         input.set_inner_text(&format!("{}{}", input.inner_text(), text));
         self.ai_focus();
+        return;
+    }
+
+    fn ai_clear(self: &Rc<Self>) {
+        wasm_bindgen_futures::spawn_local({
+            let ai = self.clone();
+            async move {
+                if let Err(e) = client_send(ReqAiClear {}).await {
+                    ai.ai_message(AiMessage {
+                        role: AiRole::System,
+                        text: e,
+                        time: js_sys::Date::now() as u64,
+                    });
+                    return;
+                }
+                ai.messages.borrow_mut().clear();
+                ai.open.borrow_mut().clear();
+                ai.history.set(false);
+                ai.ai_render(false);
+            }
+        });
         return;
     }
 
@@ -125,20 +156,27 @@ impl Ai {
     }
 
     pub fn ai_new(keys: Keymap) -> Rc<Ai> {
-        let icon = el("span").classes(&["merman_status_icon"]).attr("hidden", "");
-        let status = el("div").classes(&["merman_status"]).push(icon.clone());
+        let icon = el("span").classes(&["merman_status_icon"]);
+        let toolbar =
+            toolbar_new(
+                &[
+                    ("clear", "\u{e0b8}", "Clear: start a new session"),
+                    ("compact", "\u{e94d}", "Compact: summarize the session so far to free up context"),
+                    ("sessions", "\u{e889}", "Session: resume an earlier session"),
+                    ("model", "\u{ea4a}", "Model: choose the model"),
+                ],
+            );
         let older = el("div").classes(&["merman_ai_older"]).attr("hidden", "");
         let messages_el = el("div").classes(&["merman_ai_messages"]);
         let log = el("div").classes(&["merman_ai_log"]).push(older.clone()).push(messages_el.clone());
         let input = el("div").classes(&["merman_ai_input"]).attr("contenteditable", "true");
-        let element = el("div").classes(&["merman_ai"]).push(log.clone()).push(input.clone());
+        let element = el("div").classes(&["merman_ai"]).push(toolbar).push(log.clone()).push(input.clone());
         let ai = Rc::new_cyclic(|this| Ai {
             attach_frame: RefCell::new(None),
             element: element,
             focused: Cell::new(false),
             start: Cell::new(0),
             stick: Cell::new(true),
-            status: status,
             icon: icon.clone(),
             log: log.clone(),
             older: older.clone(),
@@ -182,6 +220,7 @@ impl Ai {
                 ai.ai_scroll();
             }
         });
+        ai.ai_status(AiStatus::Off);
         ai.ai_load();
         return ai;
     }
@@ -266,10 +305,40 @@ impl Ai {
                 });
                 return details;
             }
-            return el("div")
-                .classes(&["merman_ai_msg", role])
-                .push(time)
-                .push(el("span").classes(&["merman_ai_text"]).text(&m.text));
+            let text = el("span").classes(&["merman_ai_text"]);
+            if m.role == AiRole::System {
+                text.ref_text(&m.text);
+                return el("div").classes(&["merman_ai_msg", role]).push(time).push(text);
+            }
+            let mut marks = vec![];
+            for (event, range) in Parser::new_ext(&m.text, Options::ENABLE_STRIKETHROUGH).into_offset_iter() {
+                let class = match event {
+                    MdEvent::Start(Tag::Heading { .. }) => "merman_md_heading",
+                    MdEvent::Start(Tag::CodeBlock(_)) | MdEvent::Code(_) => "merman_md_code",
+                    MdEvent::Start(Tag::Link { .. }) => "merman_md_link",
+                    MdEvent::Start(Tag::Emphasis) => "merman_md_emphasis",
+                    MdEvent::Start(Tag::Strong) => "merman_md_strong",
+                    _ => continue,
+                };
+                marks.push((range, class));
+            }
+            let mut cuts = vec![0, m.text.len()];
+            for (range, _) in &marks {
+                cuts.push(range.start);
+                cuts.push(range.end);
+            }
+            cuts.sort();
+            cuts.dedup();
+            for cut in cuts.windows(2) {
+                let classes =
+                    marks
+                        .iter()
+                        .filter(|(range, _)| range.start <= cut[0] && cut[1] <= range.end)
+                        .map(|(_, class)| *class)
+                        .collect::<Vec<_>>();
+                text.ref_push(el("span").classes(&classes).text(&m.text[cut[0] .. cut[1]]));
+            }
+            return el("div").classes(&["merman_ai_msg", role]).push(time).push(text);
         }).collect::<Vec<_>>();
         self.messages_el.ref_clear();
         self.messages_el.ref_extend(rows);
@@ -285,22 +354,37 @@ impl Ai {
         return;
     }
 
+    pub fn ai_send(self: &Rc<Self>, text: String) {
+        wasm_bindgen_futures::spawn_local({
+            let ai = self.clone();
+            async move {
+                if let Err(e) = client_send(ReqAiSend { text: text }).await {
+                    ai.ai_message(AiMessage {
+                        role: AiRole::System,
+                        text: e,
+                        time: js_sys::Date::now() as u64,
+                    });
+                }
+            }
+        });
+        return;
+    }
+
+    fn ai_sessions(&self) -> PanelResult {
+        return PanelResult::Open(Rc::new(SessionsPanel::sessions_new(self.keys.clone(), self.this.clone())));
+    }
+
     pub fn ai_status(&self, status: AiStatus) {
-        match status {
-            AiStatus::Off => {
-                self.icon.ref_attr("hidden", "");
-            },
-            AiStatus::Thinking => {
-                self.icon.ref_remove_attr("hidden").ref_text("\u{e88b}").ref_attr("title", "Claude is thinking");
-            },
-            AiStatus::Waiting => {
-                self
-                    .icon
-                    .ref_remove_attr("hidden")
-                    .ref_text("\u{e0b7}")
-                    .ref_attr("title", "Claude is waiting for you");
-            },
-        }
+        let (glyph, title) = match status {
+            AiStatus::Off => ("\u{e0ca}", "No Claude session"),
+            AiStatus::Thinking => ("\u{e88b}", "Claude is thinking"),
+            AiStatus::Waiting => ("\u{e0b7}", "Claude is waiting for you"),
+        };
+        self
+            .icon
+            .ref_text(glyph)
+            .ref_attr("title", title)
+            .ref_modify_classes(&[("merman_status_off", status == AiStatus::Off)]);
         return;
     }
 }
@@ -358,57 +442,40 @@ impl Panel for Ai {
                 return PanelResult::Used;
             };
             if text == "/clear" {
-                wasm_bindgen_futures::spawn_local({
-                    let ai = ai.clone();
-                    async move {
-                        if let Err(e) = client_send(ReqAiClear {}).await {
-                            ai.ai_message(AiMessage {
-                                role: AiRole::System,
-                                text: e,
-                                time: js_sys::Date::now() as u64,
-                            });
-                            return;
-                        }
-                        ai.messages.borrow_mut().clear();
-                        ai.open.borrow_mut().clear();
-                        ai.history.set(false);
-                        ai.ai_render(false);
-                    }
-                });
+                ai.ai_clear();
                 return PanelResult::Used;
             }
             if text == "/resume" {
-                return PanelResult::Open(
-                    Rc::new(SessionsPanel::sessions_new(self.keys.clone(), self.this.clone())),
-                );
+                return self.ai_sessions();
             }
-            wasm_bindgen_futures::spawn_local({
-                let ai = ai.clone();
-                async move {
-                    if let Err(e) = client_send(ReqAiSend { text: text }).await {
-                        ai.ai_message(AiMessage {
-                            role: AiRole::System,
-                            text: e,
-                            time: js_sys::Date::now() as u64,
-                        });
-                    }
-                }
-            });
+            ai.ai_send(text);
             return PanelResult::Used;
         }
         let Some(stroke) =
             panel_key_stroke(e, DirectionConvert::new(SpecDirection::Right, SpecDirection::Down)) else {
                 return PanelResult::Ignored;
             };
-        let KeyResolve::Action(Action::Exit) =
+        let KeyResolve::Action(action @ (Action::Exit | Action::HistoryBack | Action::HistoryForward)) =
             self.keys.keymap_read(&mut vec![], stroke, Some(CursorKind::Primitive), false) else {
                 return PanelResult::Ignored;
             };
-        return PanelResult::Unused(Action::Exit);
+        return PanelResult::Unused(action);
     }
 
-    fn panel_mouse(&self, _e: &MouseEvent) -> PanelResult {
-        return PanelResult::Ignored;
+    fn panel_mouse(&self, e: &MouseEvent) -> PanelResult {
+        let Some(ai) = self.this.upgrade() else {
+            return PanelResult::Ignored;
+        };
+        match toolbar_action(e).as_deref() {
+            Some("clear") => ai.ai_clear(),
+            Some("compact") => ai.ai_send("/compact".to_string()),
+            Some("sessions") => return self.ai_sessions(),
+            Some("model") => return PanelResult::Open(
+                Rc::new(ModelsPanel::models_new(self.keys.clone(), self.this.clone())),
+            ),
+            _ => return PanelResult::Ignored,
+        }
+        return PanelResult::Used;
     }
 
     fn panel_parent(&self) -> Option<String> {
@@ -423,12 +490,14 @@ impl Panel for Ai {
         return None;
     }
 
+    fn panel_select(&self, _location: &str) { }
+
     fn panel_selection(&self) -> Option<(bool, String)> {
         return None;
     }
 
     fn panel_size(&self) -> f64 {
-        return 3.;
+        return 30.;
     }
 }
 

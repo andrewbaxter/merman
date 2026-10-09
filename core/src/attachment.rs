@@ -59,9 +59,10 @@ pub struct Drawing {
     pub node: DisplayNodeId,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum DrawingLayer {
     Background,
+    Hover,
     Overlay,
 }
 
@@ -213,6 +214,7 @@ impl Context {
                 let old = self.scroll_start;
                 self.scroll_start = transverse;
                 self.scroll_end += self.scroll_start - old;
+                self.details_place();
                 self.scroll_visible();
             },
         }
@@ -242,6 +244,7 @@ impl Context {
             },
             AttachmentRef::Cornerstone => {
                 self.scroll_end = self.scroll_start + ascent + descent;
+                self.details_place();
                 self.scroll_visible();
             },
         }
@@ -260,8 +263,8 @@ impl Context {
         self.drawing_remove(border.drawing);
     }
 
-    pub fn border_new(&mut self, style: SpecObbox) -> BorderId {
-        let drawing = self.drawing_new(DrawingLayer::Background);
+    pub fn border_new(&mut self, style: SpecObbox, layer: DrawingLayer) -> BorderId {
+        let drawing = self.drawing_new(layer);
         let id = self.borders.len();
         self.borders.push(Some(Border {
             first: None,
@@ -366,17 +369,17 @@ impl Context {
         let converse_offset = self.brick_text_get_converse_offset(brick, index);
         let position =
             Vector::new(
-                start_converse + converse_offset + offset.converse,
-                start_transverse + ascent + offset.transverse,
+                (start_converse + converse_offset + offset.converse).round(),
+                (start_transverse + ascent + offset.transverse).round(),
             );
-        let half_buffer = (style.line_thickness / 2. + 0.5).floor();
+        let half_buffer = (style.line_thickness_px / 2. + 0.5).floor();
         let node = self.drawings[drawing].as_ref().unwrap().node;
         self.display.drawing_clear(node);
         self.display.drawing_resize(node, size);
         self.display.node_set_position(node, position.converse, position.transverse, false);
         let mut commands =
             vec![
-                DrawCommand::SetLineThickness(style.line_thickness),
+                DrawCommand::SetLineThickness(style.line_thickness_px),
                 if style.round_start {
                     DrawCommand::SetLineCapRound
                 } else {
@@ -410,7 +413,7 @@ impl Context {
                 let ascent = (self.bricks[brick].ascent * 1.8).floor();
                 let descent = (self.bricks[brick].descent * 1.8).floor();
                 let caret = self.carets[c].as_mut().unwrap();
-                let half_buffer = (caret.style.line_thickness / 2. + 0.5).floor();
+                let half_buffer = (caret.style.line_thickness_px / 2. + 0.5).floor();
                 let buffer = half_buffer * 2.;
                 caret.size = Vector::new(buffer + 1., ascent + if caret.style.round_start {
                     buffer
@@ -430,7 +433,7 @@ impl Context {
 
     fn drawing_layer_group(&self, layer: DrawingLayer) -> DisplayNodeId {
         match layer {
-            DrawingLayer::Background => return self.background_layer,
+            DrawingLayer::Background | DrawingLayer::Hover => return self.background_layer,
             DrawingLayer::Overlay => return self.overlay_layer,
         }
     }
@@ -439,7 +442,13 @@ impl Context {
         let id = self.drawings.len();
         let node = self.display.display_drawing();
         let group = self.drawing_layer_group(layer);
-        let at = self.drawings.iter().flatten().filter(|d| d.layer == layer).count();
+        let at =
+            self
+                .drawings
+                .iter()
+                .flatten()
+                .filter(|d| self.drawing_layer_group(d.layer) == group && d.layer <= layer)
+                .count();
         self.display.group_add(group, at, node);
         self.drawings.push(Some(Drawing {
             layer: layer,
@@ -463,7 +472,7 @@ impl Context {
         if points.is_empty() {
             return;
         }
-        let buffer = (style.line_thickness + 1.).floor();
+        let buffer = (style.line_thickness_px + 1.).floor();
         let points =
             points
                 .iter()

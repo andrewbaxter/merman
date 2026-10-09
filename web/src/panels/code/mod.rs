@@ -16,6 +16,10 @@ use {
             conflict::ConflictPanel,
             error::ErrorPanel,
             panel_key_stroke,
+            toolbar::{
+                toolbar_action,
+                toolbar_new,
+            },
         },
     },
     gloo_events::{
@@ -81,6 +85,7 @@ use {
     wasm_bindgen::JsCast,
     wasm_bindgen_futures::JsFuture,
     web_sys::{
+        Element,
         KeyboardEvent,
         MouseEvent,
         WheelEvent,
@@ -99,7 +104,7 @@ fn after_context(state: &Rc<RefCell<State>>) {
             let converse_edge = context.display.group_converse_span(context.text_layer);
             let (t_min, t_max) = context.wall_usage;
             let (x_span, y_span) = convert.direction_unconvert_span(converse_edge.max(edge), t_max - t_min);
-            let new_origin = convert.direction_unconvert(0., 0., x_span, y_span);
+            let new_origin = convert.direction_unconvert(0., 0., x_span.round(), y_span.round());
             if s.origin != new_origin {
                 s.origin = new_origin;
                 s.shift.ref_attr("style", &format!("left: {}px; top: {}px", -new_origin.0, -new_origin.1));
@@ -159,6 +164,14 @@ fn code_after_edit(state: &Rc<RefCell<State>>) -> Option<PanelResult> {
     };
     code_pump(state);
     return out;
+}
+
+fn code_in_details(e: &MouseEvent) -> bool {
+    return e
+        .target()
+        .and_then(|t| t.dyn_into::<Element>().ok())
+        .and_then(|t| t.closest(".merman_display_details").ok().flatten())
+        .is_some();
 }
 
 fn code_host(state: &Rc<RefCell<State>>, result: PanelResult) {
@@ -544,6 +557,9 @@ impl CodePanel {
                         return;
                     };
                     let e: &MouseEvent = e.dyn_ref().unwrap();
+                    if code_in_details(e) {
+                        return;
+                    }
                     let point = {
                         let s = state.borrow();
                         let local = (e.offset_x() as f64 + s.origin.0, e.offset_y() as f64 + s.origin.1);
@@ -603,7 +619,7 @@ impl CodePanel {
                                 return;
                             };
                             let e: &MouseEvent = e.dyn_ref().unwrap();
-                            if e.button() != 0 {
+                            if e.button() != 0 || code_in_details(e) {
                                 return;
                             }
                             e.prevent_default();
@@ -673,12 +689,18 @@ impl Panel for CodePanel {
         {
             let mut s = self.0.borrow_mut();
             s.focused = focused;
-            let State { context, select, .. } = &mut *s;
+            let State { context, select, edit, .. } = &mut *s;
             if let Some(ctx) = context.as_mut() {
                 if !focused {
                     ctx.clear_cursor();
-                } else if ctx.cursor.is_none() {
-                    select_initial(ctx, select);
+                    ctx.details_close();
+                } else {
+                    if ctx.cursor.is_none() {
+                        select_initial(ctx, select);
+                    }
+                    if edit.is_some() {
+                        ctx.details_open();
+                    }
                 }
             }
         }
@@ -776,7 +798,10 @@ impl Panel for CodePanel {
         return choices.unwrap_or(result);
     }
 
-    fn panel_mouse(&self, _e: &MouseEvent) -> PanelResult {
+    fn panel_mouse(&self, e: &MouseEvent) -> PanelResult {
+        if toolbar_action(e).as_deref() == Some("ai") {
+            return PanelResult::Unused(Action::AiOpenReference);
+        }
         return PanelResult::Ignored;
     }
 
@@ -792,12 +817,25 @@ impl Panel for CodePanel {
         return Some(format!("{}{}", self.panel_path(), self.panel_cursor_reference()?));
     }
 
+    fn panel_select(&self, location: &str) {
+        with_context(&self.0, |ctx| {
+            if let Ok(reference) = Reference::reference_parse(location) {
+                ctx.cursor_select_reference(&reference);
+            }
+        });
+        let mut s = self.0.borrow_mut();
+        if s.context.is_none() {
+            s.select = Some(location.to_string());
+        }
+        return;
+    }
+
     fn panel_selection(&self) -> Option<(bool, String)> {
         return None;
     }
 
     fn panel_size(&self) -> f64 {
-        return 5.;
+        return 30.;
     }
 }
 
@@ -883,8 +921,22 @@ impl State {
         let Some(document) = self.document.take() else {
             return;
         };
+        let (inset_x, inset_y) =
+            convert.direction_unconvert(self.syntax.spec_root.pad.converse_start.round(), 0., 0., 0.);
         let display = DisplayWeb {
             convert: convert,
+            details: Rc::new(move || {
+                return toolbar_new(
+                    &[("ai", "\u{e0ca}", "Ask Claude about the cursor's location")],
+                ).attr(
+                    "style",
+                    &format!(
+                        "position: relative; left: max(0px, calc({}px - var(--merman-spacing-details))); top: {}px",
+                        inset_x,
+                        inset_y
+                    ),
+                );
+            }),
             root: self.shift.clone(),
             background: self.panel.clone(),
             nodes: vec![],
@@ -901,6 +953,9 @@ impl State {
         }, Box::new(display), Box::new(EnvironmentWeb), converse, transverse);
         if self.focused {
             select_initial(&mut ctx, &mut self.select);
+            if self.edit.is_some() {
+                ctx.details_open();
+            }
         }
         self.context = Some(ctx);
     }

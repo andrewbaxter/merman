@@ -40,6 +40,7 @@ uuid = { version = "1.26.1", features = ["v4"] }
 notify-rust = { version = "4.18.0", default-features = false, features = ["z-with-tokio"] }
 good-ormning = { version = "0.5.16", features = ["sqlite"] }
 rusqlite = "0.37"
+zstd = "0.13"
 
 [build-dependencies]
 good-ormning = { version = "0.5.16", features = ["sqlite"] }

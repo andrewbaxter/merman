@@ -47,6 +47,7 @@ pub fn theme() -> SpecTheme {
         text_styles: serde_json::from_str(r##"{
           "keyword": {"color": "#e66ea5"},
           "identifier": {"color": "#d8c3ff"},
+          "binding": {"color": "#ffb86c"},
           "literal": {"color": "#79bf97"},
           "literal_symbol": {"color": "#79bf97"},
           "label": {"color": "#557fde"},

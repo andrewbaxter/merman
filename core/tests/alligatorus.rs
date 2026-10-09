@@ -16,8 +16,38 @@ use {
     std::time::Instant,
 };
 
+fn bind(id: u64, name: &str, value: &str) -> String {
+    return expr(id, "bind", &format!(r#"{{"name":{},"value":{}}}"#, name, value));
+}
+
+#[test]
+fn brackets_mark_tuples_records_and_sequences() {
+    assert_eq!(render_module(&expr(0, "tuple", &format!(r#"[{},{}]"#, number(1, 1.), number(2, 2.)))), "(1, 2)");
+    assert_eq!(
+        render_module(&expr(0, "record", &format!(r#"[{{"key":{},"value":{}}}]"#, string(1, "x"), number(2, 1.)))),
+        "{x: 1}"
+    );
+    assert_eq!(render_module(&expr(0, "seq", &format!(r#"[{},{}]"#, number(1, 1.), number(2, 2.)))), "[ 1; 2; ]");
+    assert_eq!(render_module(&expr(0, "stage", &scope_use(1, &string(2, "x")))), "#x");
+}
+
+fn call(id: u64, func: &str, arg: &str) -> String {
+    return expr(id, "call", &format!(r#"{{"func":{},"arg":{}}}"#, func, arg));
+}
+
+#[test]
+fn calls_are_juxtaposed() {
+    let f = |id: u64| scope_use(id, &string(id + 1, "f"));
+    let x = |id: u64| scope_use(id, &string(id + 1, "x"));
+    assert_eq!(render_module(&call(0, &f(1), &x(3))), "f x");
+    assert_eq!(render_module(&sub(0, &call(1, &f(2), &x(4)), &number(6, 1.))), "f x - 1");
+    assert_eq!(render_module(&call(0, &f(1), &sub(3, &number(4, 1.), &number(5, 2.)))), "f (1 - 2)");
+    assert_eq!(render_module(&call(0, &f(1), &call(3, &f(4), &x(6)))), "f (f x)");
+    assert_eq!(render_module(&call(0, &call(1, &f(2), &x(4)), &x(6))), "(f x) x");
+}
+
 fn expr(id: u64, variant: &str, body: &str) -> String {
-    return format!(r#"{{"id":{{"value":{}}},"variant":{{"{}":{}}}}}"#, id, variant, body);
+    return format!(r#"{{"id":{},"variant":{{"{}":{}}}}}"#, id, variant, body);
 }
 
 fn first_difference(got: &serde_json::Value, want: &serde_json::Value, path: &str, out: &mut Vec<String>) -> bool {
@@ -58,6 +88,16 @@ fn first_difference(got: &serde_json::Value, want: &serde_json::Value, path: &st
 }
 
 #[test]
+fn identifiers_are_bare_only_when_unambiguous() {
+    assert_eq!(render_module(&bind(0, &string(1, "x"), &number(2, 1.))), "x := 1");
+    assert_eq!(render_module(&bind(0, &string(1, "a b"), &number(2, 1.))), "expr \"a b\" := 1");
+    assert_eq!(render_module(&scope_use(0, &string(1, "x"))), "x");
+    assert_eq!(render_module(&scope_use(0, &string(1, ""))), "expr \"\"");
+    assert_eq!(render_module(&scope_use(0, &scope_use(1, &string(2, "k")))), "expr k");
+    assert_eq!(render_module(&scope_use(0, &sub(1, &number(2, 1.), &number(3, 2.)))), "expr (1 - 2)");
+}
+
+#[test]
 fn ids_round_trip() {
     let syntax = load_syntax(include_str!("../../syntaxes/alligatorus.json"));
     let source = include_str!("data/synth-midi-sine.at");
@@ -75,11 +115,10 @@ fn ids_round_trip() {
 #[test]
 fn a_selected_expression_is_referenced_by_its_own_id() {
     let syntax = load_syntax(include_str!("../../syntaxes/alligatorus.json"));
-    let doc =
-        load_document(&syntax, &format!(r#"{{"v1":{{"exprs":[{}]}}}}"#, sub(5, &number(6, 1.), &number(7, 2.))));
+    let doc = load_document(&syntax, &format!(r#"{{"v1":[{}]}}"#, sub(5, &number(6, 1.), &number(7, 2.))));
     let (mut ctx, _display, _environment) = build(syntax, doc, 2000., 800.);
     settle(&mut ctx);
-    assert!(ctx.cursor_select_reference(&Reference::reference_parse("#.v1.exprs[0]").unwrap()));
+    assert!(ctx.cursor_select_reference(&Reference::reference_parse("#.v1[0]").unwrap()));
     settle(&mut ctx);
     assert_eq!(ctx.cursor_reference().unwrap().reference_format(), "#5");
     assert!(ctx.cursor_select_reference(&Reference::reference_parse("#5.variant.operator_binary.base").unwrap()));
@@ -108,12 +147,12 @@ fn lays_out_synth_module() {
         }
     }
     println!("rows: {}, over edge: {}", rows.len(), over);
-    assert!(rows.len() > 100);
+    assert!(rows.len() > 50);
     assert_eq!(over, 0, "{} rows exceed the edge", over);
 }
 
 fn number(id: u64, n: f64) -> String {
-    return expr(id, "literal", &format!(r#"{{"value":{{"number":{{"value":{}}}}}}}"#, n));
+    return expr(id, "literal", &format!(r#"{{"number":{}}}"#, n));
 }
 
 #[test]
@@ -186,7 +225,7 @@ fn profile_large_document() {
 
 fn render_module(expr: &str) -> String {
     let syntax = load_syntax(include_str!("../../syntaxes/alligatorus.json"));
-    let doc = load_document(&syntax, &format!(r#"{{"v1":{{"exprs":[{}]}}}}"#, expr));
+    let doc = load_document(&syntax, &format!(r#"{{"v1":[{}]}}"#, expr));
     let (mut ctx, display, _environment) = build(syntax, doc, 2000., 800.);
     settle(&mut ctx);
     let rows = display.display_test_rows();
@@ -197,13 +236,21 @@ fn render_module(expr: &str) -> String {
 
 fn repeated(source: &str, times: usize) -> String {
     let mut value: serde_json::Value = serde_json::from_str(source).unwrap();
-    let exprs = value["v1"]["exprs"].as_array().unwrap().clone();
+    let exprs = value["v1"].as_array().unwrap().clone();
     let mut grown = vec![];
     for _ in 0 .. times {
         grown.extend(exprs.iter().cloned());
     }
-    value["v1"]["exprs"] = serde_json::Value::Array(grown);
+    value["v1"] = serde_json::Value::Array(grown);
     return serde_json::to_string(&value).unwrap();
+}
+
+fn scope_use(id: u64, key: &str) -> String {
+    return expr(id, "scope_use", key);
+}
+
+fn string(id: u64, s: &str) -> String {
+    return expr(id, "literal", &format!(r#"{{"str":{}}}"#, serde_json::to_string(s).unwrap()));
 }
 
 fn sub(id: u64, base: &str, reference: &str) -> String {

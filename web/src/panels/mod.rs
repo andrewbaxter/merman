@@ -4,7 +4,9 @@ pub mod conflict;
 pub mod error;
 pub mod filesystem;
 pub mod list;
+pub mod models;
 pub mod sessions;
+pub mod toolbar;
 
 use {
     merman_core::{
@@ -43,6 +45,7 @@ pub trait Panel {
     fn panel_parent(&self) -> Option<String>;
     fn panel_path(&self) -> String;
     fn panel_reference(&self) -> Option<String>;
+    fn panel_select(&self, location: &str);
     fn panel_selection(&self) -> Option<(bool, String)>;
     fn panel_size(&self) -> f64;
 }
@@ -176,6 +179,7 @@ pub fn panel_theme_apply(theme: &SpecTheme) {
     ) in [
         ("--merman-background", theme.background.clone()),
         ("--merman-cursor-color", theme.cursor.line_color.clone()),
+        ("--merman-details-background", theme.details_background.clone()),
         (
             "--merman-invalid-color",
             theme
@@ -188,10 +192,20 @@ pub fn panel_theme_apply(theme: &SpecTheme) {
         ("--merman-font-size", format!("{}mm", theme.font_size)),
         ("--merman-hover-color", theme.hover.line_color.clone()),
         ("--merman-icon-color", theme.icon_color.clone()),
-        ("--merman-line-thickness", format!("{}mm", theme.cursor.line_thickness)),
         ("--merman-text-color", theme.text_color.clone()),
     ] {
         style.set_property(name, &value).unwrap();
+    }
+    if let serde_json::Value::Object(spacing) = serde_json::to_value(&theme.spacing).unwrap() {
+        for (name, value) in spacing {
+            style.set_property(&format!("--merman-spacing-{}", name), &format!("{}mm", value)).unwrap();
+        }
+    }
+    for (name, text_style) in &theme.text_styles {
+        style.set_property(&format!("--merman-style-{}-color", name), &text_style.color).unwrap();
+        if let Some(font) = &text_style.font_family {
+            style.set_property(&format!("--merman-style-{}-font", name), font).unwrap();
+        }
     }
     return;
 }

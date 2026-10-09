@@ -17,7 +17,7 @@ use {
     std::collections::HashMap,
 };
 
-pub const ACTIONS: [(Action, &str); 74] =
+pub const ACTIONS: [(Action, &str); 78] =
     [
         (Action::Undo, "undo"),
         (Action::Redo, "redo"),
@@ -38,6 +38,10 @@ pub const ACTIONS: [(Action, &str); 74] =
         (Action::Choose, "choose"),
         (Action::Enter, "enter"),
         (Action::Exit, "exit"),
+        (Action::ExitToArray, "exit_to_array"),
+        (Action::PanelExit, "panel_exit"),
+        (Action::HistoryBack, "history_back"),
+        (Action::HistoryForward, "history_forward"),
         (Action::Copy, "copy"),
         (Action::AiOpen, "ai_open"),
         (Action::AiOpenReference, "ai_open_reference"),
@@ -277,6 +281,7 @@ pub enum Action {
     DeletePrevious,
     Enter,
     Exit,
+    ExitToArray,
     FirstElement,
     FirstGlyph,
     GatherFirst,
@@ -291,6 +296,8 @@ pub enum Action {
     GatherPreviousLine,
     GatherPreviousLineStart,
     GatherPreviousWord,
+    HistoryBack,
+    HistoryForward,
     InsertAfter,
     InsertBefore,
     JoinLines,
@@ -304,6 +311,7 @@ pub enum Action {
     NextGlyph,
     NextLine,
     NextWord,
+    PanelExit,
     Paste,
     PreviousElement,
     PreviousGlyph,
@@ -344,6 +352,13 @@ impl Action {
     pub fn action_id(self) -> &'static str {
         return ACTIONS.iter().find(|(a, _)| *a == self).unwrap().1;
     }
+}
+
+const fn alt(key: KeyName) -> KeyStroke {
+    return KeyStroke {
+        alt: true,
+        ..KeyStroke::key_stroke_new(key)
+    };
 }
 
 const fn ctrl(key: KeyName) -> KeyStroke {
@@ -433,6 +448,8 @@ impl Keymap {
                     }]]),
                     (Action::AiOpen, &[&[plain(KeyName::Char('o'))]]),
                     (Action::AiOpenReference, &[&[shift(KeyName::Char('o'))]]),
+                    (Action::HistoryBack, &[&[alt(KeyName::Surface)]]),
+                    (Action::HistoryForward, &[&[alt(KeyName::Dive)]]),
                     (Action::Undo, &[&[ctrl(KeyName::Char('z'))]]),
                     (Action::Redo, &[&[ctrl_shift(KeyName::Char('z'))], &[ctrl(KeyName::Char('y'))]]),
                 ],
@@ -443,6 +460,8 @@ impl Keymap {
                 &spec.atom,
                 &[
                     (Action::Exit, &[&[plain(KeyName::Surface)], &[plain(KeyName::Char('h'))]]),
+                    (Action::ExitToArray, &[&[shift(KeyName::Surface)], &[shift(KeyName::Char('h'))]]),
+                    (Action::PanelExit, &[&[plain(KeyName::Escape)]]),
                     (Action::Enter, &[&[plain(KeyName::Dive)], &[plain(KeyName::Char('l'))]]),
                     (Action::NextElement, &[&[plain(KeyName::Next)], &[plain(KeyName::Char('j'))]]),
                     (Action::PreviousElement, &[&[plain(KeyName::Previous)], &[plain(KeyName::Char('k'))]]),
@@ -461,6 +480,8 @@ impl Keymap {
                 &spec.array,
                 &[
                     (Action::Exit, &[&[plain(KeyName::Surface)], &[plain(KeyName::Char('h'))]]),
+                    (Action::ExitToArray, &[&[shift(KeyName::Surface)], &[shift(KeyName::Char('h'))]]),
+                    (Action::PanelExit, &[&[plain(KeyName::Escape)]]),
                     (Action::Enter, &[&[plain(KeyName::Dive)], &[plain(KeyName::Char('l'))]]),
                     (Action::NextElement, &[&[plain(KeyName::Next)], &[plain(KeyName::Char('j'))]]),
                     (Action::PreviousElement, &[&[plain(KeyName::Previous)], &[plain(KeyName::Char('k'))]]),
@@ -485,6 +506,7 @@ impl Keymap {
                 &spec.primitive,
                 &[
                     (Action::Exit, &[&[plain(KeyName::Escape)]]),
+                    (Action::ExitToArray, &[&[shift(KeyName::Escape)]]),
                     (Action::NextGlyph, &[&[plain(KeyName::Dive)]]),
                     (Action::PreviousGlyph, &[&[plain(KeyName::Surface)]]),
                     (Action::SelectNextGlyph, &[&[shift(KeyName::Dive)]]),

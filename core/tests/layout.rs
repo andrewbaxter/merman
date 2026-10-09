@@ -9,6 +9,7 @@ use {
         settle,
     },
     merman_core::{
+        attachment::DrawingLayer,
         display::PIXELS_PER_MM,
         context::{
             Context,
@@ -18,7 +19,10 @@ use {
         environment::EnvironmentTest,
         error::ErrorKind,
         matcher::match_document,
-        spec::SpecSyntax,
+        spec::{
+            SpecSyntax,
+            SpecTheme,
+        },
         syntax::Syntax,
     },
 };
@@ -207,4 +211,74 @@ fn unwraps_string_when_edge_grows() {
             "]".to_string(),
         ]
     );
+}
+
+#[test]
+fn line_gap_spaces_lines() {
+    let rows_with = |line_gap: f64| {
+        let spec: SpecSyntax = serde_json::from_str(include_str!("../../syntaxes/json.json")).unwrap();
+        let theme = SpecTheme {
+            line_gap: line_gap,
+            ..common::theme()
+        };
+        let syntax = std::rc::Rc::new(Syntax::syntax_resolve(spec, &theme).unwrap_or_else(|e| panic!("{}", e)));
+        let doc = load_document(&syntax, r#"{"a": 1, "b": [true, null]}"#);
+        let pad = syntax.spec_root.pad.converse_start + syntax.spec_root.pad.converse_end;
+        let (mut ctx, display, _environment) = build(syntax, doc, 19.001 * UNIT + pad, 600.);
+        settle(&mut ctx);
+        return display.display_test_rows().iter().map(|r| r.transverse).collect::<Vec<_>>();
+    };
+    let tight = rows_with(0.);
+    let spaced = rows_with(3.);
+    assert_eq!(tight.len(), 4);
+    assert_eq!(spaced.len(), 4);
+    for i in 1 .. 4 {
+        let added = (spaced[i] - spaced[i - 1]) - (tight[i] - tight[i - 1]);
+        assert!((added - 3. * PIXELS_PER_MM).abs() < 0.001, "line {} gained {}", i, added);
+    }
+}
+
+#[test]
+fn details_make_room_under_the_cornerstone_line() {
+    let (mut ctx, display, _environment) = json_context(r#"{"a": 1, "b": [true, null]}"#, 19.);
+    let rows =
+        |display: &DisplayTest| display.display_test_rows().iter().map(|r| r.transverse).collect::<Vec<_>>();
+    let before = rows(&display);
+    assert_eq!(before.len(), 4);
+    ctx.details_open();
+    settle(&mut ctx);
+    let opened = rows(&display);
+    assert_eq!(opened[0], before[0], "the cornerstone line stays put");
+    for i in 1 .. 4 {
+        assert_eq!(opened[i], before[i] + 10., "line {} moves below the details", i);
+    }
+    ctx.details_close();
+    settle(&mut ctx);
+    assert_eq!(rows(&display), before);
+}
+
+#[test]
+fn hover_border_draws_above_cursor_border() {
+    let (mut ctx, display, _environment) = json_context(r#"{"a": 1, "b": [true, null]}"#, 100.);
+    let rows = display.display_test_rows();
+    let true_brick = rows[0].bricks.iter().find(|b| b.text == "true").unwrap();
+    let pad = ctx.syntax.spec_root.pad.converse_start;
+    ctx.mouse_moved(Vector::new(true_brick.converse + 1. + pad, rows[0].transverse + 1.));
+    settle(&mut ctx);
+    let root = ctx.root_visual;
+    ctx.visual_select_into_any_child(root);
+    settle(&mut ctx);
+    let hover =
+        ctx
+            .drawings
+            .iter()
+            .flatten()
+            .find(|d| d.layer == DrawingLayer::Hover)
+            .expect("hovering draws a border")
+            .node;
+    assert!(
+        ctx.drawings.iter().flatten().any(|d| d.layer == DrawingLayer::Background),
+        "selecting draws a cursor border"
+    );
+    assert_eq!(display.display_test_children(ctx.background_layer).last(), Some(&hover));
 }

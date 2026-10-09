@@ -1,4 +1,10 @@
 use {
+    merman::compress::{
+        encode_document,
+        format_document,
+        read_document,
+    },
+    merman_core::spec::SpecCompression,
     good_ormning::sqlite::{
         good_query,
         good_query_many,
@@ -51,16 +57,8 @@ pub fn apply_all(value: &mut Value, patches: &[Patch]) -> Result<Vec<(Patch, Pat
     return Ok(steps);
 }
 
-pub fn format_document(value: &Value) -> String {
-    let mut out = vec![];
-    let mut serializer =
-        serde_json::Serializer::with_formatter(&mut out, serde_json::ser::PrettyFormatter::with_indent(b"    "));
-    serde::Serialize::serialize(value, &mut serializer).unwrap();
-    out.push(b'\n');
-    return String::from_utf8(out).unwrap();
-}
-
 pub struct FileState {
+    pub compression: SpecCompression,
     pub disk: String,
     pub dirty: bool,
     pub id: i64,
@@ -105,10 +103,12 @@ impl History {
         db: &mut dbm::Db<rusqlite::Connection>,
         files: &'a mut HashMap<PathBuf, FileState>,
         path: &Path,
+        compression: impl FnOnce() -> Result<SpecCompression, loga::Error>,
     ) -> Result<&'a mut FileState, loga::Error> {
         if !files.contains_key(path) {
             let path_text = path.to_string_lossy().into_owned();
-            let text = std::fs::read_to_string(path).context_with("Error reading file", ea!(path = path.display()))?;
+            let compression = compression()?;
+            let text = read_document(path, compression)?;
             let row = good_query_opt!(
                 dbm,
                 "select rowid, position, disk, disk_position from file where path = ${string = &path_text}";
@@ -126,6 +126,7 @@ impl History {
                 },
             };
             let mut state = FileState {
+                compression: compression,
                 disk: disk.clone(),
                 dirty: false,
                 id: id,
@@ -218,7 +219,8 @@ impl History {
                     path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
                 ),
             );
-        std::fs::write(&temp, &text).context_with("Error writing file", ea!(path = temp.display()))?;
+        let bytes = encode_document(&text, state.compression)?;
+        std::fs::write(&temp, &bytes).context_with("Error writing file", ea!(path = temp.display()))?;
         std::fs::rename(&temp, path).context_with("Error replacing file", ea!(path = path.display()))?;
         state.disk = text;
         state.dirty = false;
@@ -262,7 +264,7 @@ pub fn history_take_disk(
     state: &mut FileState,
     path: &Path,
 ) -> Result<bool, loga::Error> {
-    let text = std::fs::read_to_string(path).context_with("Error reading file", ea!(path = path.display()))?;
+    let text = read_document(path, state.compression)?;
     if text == state.disk {
         return Ok(false);
     }

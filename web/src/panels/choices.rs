@@ -98,11 +98,13 @@ impl Panel for ChoicesPanel {
         return None;
     }
 
+    fn panel_select(&self, _location: &str) { }
+
     fn panel_selection(&self) -> Option<(bool, String)> {
         return None;
     }
 
     fn panel_size(&self) -> f64 {
-        return 2.;
+        return 8.;
     }
 }

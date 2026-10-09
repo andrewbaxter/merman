@@ -464,7 +464,7 @@ fn scale_obbox(o: &SpecObbox, to_pixels: f64) -> SpecObbox {
     return SpecObbox {
         padding: scale_padding(&o.padding, to_pixels),
         round_radius: o.round_radius * to_pixels,
-        line_thickness: o.line_thickness * to_pixels,
+        line_thickness_px: o.line_thickness_px,
         ..o.clone()
     };
 }
@@ -482,6 +482,7 @@ fn scale_padding(p: &SpecPadding, to_pixels: f64) -> SpecPadding {
 pub struct SpecSyntaxSettings {
     pub background: String,
     pub convert: DirectionConvert,
+    pub course_transverse_gap: f64,
     pub course_transverse_stride: f64,
     pub cursor: SpecObbox,
     pub hover: SpecObbox,
@@ -1040,6 +1041,7 @@ impl Syntax {
                 background: theme.background.clone(),
                 convert: DirectionConvert::new(spec.converse_direction, spec.transverse_direction),
                 pad: scale_padding(&spec.pad, to_pixels),
+                course_transverse_gap: theme.line_gap * to_pixels,
                 course_transverse_stride: spec.course_transverse_stride * to_pixels,
                 unprintable: spec.unprintable,
                 cursor: scale_obbox(&theme.cursor, to_pixels),

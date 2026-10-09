@@ -1,4 +1,5 @@
 {
+  "compression": "zstd",
   "pad": {
     "converse_start": 5,
     "converse_end": 5,
@@ -9,20 +10,23 @@
     {
       "id": "expr",
       "members": [
-        "scope_use_static",
-        "field_static",
-        "scope_use",
-        "field",
-        "bind",
+        "scope_use_literal",
+        "scope_use_expr",
+        "field_literal",
+        "field_expr",
+        "bind_literal",
+        "bind_expr",
         "set",
         "call",
         "as",
         "seq",
         "tuple",
         "record",
-        "foreach",
+        "foreach_literal",
+        "foreach_expr",
         "if",
-        "match",
+        "match_literal",
+        "match_expr",
         "labeled",
         "return",
         "try",
@@ -57,8 +61,15 @@
     {
       "id": "record_entry",
       "members": [
-        "record_entry_static",
-        "record_entry_dynamic"
+        "record_entry_literal",
+        "record_entry_expr"
+      ]
+    },
+    {
+      "id": "try_catch",
+      "members": [
+        "try_catch_literal",
+        "try_catch_expr"
       ]
     }
   ],
@@ -76,17 +87,10 @@
         {
           "key": "v1",
           "value": {
-            "fixed_record": [
-              {
-                "key": "exprs",
-                "value": {
-                  "array": {
-                    "id": "exprs",
-                    "element": "expr"
-                  }
-                }
-              }
-            ]
+            "array": {
+              "id": "exprs",
+              "element": "expr"
+            }
           }
         }
       ]
@@ -120,10 +124,9 @@
   },
   "types": [
     {
-      "id": "scope_use_static",
+      "id": "scope_use_literal",
       "depth_score": 1,
       "name": "Variable",
-      "suffix_on_pattern_mismatch": true,
       "alignments": {
         "base": {
           "relative": {
@@ -144,16 +147,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -165,54 +161,35 @@
                   "value": {
                     "fixed_record": [
                       {
-                        "key": "key",
+                        "key": "id",
+                        "value": {
+                          "id": {}
+                        }
+                      },
+                      {
+                        "key": "variant",
                         "value": {
                           "fixed_record": [
                             {
-                              "key": "id",
+                              "key": "literal",
                               "value": {
                                 "fixed_record": [
                                   {
-                                    "key": "value",
+                                    "key": "str",
                                     "value": {
-                                      "id": {}
-                                    }
-                                  }
-                                ]
-                              }
-                            },
-                            {
-                              "key": "variant",
-                              "value": {
-                                "fixed_record": [
-                                  {
-                                    "key": "literal",
-                                    "value": {
-                                      "fixed_record": [
-                                        {
-                                          "key": "value",
-                                          "value": {
-                                            "fixed_record": [
+                                      "string": {
+                                        "id": "key",
+                                        "pattern": {
+                                          "repeat1": {
+                                            "union": [
+                                              "symbol_character",
                                               {
-                                                "key": "str",
-                                                "value": {
-                                                  "fixed_record": [
-                                                    {
-                                                      "key": "value",
-                                                      "value": {
-                                                        "string": {
-                                                          "id": "key",
-                                                          "pattern": {"repeat1": {"union": ["symbol_character", {"string": "_"}]}}
-                                                        }
-                                                      }
-                                                    }
-                                                  ]
-                                                }
+                                                "string": "_"
                                               }
                                             ]
                                           }
                                         }
-                                      ]
+                                      }
                                     }
                                   }
                                 ]
@@ -233,17 +210,16 @@
         {
           "primitive": {
             "field": "key",
-            "style": "identifier"
+            "style": "binding"
           }
         }
-      ]
+      ],
+      "suffix_on_pattern_mismatch": true
     },
     {
-      "id": "field_static",
+      "id": "scope_use_expr",
       "depth_score": 1,
-      "name": "Field",
-      "suffix_on_pattern_mismatch": true,
-      "precedence": 500,
+      "name": "Computed variable",
       "alignments": {
         "base": {
           "relative": {
@@ -264,16 +240,77 @@
           {
             "key": "id",
             "value": {
+              "id": {
+                "unique": true
+              }
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
               "fixed_record": [
                 {
-                  "key": "value",
+                  "key": "scope_use",
                   "value": {
-                    "id": {
-                      "unique": true
+                    "atom": {
+                      "id": "key",
+                      "type": "expr"
                     }
                   }
                 }
               ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "expr ",
+              "style": "keyword"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "key",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        }
+      ],
+      "precedence": 800
+    },
+    {
+      "id": "field_literal",
+      "depth_score": 1,
+      "name": "Field",
+      "precedence": 1000,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -300,14 +337,7 @@
                             {
                               "key": "id",
                               "value": {
-                                "fixed_record": [
-                                  {
-                                    "key": "value",
-                                    "value": {
-                                      "id": {}
-                                    }
-                                  }
-                                ]
+                                "id": {}
                               }
                             },
                             {
@@ -319,26 +349,21 @@
                                     "value": {
                                       "fixed_record": [
                                         {
-                                          "key": "value",
+                                          "key": "str",
                                           "value": {
-                                            "fixed_record": [
-                                              {
-                                                "key": "str",
-                                                "value": {
-                                                  "fixed_record": [
+                                            "string": {
+                                              "id": "key",
+                                              "pattern": {
+                                                "repeat1": {
+                                                  "union": [
+                                                    "symbol_character",
                                                     {
-                                                      "key": "value",
-                                                      "value": {
-                                                        "string": {
-                                                          "id": "key",
-                                                          "pattern": {"repeat1": {"union": ["symbol_character", {"string": "_"}]}}
-                                                        }
-                                                      }
+                                                      "string": "_"
                                                     }
                                                   ]
                                                 }
                                               }
-                                            ]
+                                            }
                                           }
                                         }
                                       ]
@@ -404,12 +429,14 @@
             }
           }
         }
-      ]
+      ],
+      "suffix_on_pattern_mismatch": true
     },
     {
-      "id": "scope_use",
+      "id": "field_expr",
       "depth_score": 1,
-      "name": "Dynamic variable",
+      "name": "Computed field",
+      "precedence": 1000,
       "alignments": {
         "base": {
           "relative": {
@@ -430,115 +457,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
-            }
-          },
-          {
-            "key": "variant",
-            "value": {
-              "fixed_record": [
-                {
-                  "key": "scope_use",
-                  "value": {
-                    "fixed_record": [
-                      {
-                        "key": "key",
-                        "value": {
-                          "atom": {
-                            "id": "key",
-                            "type": "expr"
-                          }
-                        }
-                      }
-                    ]
-                  }
-                }
-              ]
-            }
-          }
-        ]
-      },
-      "front": [
-        {
-          "symbol": {
-            "text": {
-              "text": "scope",
-              "style": "keyword"
-            }
-          }
-        },
-        {
-          "symbol": {
-            "text": {
-              "text": "[",
-              "style": "symbol"
-            }
-          }
-        },
-        {
-          "atom": {
-            "field": "key",
-            "forward_alignments": [
-              "indent"
-            ]
-          }
-        },
-        {
-          "symbol": {
-            "text": {
-              "text": "]",
-              "style": "symbol",
-              "split": "compact",
-              "split_alignment": "base"
-            }
-          }
-        }
-      ]
-    },
-    {
-      "id": "field",
-      "depth_score": 1,
-      "name": "Dynamic field",
-      "precedence": 500,
-      "alignments": {
-        "base": {
-          "relative": {
-            "base": "indent",
-            "offset": 0
-          }
-        },
-        "indent": {
-          "relative": {
-            "base": "indent",
-            "offset": 8,
-            "collapse": true
-          }
-        }
-      },
-      "back": {
-        "fixed_record": [
-          {
-            "key": "id",
-            "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -597,16 +518,16 @@
         {
           "symbol": {
             "text": {
-              "text": "[",
+              "text": ".",
               "style": "symbol"
             }
           }
         },
         {
           "symbol": {
-            "space": {
-              "split": "compact",
-              "split_alignment": "indent"
+            "text": {
+              "text": "expr ",
+              "style": "keyword"
             }
           }
         },
@@ -616,16 +537,6 @@
             "forward_alignments": [
               "indent"
             ]
-          }
-        },
-        {
-          "symbol": {
-            "text": {
-              "text": "]",
-              "style": "symbol",
-              "split": "compact",
-              "split_alignment": "base"
-            }
           }
         },
         {
@@ -644,7 +555,7 @@
       ]
     },
     {
-      "id": "bind",
+      "id": "bind_literal",
       "default_selection": "value",
       "depth_score": 1,
       "name": "Bind",
@@ -669,16 +580,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -692,10 +596,46 @@
                       {
                         "key": "name",
                         "value": {
-                          "string": {
-                            "id": "name",
-                            "pattern": {"repeat1": {"union": ["symbol_character", {"string": "_"}]}}
-                          }
+                          "fixed_record": [
+                            {
+                              "key": "id",
+                              "value": {
+                                "id": {}
+                              }
+                            },
+                            {
+                              "key": "variant",
+                              "value": {
+                                "fixed_record": [
+                                  {
+                                    "key": "literal",
+                                    "value": {
+                                      "fixed_record": [
+                                        {
+                                          "key": "str",
+                                          "value": {
+                                            "string": {
+                                              "id": "name",
+                                              "pattern": {
+                                                "repeat1": {
+                                                  "union": [
+                                                    "symbol_character",
+                                                    {
+                                                      "string": "_"
+                                                    }
+                                                  ]
+                                                }
+                                              }
+                                            }
+                                          }
+                                        }
+                                      ]
+                                    }
+                                  }
+                                ]
+                              }
+                            }
+                          ]
                         }
                       },
                       {
@@ -719,7 +659,115 @@
         {
           "primitive": {
             "field": "name",
-            "style": "identifier"
+            "style": "binding"
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": " := ",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "symbol": {
+            "space": {
+              "split": "compact",
+              "split_alignment": "indent"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "value",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "bind_expr",
+      "default_selection": "value",
+      "depth_score": 1,
+      "name": "Computed bind",
+      "precedence": 0,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "id": {
+                "unique": true
+              }
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "bind",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "name",
+                        "value": {
+                          "atom": {
+                            "id": "name",
+                            "type": "expr"
+                          }
+                        }
+                      },
+                      {
+                        "key": "value",
+                        "value": {
+                          "atom": {
+                            "id": "value",
+                            "type": "expr"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "expr ",
+              "style": "keyword"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "name",
+            "forward_alignments": [
+              "indent"
+            ]
           }
         },
         {
@@ -773,16 +821,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -881,7 +922,7 @@
       "id": "call",
       "depth_score": 1,
       "name": "Call",
-      "precedence": 500,
+      "precedence": 900,
       "alignments": {
         "base": {
           "relative": {
@@ -902,16 +943,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -970,7 +1004,7 @@
         {
           "symbol": {
             "text": {
-              "text": "(",
+              "text": " ",
               "style": "symbol"
             }
           }
@@ -989,16 +1023,6 @@
             "forward_alignments": [
               "indent"
             ]
-          }
-        },
-        {
-          "symbol": {
-            "text": {
-              "text": ")",
-              "style": "symbol",
-              "split": "compact",
-              "split_alignment": "base"
-            }
           }
         },
         {
@@ -1041,16 +1065,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -1170,16 +1187,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -1189,17 +1199,10 @@
                 {
                   "key": "seq",
                   "value": {
-                    "fixed_record": [
-                      {
-                        "key": "exprs",
-                        "value": {
-                          "array": {
-                            "id": "exprs",
-                            "element": "expr"
-                          }
-                        }
-                      }
-                    ]
+                    "array": {
+                      "id": "exprs",
+                      "element": "expr"
+                    }
                   }
                 }
               ]
@@ -1211,7 +1214,7 @@
         {
           "symbol": {
             "text": {
-              "text": "{ ",
+              "text": "[ ",
               "style": "symbol"
             }
           }
@@ -1243,7 +1246,7 @@
         {
           "symbol": {
             "text": {
-              "text": "}",
+              "text": "]",
               "style": "symbol",
               "split": "compact",
               "split_alignment": "base"
@@ -1277,16 +1280,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -1296,17 +1292,10 @@
                 {
                   "key": "tuple",
                   "value": {
-                    "fixed_record": [
-                      {
-                        "key": "exprs",
-                        "value": {
-                          "array": {
-                            "id": "exprs",
-                            "element": "expr"
-                          }
-                        }
-                      }
-                    ]
+                    "array": {
+                      "id": "exprs",
+                      "element": "expr"
+                    }
                   }
                 }
               ]
@@ -1384,16 +1373,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -1403,17 +1385,10 @@
                 {
                   "key": "record",
                   "value": {
-                    "fixed_record": [
-                      {
-                        "key": "entries",
-                        "value": {
-                          "array": {
-                            "id": "entries",
-                            "element": "record_entry"
-                          }
-                        }
-                      }
-                    ]
+                    "array": {
+                      "id": "entries",
+                      "element": "record_entry"
+                    }
                   }
                 }
               ]
@@ -1425,15 +1400,7 @@
         {
           "symbol": {
             "text": {
-              "text": "rec",
-              "style": "keyword"
-            }
-          }
-        },
-        {
-          "symbol": {
-            "text": {
-              "text": "(",
+              "text": "{",
               "style": "literal_symbol"
             }
           }
@@ -1465,7 +1432,7 @@
         {
           "symbol": {
             "text": {
-              "text": ")",
+              "text": "}",
               "style": "literal_symbol",
               "split": "compact",
               "split_alignment": "base"
@@ -1475,7 +1442,7 @@
       ]
     },
     {
-      "id": "foreach",
+      "id": "foreach_literal",
       "depth_score": 1,
       "name": "For each",
       "precedence": 0,
@@ -1499,16 +1466,175 @@
           {
             "key": "id",
             "value": {
+              "id": {
+                "unique": true
+              }
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
               "fixed_record": [
                 {
-                  "key": "value",
+                  "key": "foreach",
                   "value": {
-                    "id": {
-                      "unique": true
-                    }
+                    "fixed_record": [
+                      {
+                        "key": "base",
+                        "value": {
+                          "atom": {
+                            "id": "base",
+                            "type": "expr"
+                          }
+                        }
+                      },
+                      {
+                        "key": "element_key",
+                        "value": {
+                          "fixed_record": [
+                            {
+                              "key": "id",
+                              "value": {
+                                "id": {}
+                              }
+                            },
+                            {
+                              "key": "variant",
+                              "value": {
+                                "fixed_record": [
+                                  {
+                                    "key": "literal",
+                                    "value": {
+                                      "fixed_record": [
+                                        {
+                                          "key": "str",
+                                          "value": {
+                                            "string": {
+                                              "id": "element_key",
+                                              "pattern": {
+                                                "repeat1": {
+                                                  "union": [
+                                                    "symbol_character",
+                                                    {
+                                                      "string": "_"
+                                                    }
+                                                  ]
+                                                }
+                                              }
+                                            }
+                                          }
+                                        }
+                                      ]
+                                    }
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": "body",
+                        "value": {
+                          "atom": {
+                            "id": "body",
+                            "type": "expr"
+                          }
+                        }
+                      }
+                    ]
                   }
                 }
               ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "for ",
+              "style": "keyword"
+            }
+          }
+        },
+        {
+          "primitive": {
+            "field": "element_key",
+            "style": "binding"
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": " in ",
+              "style": "keyword"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "base",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": " ",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "symbol": {
+            "space": {
+              "split": "compact",
+              "split_alignment": "indent"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "body",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "foreach_expr",
+      "depth_score": 1,
+      "name": "Computed for each",
+      "precedence": 0,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -1559,6 +1685,14 @@
           "symbol": {
             "text": {
               "text": "for ",
+              "style": "keyword"
+            }
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": "expr ",
               "style": "keyword"
             }
           }
@@ -1638,16 +1772,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -1730,7 +1857,7 @@
       ]
     },
     {
-      "id": "match",
+      "id": "match_literal",
       "depth_score": 1,
       "name": "Match",
       "precedence": 0,
@@ -1754,16 +1881,234 @@
           {
             "key": "id",
             "value": {
+              "id": {
+                "unique": true
+              }
+            }
+          },
+          {
+            "key": "variant",
+            "value": {
               "fixed_record": [
                 {
-                  "key": "value",
+                  "key": "match",
                   "value": {
-                    "id": {
-                      "unique": true
-                    }
+                    "fixed_record": [
+                      {
+                        "key": "base",
+                        "value": {
+                          "atom": {
+                            "id": "base",
+                            "type": "expr"
+                          }
+                        }
+                      },
+                      {
+                        "key": "element_key",
+                        "value": {
+                          "fixed_record": [
+                            {
+                              "key": "id",
+                              "value": {
+                                "id": {}
+                              }
+                            },
+                            {
+                              "key": "variant",
+                              "value": {
+                                "fixed_record": [
+                                  {
+                                    "key": "literal",
+                                    "value": {
+                                      "fixed_record": [
+                                        {
+                                          "key": "str",
+                                          "value": {
+                                            "string": {
+                                              "id": "element_key",
+                                              "pattern": {
+                                                "repeat1": {
+                                                  "union": [
+                                                    "symbol_character",
+                                                    {
+                                                      "string": "_"
+                                                    }
+                                                  ]
+                                                }
+                                              }
+                                            }
+                                          }
+                                        }
+                                      ]
+                                    }
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": "cases",
+                        "value": {
+                          "array": {
+                            "id": "cases",
+                            "element": "match_branch"
+                          }
+                        }
+                      },
+                      {
+                        "key": "fallback",
+                        "value": {
+                          "optional": {
+                            "id": "fallback",
+                            "element": "expr",
+                            "some_key": "some",
+                            "none_key": "none"
+                          }
+                        }
+                      }
+                    ]
                   }
                 }
               ]
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "match ",
+              "style": "keyword"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "base",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": " as ",
+              "style": "keyword"
+            }
+          }
+        },
+        {
+          "primitive": {
+            "field": "element_key",
+            "style": "binding"
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": " { ",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "array": {
+            "field": "cases",
+            "prefix": [
+              {
+                "space": {
+                  "split": "compact",
+                  "split_alignment": "indent"
+                }
+              }
+            ],
+            "suffix": [
+              {
+                "text": {
+                  "text": "; ",
+                  "style": "symbol"
+                }
+              }
+            ],
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "array": {
+            "field": "fallback",
+            "prefix": [
+              {
+                "space": {
+                  "split": "compact",
+                  "split_alignment": "indent"
+                }
+              },
+              {
+                "text": {
+                  "text": "else ",
+                  "style": "keyword"
+                }
+              }
+            ],
+            "suffix": [
+              {
+                "text": {
+                  "text": "; ",
+                  "style": "symbol"
+                }
+              }
+            ],
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": "}",
+              "style": "symbol",
+              "split": "compact",
+              "split_alignment": "base"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "match_expr",
+      "depth_score": 1,
+      "name": "Computed match",
+      "precedence": 0,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "id",
+            "value": {
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -1841,6 +2186,14 @@
           "symbol": {
             "text": {
               "text": " as ",
+              "style": "keyword"
+            }
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": "expr ",
               "style": "keyword"
             }
           }
@@ -1952,16 +2305,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -2056,16 +2402,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -2180,16 +2519,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -2314,16 +2646,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -2333,17 +2658,10 @@
                 {
                   "key": "graft",
                   "value": {
-                    "fixed_record": [
-                      {
-                        "key": "expr",
-                        "value": {
-                          "atom": {
-                            "id": "expr",
-                            "type": "expr"
-                          }
-                        }
-                      }
-                    ]
+                    "atom": {
+                      "id": "expr",
+                      "type": "expr"
+                    }
                   }
                 }
               ]
@@ -2394,16 +2712,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -2413,17 +2724,10 @@
                 {
                   "key": "lower",
                   "value": {
-                    "fixed_record": [
-                      {
-                        "key": "expr",
-                        "value": {
-                          "atom": {
-                            "id": "expr",
-                            "type": "expr"
-                          }
-                        }
-                      }
-                    ]
+                    "atom": {
+                      "id": "expr",
+                      "type": "expr"
+                    }
                   }
                 }
               ]
@@ -2474,16 +2778,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -2493,17 +2790,10 @@
                 {
                   "key": "stage",
                   "value": {
-                    "fixed_record": [
-                      {
-                        "key": "expr",
-                        "value": {
-                          "atom": {
-                            "id": "expr",
-                            "type": "expr"
-                          }
-                        }
-                      }
-                    ]
+                    "atom": {
+                      "id": "expr",
+                      "type": "expr"
+                    }
                   }
                 }
               ]
@@ -2515,7 +2805,7 @@
         {
           "symbol": {
             "text": {
-              "text": "`",
+              "text": "#",
               "style": "literal_symbol"
             }
           }
@@ -2554,16 +2844,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -2575,25 +2858,11 @@
                   "value": {
                     "fixed_record": [
                       {
-                        "key": "value",
+                        "key": "number",
                         "value": {
-                          "fixed_record": [
-                            {
-                              "key": "number",
-                              "value": {
-                                "fixed_record": [
-                                  {
-                                    "key": "value",
-                                    "value": {
-                                      "number": {
-                                        "id": "value"
-                                      }
-                                    }
-                                  }
-                                ]
-                              }
-                            }
-                          ]
+                          "number": {
+                            "id": "value"
+                          }
                         }
                       }
                     ]
@@ -2637,16 +2906,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -2658,25 +2920,11 @@
                   "value": {
                     "fixed_record": [
                       {
-                        "key": "value",
+                        "key": "str",
                         "value": {
-                          "fixed_record": [
-                            {
-                              "key": "str",
-                              "value": {
-                                "fixed_record": [
-                                  {
-                                    "key": "value",
-                                    "value": {
-                                      "string": {
-                                        "id": "value"
-                                      }
-                                    }
-                                  }
-                                ]
-                              }
-                            }
-                          ]
+                          "string": {
+                            "id": "value"
+                          }
                         }
                       }
                     ]
@@ -2737,16 +2985,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -2758,23 +2999,9 @@
                   "value": {
                     "fixed_record": [
                       {
-                        "key": "value",
+                        "key": "bool",
                         "value": {
-                          "fixed_record": [
-                            {
-                              "key": "bool",
-                              "value": {
-                                "fixed_record": [
-                                  {
-                                    "key": "value",
-                                    "value": {
-                                      "fixed_literal": "true"
-                                    }
-                                  }
-                                ]
-                              }
-                            }
-                          ]
+                          "fixed_literal": "true"
                         }
                       }
                     ]
@@ -2820,16 +3047,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -2841,23 +3061,9 @@
                   "value": {
                     "fixed_record": [
                       {
-                        "key": "value",
+                        "key": "bool",
                         "value": {
-                          "fixed_record": [
-                            {
-                              "key": "bool",
-                              "value": {
-                                "fixed_record": [
-                                  {
-                                    "key": "value",
-                                    "value": {
-                                      "fixed_literal": "false"
-                                    }
-                                  }
-                                ]
-                              }
-                            }
-                          ]
+                          "fixed_literal": "false"
                         }
                       }
                     ]
@@ -2904,16 +3110,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -3039,16 +3238,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -3174,16 +3366,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -3309,16 +3494,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -3444,16 +3622,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -3579,16 +3750,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -3714,16 +3878,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -3849,16 +4006,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -3984,16 +4134,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -4119,16 +4262,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -4254,16 +4390,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -4389,16 +4518,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -4524,16 +4646,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -4659,16 +4774,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -4794,16 +4902,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -4929,16 +5030,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -5064,16 +5158,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -5198,16 +5285,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -5284,16 +5364,9 @@
           {
             "key": "id",
             "value": {
-              "fixed_record": [
-                {
-                  "key": "value",
-                  "value": {
-                    "id": {
-                      "unique": true
-                    }
-                  }
-                }
-              ]
+              "id": {
+                "unique": true
+              }
             }
           },
           {
@@ -5501,7 +5574,7 @@
       ]
     },
     {
-      "id": "record_entry_static",
+      "id": "record_entry_literal",
       "default_selection": "value",
       "depth_score": 1,
       "name": "Record entry",
@@ -5530,14 +5603,7 @@
                 {
                   "key": "id",
                   "value": {
-                    "fixed_record": [
-                      {
-                        "key": "value",
-                        "value": {
-                          "id": {}
-                        }
-                      }
-                    ]
+                    "id": {}
                   }
                 },
                 {
@@ -5549,25 +5615,21 @@
                         "value": {
                           "fixed_record": [
                             {
-                              "key": "value",
+                              "key": "str",
                               "value": {
-                                "fixed_record": [
-                                  {
-                                    "key": "str",
-                                    "value": {
-                                      "fixed_record": [
+                                "string": {
+                                  "id": "key",
+                                  "pattern": {
+                                    "repeat1": {
+                                      "union": [
+                                        "symbol_character",
                                         {
-                                          "key": "value",
-                                          "value": {
-                                            "string": {
-                                              "id": "key"
-                                            }
-                                          }
+                                          "string": "_"
                                         }
                                       ]
                                     }
                                   }
-                                ]
+                                }
                               }
                             }
                           ]
@@ -5624,10 +5686,10 @@
       ]
     },
     {
-      "id": "record_entry_dynamic",
+      "id": "record_entry_expr",
       "default_selection": "value",
       "depth_score": 1,
-      "name": "Dynamic record entry",
+      "name": "Computed record entry",
       "precedence": 0,
       "alignments": {
         "base": {
@@ -5670,8 +5732,8 @@
         {
           "symbol": {
             "text": {
-              "text": "[",
-              "style": "symbol"
+              "text": "expr ",
+              "style": "keyword"
             }
           }
         },
@@ -5686,7 +5748,7 @@
         {
           "symbol": {
             "text": {
-              "text": "]: ",
+              "text": ": ",
               "style": "symbol"
             }
           }
@@ -5710,9 +5772,145 @@
       ]
     },
     {
-      "id": "try_catch",
+      "id": "try_catch_literal",
       "depth_score": 1,
       "name": "Catch",
+      "precedence": 0,
+      "alignments": {
+        "base": {
+          "relative": {
+            "base": "indent",
+            "offset": 0
+          }
+        },
+        "indent": {
+          "relative": {
+            "base": "indent",
+            "offset": 8,
+            "collapse": true
+          }
+        }
+      },
+      "back": {
+        "fixed_record": [
+          {
+            "key": "binding_name",
+            "value": {
+              "fixed_record": [
+                {
+                  "key": "id",
+                  "value": {
+                    "id": {}
+                  }
+                },
+                {
+                  "key": "variant",
+                  "value": {
+                    "fixed_record": [
+                      {
+                        "key": "literal",
+                        "value": {
+                          "fixed_record": [
+                            {
+                              "key": "str",
+                              "value": {
+                                "string": {
+                                  "id": "binding_name",
+                                  "pattern": {
+                                    "repeat1": {
+                                      "union": [
+                                        "symbol_character",
+                                        {
+                                          "string": "_"
+                                        }
+                                      ]
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "key": "exception_type",
+            "value": {
+              "atom": {
+                "id": "exception_type",
+                "type": "expr"
+              }
+            }
+          },
+          {
+            "key": "body",
+            "value": {
+              "atom": {
+                "id": "body",
+                "type": "expr"
+              }
+            }
+          }
+        ]
+      },
+      "front": [
+        {
+          "primitive": {
+            "field": "binding_name",
+            "style": "binding"
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": ": ",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "exception_type",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        },
+        {
+          "symbol": {
+            "text": {
+              "text": " ",
+              "style": "symbol"
+            }
+          }
+        },
+        {
+          "symbol": {
+            "space": {
+              "split": "compact",
+              "split_alignment": "indent"
+            }
+          }
+        },
+        {
+          "atom": {
+            "field": "body",
+            "forward_alignments": [
+              "indent"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "try_catch_expr",
+      "depth_score": 1,
+      "name": "Computed catch",
       "precedence": 0,
       "alignments": {
         "base": {
@@ -5761,6 +5959,14 @@
         ]
       },
       "front": [
+        {
+          "symbol": {
+            "text": {
+              "text": "expr ",
+              "style": "keyword"
+            }
+          }
+        },
         {
           "atom": {
             "field": "binding_name",

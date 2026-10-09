@@ -204,11 +204,12 @@ pub fn ai_spawn(ai: &Arc<Ai>, id: String, resume: bool) -> Result<AiSession, log
             "--append-system-prompt",
             "The user is editing this project's syntax tree files in the merman editor and refers to \
             places in them as FILE#REF. REF is the id of the nearest enclosing element that has one \
-            (every element's id is at `id.value` in the file), then a jq path below that element, e.g. \
-            `a.at#16.variant.bind.name`; without an id the jq path starts from the file's root, e.g. \
-            `a.at#.v1.exprs[0]`. A trailing jq slice selects a range: `#16.variant.seq.exprs[1:3]` is elements \
-            1 and 2, `#16.variant.bind.name[0:3]` the first three characters. The files are single-line JSON, \
-            so use `merman-tool` (REF is from the `#` on) rather than text tools: `merman-tool get FILE REF` \
+            (every element's id is at `id` in the file), then a jq path below that element, e.g. \
+            `a.atz#16.variant.bind.value`; without an id the jq path starts from the file's root, e.g. \
+            `a.atz#.v1[0]`. A trailing jq slice selects a range: `#16.variant.seq[1:3]` is elements \
+            1 and 2, `#17.variant.literal.str[0:3]` the first three characters. The files are single-line JSON, \
+            zstd-compressed when the syntax says so, so use `merman-tool` (REF is from the `#` on) rather than text \
+            tools: `merman-tool get FILE REF` \
             prints the canonical reference, the element id and the JSON there (`--up N` goes N jq levels up from REF \
             first, a slice counting as one, to see what encloses it; `--depth N` elides what's nested deeper than \
             N); `merman-tool find FILE PATTERN \

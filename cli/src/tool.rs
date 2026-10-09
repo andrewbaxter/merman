@@ -7,7 +7,12 @@ use {
         ResultContext,
         ea,
     },
+    merman_core::spec::SpecCompression,
     merman::{
+        compress::{
+            encode_document,
+            format_document,
+        },
         config,
         load_document,
     },
@@ -84,6 +89,7 @@ struct Delete {
 }
 
 struct Loaded {
+    compression: SpecCompression,
     document: Document,
     file: PathBuf,
     syntax: Syntax,
@@ -94,11 +100,12 @@ fn load(file: &Path) -> Result<Loaded, loga::Error> {
     let file = std::fs::canonicalize(file).context_with("Error resolving file", ea!(file = file.display()))?;
     let dir = file.parent().unwrap_or(&cwd).to_path_buf();
     let config = config::config_load(&dir, &cwd)?;
-    let (_, syntax, _, document) = load_document(&config, &file)?;
+    let loaded = load_document(&config, &file)?;
     return Ok(Loaded {
-        document: document,
+        compression: loaded.compression,
+        document: loaded.document,
         file: file,
-        syntax: syntax,
+        syntax: loaded.syntax,
     });
 }
 
@@ -303,9 +310,10 @@ fn write(
             next += 1;
         }
     }
-    let text = serde_json::to_string_pretty(&serialize_atom(&loaded.syntax, &document, document.root)).unwrap();
+    let text = format_document(&serialize_atom(&loaded.syntax, &document, document.root));
+    let bytes = encode_document(&text, loaded.compression)?;
     let temp = loaded.file.with_extension("merman_tool_tmp");
-    std::fs::write(&temp, text).context_with("Error writing the edited file", ea!(path = temp.display()))?;
+    std::fs::write(&temp, bytes).context_with("Error writing the edited file", ea!(path = temp.display()))?;
     std::fs::rename(
         &temp,
         &loaded.file,

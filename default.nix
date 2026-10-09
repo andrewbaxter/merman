@@ -60,7 +60,7 @@ let
     cp ${./cli/static/demo.html} $out/cli/static/demo.html
     cp ${./cli/static/editor.html} $out/cli/static/editor.html
     cp ${./cli/static/merman.css} $out/cli/static/merman.css
-    cp ${./cli/static/MaterialIcons-Regular.ttf} $out/cli/static/MaterialIcons-Regular.ttf
+    cp ${./cli/static/MaterialSymbolsOutlined-Light.woff2} $out/cli/static/MaterialSymbolsOutlined-Light.woff2
     cp -r ${./syntaxes} $out/syntaxes
   '';
 

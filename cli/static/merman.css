@@ -1,6 +1,7 @@
+/* Material Symbols Outlined, instanced at weight 300 with no fill. */
 @font-face {
-  font-family: "Material Icons";
-  src: url("./MaterialIcons-Regular.ttf") format("truetype");
+  font-family: "Material Symbols Outlined";
+  src: url("./MaterialSymbolsOutlined-Light.woff2") format("woff2");
 }
 
 html, body { margin: 0; padding: 0; height: 100%; }
@@ -13,25 +14,18 @@ body {
 }
 
 .merman_root { display: flex; align-items: stretch; height: 100vh; }
-.merman_panels { display: flex; align-items: stretch; flex: 1 1 0; min-width: 0; }
-.merman_panel { overflow: auto; position: relative; box-sizing: border-box; }
+.merman_panels { position: relative; overflow: hidden; flex: 1 1 0; min-width: 0; }
 
-/* Each panel shows the selection of the one to its left, and at most two are
-   shown. They split the row by the weight each panel gives, which the editor sets
-   as the flex grow, so a panel on its own takes all of it. */
-.merman_panel { flex: 1 1 0; min-width: 0; }
+/* Each panel shows the selection of the one to its left. The editor places them
+   itself, as many as fit at the width each asks for, and slides them in and out;
+   a panel it hasn't placed (the demo's) fills the row. */
+.merman_panel { position: absolute; top: 0; bottom: 0; left: 0; width: 100%; overflow: auto; box-sizing: border-box; }
 .merman_panel_ai { overflow: hidden; }
 
 /* merman positions and scrolls everything itself, so the panel neither scrolls nor
    takes part in hit testing: the mouse event lands on the panel and its offset is
    already the coordinate merman wants. */
 .merman_panel_code { overflow: hidden; }
-
-/* Below this there's no room for a listing beside a file, so only the panel being
-   used is shown and it takes the whole row. */
-@media (max-width: 30cm) {
-  .merman_panel:not(.merman_panel_focus) { display: none; }
-}
 
 /* The cursor and hover marks of a panel that isn't taking keys are faded. */
 .merman_panel:not(.merman_panel_focus) .merman_overlay { opacity: 0.4; }
@@ -52,13 +46,31 @@ body {
 .merman_display_text text { white-space: pre; }
 .merman_animate { transition: left 0.1s linear, top 0.1s linear; }
 
-.merman_rows { padding: 12px; }
+/* The details area under the cursor's line, which the wall makes room for. Unlike
+   the rest of what merman draws it takes the mouse, for its buttons. */
+.merman_display_details {
+  pointer-events: auto;
+  white-space: nowrap;
+  box-sizing: border-box;
+  padding: var(--merman-spacing-details);
+  background: var(--merman-details-background);
+}
+
+/* A row of icon buttons, used by the AI panel and the details area. What each
+   does is in its tooltip. */
+.merman_toolbar { display: flex; gap: var(--merman-spacing-toolbar_gap); }
+.merman_toolbar_button { font-size: 1.4em; cursor: pointer; user-select: none; }
+
+/* Every button, in the status column and in toolbars, fades under the mouse. */
+.merman_status_icon:hover, .merman_toolbar_button:hover { opacity: 0.6; }
+
+.merman_rows { padding: var(--merman-spacing-panel); }
 .merman_row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 1px 3px;
-  border: var(--merman-line-thickness) solid transparent;
+  gap: var(--merman-spacing-inline_gap);
+  padding: var(--merman-spacing-row_transverse) var(--merman-spacing-row_converse);
+  border: 1px solid transparent;
   border-radius: 3px;
   white-space: pre;
 }
@@ -66,33 +78,44 @@ body {
 .merman_row_select { border-color: var(--merman-cursor-color); }
 
 /* Files have an icon box too, just an empty one, so the names line up. */
-.merman_icon { flex: none; width: 1em; font-family: "Material Icons"; line-height: 1; color: var(--merman-icon-color); }
-.merman_row_empty { padding: 1px 3px; opacity: 0.6; }
+.merman_icon { flex: none; width: 1em; font-family: "Material Symbols Outlined"; line-height: 1; color: var(--merman-icon-color); }
+.merman_row_empty { padding: var(--merman-spacing-row_transverse) var(--merman-spacing-row_converse); opacity: 0.6; }
 
 .merman_error {
   margin: 0;
-  padding: 1em;
+  padding: var(--merman-spacing-error);
   color: var(--merman-invalid-color);
   white-space: pre-wrap;
 }
 
 /* A column of status icons at the left edge, as in merman2. It stays put while the
-   panels beside it come and go. */
-.merman_status { flex: none; width: 2em; padding-top: 0.5em; display: flex; flex-direction: column; align-items: center; }
-.merman_status_icon { font-family: "Material Icons"; line-height: 1; color: var(--merman-icon-color); cursor: pointer; }
-.merman_status_icon[hidden] { display: none; }
+   panels beside it come and go. The back button is set apart from the rest. */
+.merman_status { flex: none; padding-top: var(--merman-spacing-status_top); display: flex; flex-direction: column; align-items: center; }
+.merman_status_icon { padding: var(--merman-spacing-status_icon); font-family: "Material Symbols Outlined"; font-size: 1.4em; line-height: 1; color: var(--merman-icon-color); cursor: pointer; user-select: none; }
+.merman_status_back { margin-bottom: var(--merman-spacing-status_back_gap); }
+.merman_status_off { opacity: 0.5; }
+.merman_status_off:hover { opacity: 0.3; }
 
-.merman_ai { height: 100%; display: flex; flex-direction: column; padding: 12px; box-sizing: border-box; }
+.merman_ai { height: 100%; display: flex; flex-direction: column; padding: 0 var(--merman-spacing-panel) var(--merman-spacing-panel); box-sizing: border-box; }
+.merman_ai > .merman_toolbar { flex: none; flex-wrap: wrap; padding: var(--merman-spacing-ai_toolbar) 0; margin-bottom: var(--merman-spacing-ai_toolbar); border-bottom: 1px solid var(--merman-hover-color); }
 .merman_ai_log { flex: 1 1 0; overflow: auto; }
-.merman_ai_older { opacity: 0.6; cursor: pointer; margin-bottom: 8px; }
+.merman_ai_older { opacity: 0.6; cursor: pointer; margin-bottom: var(--merman-spacing-ai_message_gap); }
 .merman_ai_older:hover { opacity: 1; }
 .merman_ai_older[hidden] { display: none; }
-.merman_ai_msg { margin-bottom: 8px; }
-.merman_ai_time { opacity: 0.6; margin-right: 6px; }
+.merman_ai_msg { margin-bottom: var(--merman-spacing-ai_message_gap); }
+.merman_ai_time { opacity: 0.6; margin-right: var(--merman-spacing-inline_gap); }
 .merman_ai_text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.merman_ai_user .merman_ai_text { color: var(--merman-style-ai_user-color); }
+.merman_ai_assistant .merman_ai_text { color: var(--merman-style-ai_assistant-color); }
 .merman_ai_tool .merman_ai_text { opacity: 0.6; }
+/* Markdown keeps every character of the message and only restyles it. */
+.merman_md_heading { color: var(--merman-style-ai_heading-color); font-weight: bold; }
+.merman_md_code { color: var(--merman-style-ai_code-color); font-family: var(--merman-style-ai_code-font, var(--merman-font-family)); }
+.merman_md_link { color: var(--merman-style-ai_link-color); text-decoration: underline; }
+.merman_md_emphasis { font-style: italic; }
+.merman_md_strong { font-weight: bold; }
 .merman_ai_tool summary { cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .merman_ai_tool summary .merman_ai_text { white-space: nowrap; }
-.merman_ai_system .merman_ai_text { color: var(--merman-invalid-color); }
-.merman_ai_input { flex: none; max-height: 12em; overflow: auto; padding: 4px; border: var(--merman-line-thickness) solid var(--merman-hover-color); border-radius: 3px; white-space: pre-wrap; overflow-wrap: anywhere; outline: none; }
+.merman_ai_system .merman_ai_text { color: var(--merman-style-ai_error-color); }
+.merman_ai_input { flex: none; max-height: 12em; overflow: auto; padding: var(--merman-spacing-ai_input); border: 1px solid var(--merman-hover-color); border-radius: 3px; white-space: pre-wrap; overflow-wrap: anywhere; outline: none; }
 .merman_ai_input:focus { border-color: var(--merman-cursor-color); }

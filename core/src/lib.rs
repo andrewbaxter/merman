@@ -6,6 +6,7 @@ pub mod back;
 pub mod change;
 pub mod context;
 pub mod cursor;
+pub mod details;
 pub mod direction;
 pub mod display;
 pub mod document;
