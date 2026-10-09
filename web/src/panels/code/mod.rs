@@ -349,9 +349,7 @@ fn code_pump(state: &Rc<RefCell<State>>) {
                             {
                                 let mut s = state.borrow_mut();
                                 s.edit.as_mut().unwrap().conflict = Some((source, revision));
-                                if let Some(ctx) = s.context.as_mut() {
-                                    ctx.config.editable = false;
-                                }
+                                s.editable_apply();
                             }
                             let keys = state.borrow().keys.clone();
                             let weak = Rc::downgrade(&state);
@@ -370,9 +368,7 @@ fn code_pump(state: &Rc<RefCell<State>>) {
                                         let edit = s.edit.as_mut().unwrap();
                                         edit.revision = revision;
                                         edit.rejected = false;
-                                        if let Some(ctx) = s.context.as_mut() {
-                                            ctx.config.editable = true;
-                                        }
+                                        s.editable_apply();
                                     }
                                     if keep {
                                         let batch = {
@@ -506,6 +502,7 @@ impl CodePanel {
                     busy: false,
                     conflict: None,
                     host: e.host,
+                    paused: false,
                     queue: VecDeque::new(),
                     rejected: false,
                     revision: e.revision,
@@ -708,6 +705,19 @@ impl Panel for CodePanel {
         return;
     }
 
+    fn panel_editable(&self, editable: bool) {
+        {
+            let mut s = self.0.borrow_mut();
+            let Some(edit) = s.edit.as_mut() else {
+                return;
+            };
+            edit.paused = !editable;
+            s.editable_apply();
+        }
+        after_context(&self.0);
+        return;
+    }
+
     fn panel_focusable(&self) -> bool {
         return true;
     }
@@ -883,6 +893,7 @@ struct EditState {
     busy: bool,
     conflict: Option<(String, u64)>,
     host: PanelHost,
+    paused: bool,
     queue: VecDeque<Request>,
     rejected: bool,
     revision: u64,
@@ -950,6 +961,18 @@ struct State {
 impl State {
     fn convert(&self) -> DirectionConvert {
         return self.syntax.spec_root.convert;
+    }
+
+    fn editable(&self) -> bool {
+        return self.edit.as_ref().is_some_and(|e| e.conflict.is_none() && !e.paused);
+    }
+
+    fn editable_apply(&mut self) {
+        let editable = self.editable();
+        if let Some(ctx) = self.context.as_mut() {
+            ctx.config.editable = editable;
+        }
+        return;
     }
 
     fn marks_apply(&mut self) {
@@ -1039,10 +1062,9 @@ impl State {
             widths: HashMap::new(),
             metrics: HashMap::new(),
         };
-        let editable = self.edit.as_ref().is_some_and(|e| e.conflict.is_none());
         let mut ctx = Context::context_new(self.syntax.clone(), document, ContextConfig {
             keys: self.keys.clone(),
-            editable: editable,
+            editable: self.editable(),
             ..ContextConfig::default()
         }, Box::new(display), Box::new(EnvironmentWeb), converse, transverse);
         if self.focused {

@@ -69,6 +69,8 @@ impl Panel for LangPanel {
         return;
     }
 
+    fn panel_editable(&self, _editable: bool) { }
+
     fn panel_focusable(&self) -> bool {
         return true;
     }

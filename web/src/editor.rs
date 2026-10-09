@@ -36,6 +36,7 @@ use {
         window,
     },
     merman_api::{
+        AiStatus,
         Event,
         ReqLangSourceRead,
         ReqList,
@@ -803,6 +804,7 @@ fn editor_splice(editor: &Rc<Editor>, offset: usize, remove: usize, add: Vec<Rc<
         editor.focus.set(focus - remove + add.len());
     }
     for panel in &add {
+        panel.panel_editable(editor.ai.status.get() == AiStatus::Off);
         let path = panel.panel_path();
         if !Lang::lang_path_relevant(&path) {
             continue;
@@ -944,6 +946,18 @@ pub fn start_editor() {
             start_focus: RefCell::new(start.file.clone()),
             theme: Rc::new(theme),
         });
+        *ai.changed.borrow_mut() = Some(Rc::new({
+            let editor: Weak<Editor> = Rc::downgrade(&editor);
+            move |status: AiStatus| {
+                let Some(editor) = editor.upgrade() else {
+                    return;
+                };
+                let panels = editor.panels.borrow().clone();
+                for panel in panels {
+                    panel.panel_editable(status == AiStatus::Off);
+                }
+            }
+        }));
         *lang.changed.borrow_mut() = Some(Rc::new({
             let editor: Weak<Editor> = Rc::downgrade(&editor);
             move |path: &str| {

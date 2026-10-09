@@ -43,6 +43,7 @@ pub trait Panel {
     fn panel_changed(&self, path: &str) -> Option<PanelChange>;
     fn panel_cursor_reference(&self) -> Option<String>;
     fn panel_detach(&self);
+    fn panel_editable(&self, editable: bool);
     fn panel_focusable(&self) -> bool;
     fn panel_focused(&self, focused: bool);
     fn panel_key(&self, e: &KeyboardEvent) -> PanelResult;

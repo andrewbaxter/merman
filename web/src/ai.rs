@@ -72,6 +72,7 @@ use {
 
 pub struct Ai {
     attach_frame: RefCell<Option<AnimationFrame>>,
+    pub changed: RefCell<Option<Rc<dyn Fn(AiStatus)>>>,
     element: El,
     focused: Cell<bool>,
     history: Cell<bool>,
@@ -84,6 +85,7 @@ pub struct Ai {
     older: El,
     open: RefCell<HashSet<usize>>,
     start: Cell<usize>,
+    pub status: Cell<AiStatus>,
     stick: Cell<bool>,
     this: Weak<Ai>,
 }
@@ -173,9 +175,11 @@ impl Ai {
         let element = el("div").classes(&["merman_ai"]).push(toolbar).push(log.clone()).push(input.clone());
         let ai = Rc::new_cyclic(|this| Ai {
             attach_frame: RefCell::new(None),
+            changed: RefCell::new(None),
             element: element,
             focused: Cell::new(false),
             start: Cell::new(0),
+            status: Cell::new(AiStatus::Off),
             stick: Cell::new(true),
             icon: icon.clone(),
             log: log.clone(),
@@ -377,14 +381,24 @@ impl Ai {
     pub fn ai_status(&self, status: AiStatus) {
         let (glyph, title) = match status {
             AiStatus::Off => ("\u{e0ca}", "No Claude session"),
-            AiStatus::Thinking => ("\u{e88b}", "Claude is thinking"),
-            AiStatus::Waiting => ("\u{e0b7}", "Claude is waiting for you"),
+            AiStatus::Thinking => ("\u{e88b}", "Claude is thinking; editing is paused until the session is cleared"),
+            AiStatus::Waiting => (
+                "\u{e0b7}",
+                "Claude is waiting for you; editing is paused until the session is cleared",
+            ),
         };
         self
             .icon
             .ref_text(glyph)
             .ref_attr("title", title)
             .ref_modify_classes(&[("merman_status_off", status == AiStatus::Off)]);
+        if self.status.replace(status) == status {
+            return;
+        }
+        let changed = self.changed.borrow().clone();
+        if let Some(changed) = changed {
+            changed(status);
+        }
         return;
     }
 }
@@ -415,6 +429,8 @@ impl Panel for Ai {
     }
 
     fn panel_detach(&self) { }
+
+    fn panel_editable(&self, _editable: bool) { }
 
     fn panel_lang_errors(&self, _path: &str, _errors: &[merman_langserver::CompileError]) { }
 
