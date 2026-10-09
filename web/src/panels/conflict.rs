@@ -60,6 +60,8 @@ impl Panel for ConflictPanel {
         return;
     }
 
+    fn panel_editable(&self, _editable: bool) { }
+
     fn panel_lang_errors(&self, _path: &str, _errors: &[merman_langserver::CompileError]) { }
 
     fn panel_focusable(&self) -> bool {
