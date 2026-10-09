@@ -1,4 +1,10 @@
 use {
+    merman_langserver::{
+        Announce,
+        Compiled,
+        FileState,
+        Source,
+    },
     schemars::JsonSchema,
     serde::{
         Deserialize,
@@ -21,6 +27,9 @@ glove::reqresp!(pub api {
     Redo(ReqRedo) => RespRedo,
     Sync(ReqSync) => RespSync,
     Flush(ReqFlush) => RespFlush,
+    LangFileState(ReqLangFileState) => RespLangFileState,
+    LangSourceRead(ReqLangSourceRead) => RespLangSourceRead,
+    LangFlush(ReqLangFlush) => RespLangFlush,
 });
 
 pub const API_PATH: &str = "/api";
@@ -72,6 +81,65 @@ pub enum Event {
     FileChanged {
         path: String,
     },
+    LangServer {
+        server: String,
+        announce: Announce,
+    },
+    LangServerStatus {
+        server: String,
+        running: bool,
+    },
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LangServerFileState {
+    pub server: String,
+    pub running: bool,
+    pub state: Option<FileState>,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LangServerFlush {
+    pub server: String,
+    pub result: Result<Vec<Compiled>, String>,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReqLangFileState {
+    pub path: String,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReqLangFlush {}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReqLangSourceRead {
+    pub server: String,
+    pub source: Source,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RespLangFileState {
+    pub servers: Vec<LangServerFileState>,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RespLangFlush {
+    pub servers: Vec<LangServerFlush>,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RespLangSourceRead {
+    pub syntax: String,
+    pub text: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema)]

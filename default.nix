@@ -53,6 +53,14 @@ let
     cp ${./Cargo.lock} $out/Cargo.lock
     cp -r ${./core} $out/core
     cp -r ${./api} $out/api
+    # The protocol crate depends on schemask by path, which lives outside this
+    # tree, so its two crates come along and the path is pointed at the copies.
+    cp -r ${./langserver} $out/langserver
+    chmod -R u+w $out/langserver
+    mkdir -p $out/vendor
+    cp -r ${../../schemask/source/schemask_core} $out/vendor/schemask_core
+    cp -r ${../../schemask/source/schemask_derive} $out/vendor/schemask_derive
+    sed -i 's#"../../../schemask/source/#"../vendor/#' $out/langserver/Cargo.toml
     cp -r ${./web} $out/web
     cp -r ${./cli/src} $out/cli/src
     cp ${./cli/Cargo.toml} $out/cli/Cargo.toml

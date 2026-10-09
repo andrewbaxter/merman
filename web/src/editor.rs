@@ -2,6 +2,10 @@ use {
     crate::{
         ai::Ai,
         client::client_send,
+        lang::{
+            Lang,
+            lang_source_key,
+        },
         panels::{
             Panel,
             PanelChange,
@@ -13,6 +17,7 @@ use {
             },
             error::ErrorPanel,
             filesystem::FilesystemPanel,
+            lang::LangPanel,
             panel_theme_apply,
         },
     },
@@ -32,6 +37,7 @@ use {
     },
     merman_api::{
         Event,
+        ReqLangSourceRead,
         ReqList,
         ReqLocationSet,
         ReqOpen,
@@ -103,6 +109,8 @@ struct Editor {
     history_navigating: Cell<bool>,
     history_select: RefCell<Option<(String, String)>>,
     keys: Keymap,
+    lang: Rc<Lang>,
+    lang_panel: RefCell<Option<(String, Rc<dyn Panel>)>>,
     last_seq: Cell<Option<u64>>,
     location_timer: RefCell<Option<Timeout>>,
     panels: RefCell<Vec<Rc<dyn Panel>>>,
@@ -113,6 +121,7 @@ struct Editor {
     shown: RefCell<Vec<Shown>>,
     socket: RefCell<Option<(WebSocket, Vec<EventListener>)>>,
     start_focus: RefCell<Option<String>>,
+    status_panel: El,
     theme: Rc<SpecTheme>,
 }
 
@@ -150,6 +159,11 @@ fn editor_connect(editor: &Rc<Editor>) {
                 WsServer::Gap => {
                     editor.ai.ai_load();
                     let paths = editor.panels.borrow().iter().map(|p| p.panel_path()).collect::<Vec<_>>();
+                    for path in &paths {
+                        if Lang::lang_path_relevant(path) {
+                            editor.lang.lang_load(path.clone());
+                        }
+                    }
                     editor.changed.borrow_mut().extend(paths);
                     editor_schedule_reload(&editor);
                     return;
@@ -169,6 +183,11 @@ fn editor_connect(editor: &Rc<Editor>) {
                 },
                 Event::Ai { message } => editor.ai.ai_message(message),
                 Event::AiStatus { status } => editor.ai.ai_status(status),
+                Event::LangServer { server, announce } => editor.lang.lang_announce(&server, announce),
+                Event::LangServerStatus { server, running } => {
+                    editor.lang.lang_status(&server, running);
+                    editor_status_refresh(&editor);
+                },
             }
         }
     });
@@ -260,6 +279,95 @@ fn editor_focus(editor: &Rc<Editor>, index: usize) {
     editor_show(editor);
     editor_sync(editor, index);
     editor_history_record(editor);
+    editor_status_refresh(editor);
+    return;
+}
+
+fn editor_jump(editor: &Rc<Editor>, path: String, location: Option<String>) {
+    *editor.location_timer.borrow_mut() = None;
+    let panels = editor.panels.borrow().clone();
+    let Some(index) = panels.iter().rposition(|p| {
+        let panel_path = p.panel_path();
+        return !panel_path.is_empty() && Path::new(&path).starts_with(&panel_path);
+    }) else {
+        return;
+    };
+    let panel = &panels[index];
+    if panel.panel_path() == path {
+        if let Some(location) = &location {
+            panel.panel_select(location);
+        }
+    } else {
+        let mut child = Path::new(&path);
+        {
+            let mut selections = editor.selections.borrow_mut();
+            while let Some(parent) = child.parent().filter(|p| *p != Path::new(&panel.panel_path())) {
+                selections.insert(parent.to_string_lossy().into_owned(), child.to_string_lossy().into_owned());
+                child = parent;
+            }
+            if let Some(location) = &location {
+                selections.insert(path.clone(), location.clone());
+                *editor.history_select.borrow_mut() = Some((path.clone(), location.clone()));
+            }
+        }
+        *editor.start_focus.borrow_mut() = Some(path.clone());
+        panel.panel_select(&child.to_string_lossy());
+    }
+    editor_focus(editor, index);
+    return;
+}
+
+fn editor_status_refresh(editor: &Rc<Editor>) {
+    editor.status_panel.ref_clear();
+    let panel = editor.panels.borrow().get(editor.focus.get()).cloned();
+    let Some(panel) = panel else {
+        return;
+    };
+    let path = panel.panel_path();
+    let Some(file) = editor.lang.lang_file(&path) else {
+        return;
+    };
+    if !file.dirty.is_empty() {
+        editor
+            .status_panel
+            .ref_push(
+                el("span")
+                    .classes(&["merman_status_icon", "merman_status_spin"])
+                    .attr("title", "Compiling")
+                    .text("\u{e863}"),
+            );
+    }
+    let errors = editor.lang.lang_errors(&path).len();
+    let logs =
+        el("span")
+            .classes(&["merman_status_icon", "merman_status_badge_holder"])
+            .attr("title", "Compile logs and errors")
+            .text("\u{e0ee}");
+    if errors > 0 {
+        logs.ref_push(el("span").classes(&["merman_status_badge"]).text(&errors.to_string()));
+    }
+    logs.ref_modify_classes(&[("merman_status_off", !editor.lang.lang_running())]);
+    logs.ref_on("click", {
+        let editor: Weak<Editor> = Rc::downgrade(editor);
+        move |_| {
+            let Some(editor) = editor.upgrade() else {
+                return;
+            };
+            if let Some((shown, panel)) = editor.lang_panel.borrow().as_ref() {
+                if *shown == path {
+                    if let Some(existing) = editor_index(&editor, panel) {
+                        editor_focus(&editor, existing);
+                        return;
+                    }
+                }
+            }
+            let panel: Rc<dyn Panel> =
+                Rc::new(LangPanel::lang_new(editor.keys.clone(), editor.lang.clone(), path.clone()));
+            *editor.lang_panel.borrow_mut() = Some((path.clone(), panel.clone()));
+            editor_open_child(&editor, editor.focus.get(), panel);
+        }
+    });
+    editor.status_panel.ref_push(logs);
     return;
 }
 
@@ -410,6 +518,67 @@ fn editor_result(editor: &Rc<Editor>, index: usize, result: PanelResult) -> bool
         },
         PanelResult::Open(child) => {
             editor_open_child(editor, index, child);
+            return true;
+        },
+        PanelResult::Jump(path, location) => {
+            editor_jump(editor, path, location);
+            return true;
+        },
+        PanelResult::JumpRemote(server, source, select) => {
+            let request = spawn_rooted({
+                let editor: Weak<Editor> = Rc::downgrade(editor);
+                let name = lang_source_key(&source).to_string();
+                async move {
+                    let response = client_send(ReqLangSourceRead {
+                        server: server,
+                        source: source,
+                    }).await;
+                    let Some(editor) = editor.upgrade() else {
+                        return;
+                    };
+                    let built = (|| -> Result<_, String> {
+                        let response = response?;
+                        let Some(text) = response.text else {
+                            return Err("The language server has no text for this source".to_string());
+                        };
+                        let spec: SpecSyntax =
+                            serde_json::from_str(
+                                &response.syntax,
+                            ).map_err(|e| format!("Error parsing syntax JSON: {}", e))?;
+                        let syntax =
+                            Rc::new(
+                                Syntax::syntax_resolve(
+                                    spec,
+                                    &editor.theme,
+                                ).map_err(|e| format!("Syntax errors:\n{}", e))?,
+                            );
+                        let value: serde_json::Value =
+                            source_parse(&text).map_err(|e| format!("Error parsing source JSON: {}", e))?;
+                        let document =
+                            match_document(
+                                &syntax,
+                                &value,
+                            ).map_err(|e| format!("Source doesn't match syntax:\n{}", e.mismatch_format()))?;
+                        return Ok((syntax, document));
+                    })();
+                    let panel: Rc<dyn Panel> = match built {
+                        Ok((syntax, document)) => CodePanel::code_new(
+                            editor.keys.clone(),
+                            name,
+                            syntax,
+                            document,
+                            select,
+                            None,
+                        ),
+                        Err(e) => Rc::new(ErrorPanel::error_new(name, false, &e)),
+                    };
+                    if index >= editor.panels.borrow().len() {
+                        return;
+                    }
+                    editor_open_child(&editor, index, panel);
+                }
+            });
+            *editor.child_request.borrow_mut() = Some(request);
             return true;
         },
         PanelResult::Unused(action) => action,
@@ -633,6 +802,14 @@ fn editor_splice(editor: &Rc<Editor>, offset: usize, remove: usize, add: Vec<Rc<
     if focus >= offset + remove {
         editor.focus.set(focus - remove + add.len());
     }
+    for panel in &add {
+        let path = panel.panel_path();
+        if !Lang::lang_path_relevant(&path) {
+            continue;
+        }
+        panel.panel_lang_errors(&path, &editor.lang.lang_errors(&path));
+        editor.lang.lang_load(path);
+    }
     editor.panels.borrow_mut().splice(offset .. offset + remove, add);
     editor_show(editor);
     return;
@@ -737,12 +914,16 @@ pub fn start_editor() {
         };
         panel_theme_apply(&theme);
         let ai = Ai::ai_new(keys.clone());
+        let lang = Lang::lang_new();
         let editor = Rc::new(Editor {
             animation: RefCell::new(None),
             animation_start: Cell::new(0.),
             keys: keys,
             dir: start.dir.clone(),
             ai: ai.clone(),
+            lang: lang.clone(),
+            lang_panel: RefCell::new(None),
+            status_panel: el("div").classes(&["merman_status_panel"]),
             element: el("div").classes(&["merman_panels"]),
             panels: RefCell::new(vec![]),
             shown: RefCell::new(vec![]),
@@ -763,6 +944,20 @@ pub fn start_editor() {
             start_focus: RefCell::new(start.file.clone()),
             theme: Rc::new(theme),
         });
+        *lang.changed.borrow_mut() = Some(Rc::new({
+            let editor: Weak<Editor> = Rc::downgrade(&editor);
+            move |path: &str| {
+                let Some(editor) = editor.upgrade() else {
+                    return;
+                };
+                let errors = editor.lang.lang_errors(path);
+                let panels = editor.panels.borrow().clone();
+                for panel in panels {
+                    panel.panel_lang_errors(path, &errors);
+                }
+                editor_status_refresh(&editor);
+            }
+        }));
         if let Some(file) = &start.file {
             let mut selections = editor.selections.borrow_mut();
             let mut child = Path::new(file);
@@ -832,40 +1027,8 @@ pub fn start_editor() {
                 let Ok((path, location)) = serde_json::from_str::<(String, Option<String>)>(&state) else {
                     return;
                 };
-                *editor.location_timer.borrow_mut() = None;
-                let panels = editor.panels.borrow().clone();
-                let Some(index) = panels.iter().rposition(|p| {
-                    let panel_path = p.panel_path();
-                    return !panel_path.is_empty() && Path::new(&path).starts_with(&panel_path);
-                }) else {
-                    return;
-                };
-                let panel = &panels[index];
                 editor.history_navigating.set(true);
-                if panel.panel_path() == path {
-                    if let Some(location) = &location {
-                        panel.panel_select(location);
-                    }
-                } else {
-                    let mut child = Path::new(&path);
-                    {
-                        let mut selections = editor.selections.borrow_mut();
-                        while let Some(parent) = child.parent().filter(|p| *p != Path::new(&panel.panel_path())) {
-                            selections.insert(
-                                parent.to_string_lossy().into_owned(),
-                                child.to_string_lossy().into_owned(),
-                            );
-                            child = parent;
-                        }
-                        if let Some(location) = &location {
-                            selections.insert(path.clone(), location.clone());
-                            *editor.history_select.borrow_mut() = Some((path.clone(), location.clone()));
-                        }
-                    }
-                    *editor.start_focus.borrow_mut() = Some(path.clone());
-                    panel.panel_select(&child.to_string_lossy());
-                }
-                editor_focus(&editor, index);
+                editor_jump(&editor, path, location);
                 editor.history_navigating.set(false);
             }
         }));
@@ -911,7 +1074,13 @@ pub fn start_editor() {
             vec![
                 el("div")
                     .classes(&["merman_root"])
-                    .push(el("div").classes(&["merman_status"]).push(back).push(ai.icon.clone()))
+                    .push(
+                        el("div")
+                            .classes(&["merman_status"])
+                            .push(back)
+                            .push(ai.icon.clone())
+                            .push(editor.status_panel.clone()),
+                    )
                     .push(editor.element.clone()),
             ],
         );

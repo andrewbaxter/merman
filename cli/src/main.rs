@@ -1,6 +1,7 @@
 mod ai;
 mod events;
 mod history;
+mod langserver;
 
 use {
     aargvark::{
@@ -60,8 +61,13 @@ use {
         ListEntry,
         RespAiClear,
         RespAiHistory,
+        LangServerFileState,
+        LangServerFlush,
         RespAiResume,
         RespAiSend,
+        RespLangFileState,
+        RespLangFlush,
+        RespLangSourceRead,
         RespAiSessions,
         RespEdit,
         RespFlush,
@@ -147,6 +153,7 @@ struct HandlerRoot {
     history: Arc<history::History>,
     html: Vec<u8>,
     keys: String,
+    langservers: Arc<langserver::LangServers>,
     locations: foyer::HybridCache<String, String>,
     theme: String,
 }
@@ -348,6 +355,7 @@ impl Handler<Body> for HandlerRoot {
                         }
                         if state.session.is_none() {
                             state.session = Some(ai::ai_spawn(ai, uuid::Uuid::new_v4().to_string(), false)?);
+                            langserver::langservers_pause(&self.langservers, true).await;
                         }
                         let session = state.session.as_mut().unwrap();
                         if let Some(model) =
@@ -395,9 +403,98 @@ impl Handler<Body> for HandlerRoot {
                     if let Some(mut session) = state.session.take() {
                         session.reader.abort();
                         _ = session.child.kill().await;
+                        langserver::langservers_pause(&self.langservers, false).await;
                     }
                     ai::ai_status_set(&mut state, &self.ai.events, AiStatus::Off);
                     respond(RespAiClear {})
+                },
+                ServerReq::LangFileState(respond, req) => {
+                    let mut servers = vec![];
+                    for (name, server) in &self.langservers.servers {
+                        let running = server.state.lock().await.stdin.is_some();
+                        let state =
+                            match langserver::langserver_request(
+                                &self.langservers,
+                                name,
+                                merman_langserver::Request::FileState { path: req.path.clone() },
+                            ).await {
+                                Ok(merman_langserver::Response::FileState(state)) => Some(state),
+                                _ => None,
+                            };
+                        servers.push(LangServerFileState {
+                            server: name.clone(),
+                            running: running,
+                            state: state,
+                        });
+                    }
+                    respond(RespLangFileState { servers: servers })
+                },
+                ServerReq::LangSourceRead(respond, req) => {
+                    let result: Result<RespLangSourceRead, loga::Error> = async {
+                        let name = match &req.source {
+                            merman_langserver::Source::Local { path } => path.clone(),
+                            merman_langserver::Source::Remote { spec } => {
+                                let (origin, subpath) = spec.rsplit_once('!').unwrap_or((spec, ""));
+                                if subpath.is_empty() {
+                                    origin.rsplit_once('#').map(|(url, _)| url).unwrap_or(origin).to_string()
+                                } else {
+                                    subpath.to_string()
+                                }
+                            },
+                        };
+                        let Some(mapping) = self.config.config_mapping(Path::new(&name)) else {
+                            return Err(
+                                loga::err_with(
+                                    "No syntax is configured for this source's extension",
+                                    ea!(source = name),
+                                ),
+                            );
+                        };
+                        let syntax =
+                            std::fs::read_to_string(
+                                &mapping.syntax,
+                            ).context_with(
+                                "Error reading the syntax configured for this source",
+                                ea!(syntax = mapping.syntax.display(), config = mapping.config.display()),
+                            )?;
+                        match langserver::langserver_request(
+                            &self.langservers,
+                            &req.server,
+                            merman_langserver::Request::SourceRead { source: req.source },
+                        ).await? {
+                            merman_langserver::Response::SourceRead { text } => return Ok(RespLangSourceRead {
+                                syntax: syntax,
+                                text: text,
+                            }),
+                            merman_langserver::Response::Failed { message } => return Err(loga::err(message)),
+                            _ => return Err(loga::err("The language server answered with the wrong response")),
+                        }
+                    }.await;
+                    match result {
+                        Ok(v) => respond(v),
+                        Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
+                    }
+                },
+                ServerReq::LangFlush(respond, _) => {
+                    let mut servers = vec![];
+                    for name in self.langservers.servers.keys() {
+                        let result =
+                            match langserver::langserver_request(
+                                &self.langservers,
+                                name,
+                                merman_langserver::Request::Flush,
+                            ).await {
+                                Ok(merman_langserver::Response::Flush { compiled }) => Ok(compiled),
+                                Ok(merman_langserver::Response::Failed { message }) => Err(message),
+                                Ok(_) => Err("The language server answered with the wrong response".to_string()),
+                                Err(e) => Err(e.to_string()),
+                            };
+                        servers.push(LangServerFlush {
+                            server: name.clone(),
+                            result: result,
+                        });
+                    }
+                    respond(RespLangFlush { servers: servers })
                 },
                 ServerReq::AiHistory(respond, _) => {
                     let result: Result<RespAiHistory, loga::Error> = async {
@@ -503,6 +600,7 @@ impl Handler<Body> for HandlerRoot {
                             _ = session.child.kill().await;
                         }
                         state.session = Some(ai::ai_spawn(&self.ai, id, true)?);
+                        langserver::langservers_pause(&self.langservers, true).await;
                         ai::ai_status_set(&mut state, &self.ai.events, AiStatus::Waiting);
                         return Ok(());
                     }.await;
@@ -859,12 +957,28 @@ fn main() {
                 .build()
                 .await;
         }).context_with("Error opening the location cache", ea!(path = locations_dir.display()))?;
-        let logs = base_dirs.data_local_dir().join("merman").join("ai").join(dir.to_string_lossy().chars().map(|c| {
+        let dir_escaped = dir.to_string_lossy().chars().map(|c| {
             if c.is_ascii_alphanumeric() || "._-".contains(c) {
                 return c.to_string();
             }
             return format!("%{:02X}", c as u32);
-        }).collect::<String>());
+        }).collect::<String>();
+        let logs = base_dirs.data_local_dir().join("merman").join("ai").join(&dir_escaped);
+        let langservers = Arc::new(langserver::LangServers {
+            dir: dir.clone(),
+            events: events.clone(),
+            logs: base_dirs.data_local_dir().join("merman").join("langserver").join(&dir_escaped),
+            paused: std::sync::atomic::AtomicBool::new(false),
+            servers: config.language_servers.iter().map(|(name, command)| (name.clone(), langserver::LangServer {
+                command: command.clone(),
+                state: tokio::sync::Mutex::new(langserver::LangServerState::default()),
+            })).collect(),
+        });
+        let listener =
+            rt
+                .block_on(tokio::net::TcpListener::bind(("127.0.0.1", args.port.unwrap_or(0))))
+                .context("Error binding port")?;
+        let url = format!("http://{}/", listener.local_addr().context("Error getting listen address")?);
         let history_path = base_dirs.data_local_dir().join("merman").join("history.sqlite");
         std::fs::create_dir_all(
             history_path.parent().unwrap(),
@@ -883,6 +997,7 @@ fn main() {
             files: std::sync::Mutex::new(std::collections::HashMap::new()),
         });
         let ai = Arc::new(ai::Ai {
+            api_url: url.clone(),
             configs: config
                 .sources
                 .iter()
@@ -890,6 +1005,7 @@ fn main() {
                 .chain(config.extensions.values().map(|m| m.syntax.clone()))
                 .collect(),
             dir: dir.clone(),
+            langservers: langservers.clone(),
             logs: logs,
             events: events.clone(),
             state: tokio::sync::Mutex::new(ai::AiState {
@@ -908,13 +1024,134 @@ fn main() {
             events: events,
             ai: ai,
             history: history.clone(),
+            langservers: langservers.clone(),
             locations: locations,
         });
-        let listener =
-            rt
-                .block_on(tokio::net::TcpListener::bind(("127.0.0.1", args.port.unwrap_or(0))))
-                .context("Error binding port")?;
-        let url = format!("http://{}/", listener.local_addr().context("Error getting listen address")?);
+        for name in langservers.servers.keys() {
+            rt.spawn({
+                let ls = langservers.clone();
+                let name = name.clone();
+                async move {
+                    use tokio::io::AsyncBufReadExt;
+
+                    let server = &ls.servers[&name];
+                    let mut backoff = std::time::Duration::from_secs(1);
+                    loop {
+                        let started = std::time::Instant::now();
+                        let ran: Result<(), loga::Error> = async {
+                            let (program, args) =
+                                server.command.split_first().context("The language server command is empty")?;
+                            let mut child =
+                                tokio::process::Command::new(program)
+                                    .args(args)
+                                    .current_dir(&ls.dir)
+                                    .stdin(std::process::Stdio::piped())
+                                    .stdout(std::process::Stdio::piped())
+                                    .stderr(std::process::Stdio::piped())
+                                    .kill_on_drop(true)
+                                    .spawn()
+                                    .context_with(
+                                        "Error starting the language server",
+                                        ea!(command = server.command.join(" ")),
+                                    )?;
+                            let stdin = child.stdin.take().unwrap();
+                            let stdout = child.stdout.take().unwrap();
+                            let stderr = child.stderr.take().unwrap();
+                            tokio::spawn({
+                                let ls = ls.clone();
+                                let name = name.clone();
+                                async move {
+                                    let mut lines = tokio::io::BufReader::new(stderr).lines();
+                                    while let Ok(Some(line)) = lines.next_line().await {
+                                        langserver::langserver_log(&ls, &name, &line);
+                                    }
+                                }
+                            });
+                            {
+                                let mut state = server.state.lock().await;
+                                state.child = Some(child);
+                                state.stdin = Some(stdin);
+                            }
+                            ls.events.events_publish(merman_api::Event::LangServerStatus {
+                                server: name.clone(),
+                                running: true,
+                            });
+                            if ls.paused.load(std::sync::atomic::Ordering::SeqCst) {
+                                tokio::spawn({
+                                    let ls = ls.clone();
+                                    let name = name.clone();
+                                    async move {
+                                        _ =
+                                            langserver::langserver_request(
+                                                &ls,
+                                                &name,
+                                                merman_langserver::Request::Pause { paused: true },
+                                            ).await;
+                                    }
+                                });
+                            }
+                            let mut lines = tokio::io::BufReader::new(stdout).lines();
+                            while let Ok(Some(line)) = lines.next_line().await {
+                                let message =
+                                    match serde_json::from_str::<merman_langserver::ServerMessage>(&line) {
+                                        Ok(m) => m,
+                                        Err(e) => {
+                                            langserver::langserver_log(
+                                                &ls,
+                                                &name,
+                                                &format!("merman: unreadable message ({}): {}", e, line),
+                                            );
+                                            continue;
+                                        },
+                                    };
+                                match message {
+                                    merman_langserver::ServerMessage::Ev { ev } => {
+                                        ls.events.events_publish(merman_api::Event::LangServer {
+                                            server: name.clone(),
+                                            announce: ev,
+                                        });
+                                    },
+                                    merman_langserver::ServerMessage::Res { id, res } => {
+                                        let sender = server.state.lock().await.pending.remove(&id);
+                                        match sender {
+                                            Some(sender) => _ = sender.send(res),
+                                            None => langserver::langserver_log(
+                                                &ls,
+                                                &name,
+                                                &format!("merman: reply to unknown request {}", id),
+                                            ),
+                                        }
+                                    },
+                                }
+                            }
+                            let mut state = server.state.lock().await;
+                            state.stdin = None;
+                            state.pending.clear();
+                            if let Some(mut child) = state.child.take() {
+                                if tokio::time::timeout(std::time::Duration::from_secs(2), child.wait())
+                                    .await
+                                    .is_err() {
+                                    _ = child.kill().await;
+                                }
+                            }
+                            return Ok(());
+                        }.await;
+                        if let Err(e) = ran {
+                            langserver::langserver_log(&ls, &name, &format!("merman: {}", e));
+                        }
+                        ls.events.events_publish(merman_api::Event::LangServerStatus {
+                            server: name.clone(),
+                            running: false,
+                        });
+                        if started.elapsed() > std::time::Duration::from_secs(60) {
+                            backoff = std::time::Duration::from_secs(1);
+                        }
+                        tokio::time::sleep(backoff).await;
+                        backoff = (backoff * 2).min(std::time::Duration::from_secs(30));
+                    }
+                }
+            });
+        }
         eprintln!("Serving at {} (ctrl-c to stop)", url);
         let serve = async move {
             loop {
@@ -1062,7 +1299,15 @@ fn main() {
                     eprintln!("Error opening browser: {}", e);
                 }
             }
-            rt.block_on(serve);
+            rt.block_on(async {
+                tokio::select!{
+                    _ = serve => {
+                    },
+                    _ = tokio:: signal:: ctrl_c() => {
+                        langserver::langservers_kill(&langservers).await;
+                    },
+                }
+            });
             return Ok(());
         }
         rt.spawn(serve);
@@ -1111,6 +1356,7 @@ fn main() {
                             eprintln!("Error writing {}: {}", path.display(), e);
                         }
                     }
+                    rt.block_on(langserver::langservers_kill(&langservers));
                     *control_flow = ControlFlow::Exit;
                 }
             })

@@ -5,6 +5,7 @@ use {
             Border,
             Caret,
             Drawing,
+            Mark,
             TextBorder,
         },
         cursor::{
@@ -51,6 +52,7 @@ use {
     std::{
         collections::{
             BinaryHeap,
+            HashMap,
             HashSet,
         },
         rc::Rc,
@@ -64,6 +66,7 @@ pub type CaretId = usize;
 
 pub struct Context {
     pub aligns: Vec<Alignment>,
+    pub atom_marks: HashMap<AtomId, Vec<MarkId>>,
     pub atom_visual: Vec<Option<VisualId>>,
     pub background_layer: DisplayNodeId,
     pub borders: Vec<Option<Border>>,
@@ -94,6 +97,7 @@ pub struct Context {
     pub iteration_pending: bool,
     pub iteration_timer: bool,
     pub key_pending: Vec<KeyStroke>,
+    pub marks: Vec<Option<Mark>>,
     pub overlay_layer: DisplayNodeId,
     pub queue: BinaryHeap<QueueEntry>,
     pub root_visual: VisualId,
@@ -163,10 +167,12 @@ impl Context {
         let text_layer = display.display_layer(DisplayLayer::Text);
         let overlay_layer = display.display_layer(DisplayLayer::Overlay);
         let mut c = Context {
+            atom_marks: HashMap::new(),
             atom_visual: vec![
                 None;
                 document.atoms.len()
             ],
+            marks: vec![],
             syntax: syntax,
             document: document,
             config: config,
@@ -374,6 +380,7 @@ pub type CourseId = usize;
 pub type CursorId = usize;
 pub type DrawingId = usize;
 pub type HoverableId = usize;
+pub type MarkId = usize;
 pub type TaskId = usize;
 pub type TextBorderId = usize;
 

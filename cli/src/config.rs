@@ -1,6 +1,7 @@
 pub use merman_core::keys::SpecKeys;
 use {
     merman_core::spec::{
+        SpecMark,
         SpecObbox,
         SpecSpacing,
         SpecTextStyle,
@@ -26,6 +27,7 @@ use {
 pub struct Config {
     pub extensions: HashMap<String, Mapping>,
     pub keys: SpecKeys,
+    pub language_servers: BTreeMap<String, Vec<String>>,
     pub sources: Vec<PathBuf>,
     pub theme: SpecTheme,
 }
@@ -45,8 +47,10 @@ pub fn config_load(dir: &Path, cwd: &Path) -> Result<Config, loga::Error> {
     let mut extensions = std::collections::HashMap::new();
     let mut keys = SpecKeys::default();
     let mut sources = vec![];
+    let mut language_servers = BTreeMap::new();
     let mut background = None;
     let mut cursor = None;
+    let mut error_mark = None;
     let mut font_family = None;
     let mut font_size = None;
     let mut hover = None;
@@ -105,8 +109,12 @@ pub fn config_load(dir: &Path, cwd: &Path) -> Result<Config, loga::Error> {
                     into.entry(action).or_insert(bindings);
                 }
             }
+            for (name, server) in spec.language_servers {
+                language_servers.entry(name).or_insert(server.command);
+            }
             background = background.or(spec.background);
             cursor = cursor.or(spec.cursor);
+            error_mark = error_mark.or(spec.error_mark);
             font_family = font_family.or(spec.font_family);
             font_size = font_size.or(spec.font_size);
             hover = hover.or(spec.hover);
@@ -124,12 +132,14 @@ pub fn config_load(dir: &Path, cwd: &Path) -> Result<Config, loga::Error> {
     return Ok(Config {
         extensions: extensions,
         keys: keys,
+        language_servers: language_servers,
         sources: sources,
         theme: {
             let default = SpecTheme::default();
             SpecTheme {
                 background: background.unwrap_or(default.background),
                 cursor: cursor.unwrap_or(default.cursor),
+                error_mark: error_mark.unwrap_or(default.error_mark),
                 font_family: font_family.unwrap_or(default.font_family),
                 font_size: font_size.unwrap_or(default.font_size),
                 hover: hover.unwrap_or(default.hover),
@@ -165,6 +175,7 @@ pub struct SpecConfig {
     pub background: Option<String>,
     pub cursor: Option<SpecObbox>,
     pub details_background: Option<String>,
+    pub error_mark: Option<SpecMark>,
     #[serde(default)]
     pub extensions: HashMap<String, PathBuf>,
     pub font_family: Option<String>,
@@ -173,9 +184,17 @@ pub struct SpecConfig {
     pub icon_color: Option<String>,
     #[serde(default)]
     pub keys: SpecKeys,
+    #[serde(default)]
+    pub language_servers: BTreeMap<String, SpecLanguageServer>,
     pub line_gap: Option<f64>,
     pub spacing: Option<SpecSpacing>,
     pub text_color: Option<String>,
     #[serde(default)]
     pub text_styles: BTreeMap<String, SpecTextStyle>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SpecLanguageServer {
+    pub command: Vec<String>,
 }

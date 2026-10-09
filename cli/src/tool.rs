@@ -7,6 +7,7 @@ use {
         ResultContext,
         ea,
     },
+    merman_api::api::ReqTrait,
     merman_core::spec::SpecCompression,
     merman::{
         compress::{
@@ -50,6 +51,17 @@ struct Args {
     command: Command,
 }
 
+fn location_ref(location: &merman_langserver::Location) -> String {
+    let source = match &location.source {
+        merman_langserver::Source::Local { path } => path.clone(),
+        merman_langserver::Source::Remote { spec } => spec.clone(),
+    };
+    return match location.expr {
+        Some(expr) => format!("{}#{}", source, expr),
+        None => source,
+    };
+}
+
 #[derive(Aargvark)]
 #[vark(break_help)]
 enum Command {
@@ -57,7 +69,11 @@ enum Command {
     Find(Find),
     Set(Set),
     Delete(Delete),
+    Compile(Compile),
 }
+
+#[derive(Aargvark)]
+struct Compile {}
 
 #[derive(Aargvark)]
 struct Get {
@@ -484,6 +500,83 @@ fn main() {
                     }
                 }
                 return write(&loaded, &root, &path, Some((0, 0)));
+            },
+            Command::Compile(_) => {
+                let api_url =
+                    std::env::var(
+                        "MERMAN_API_URL",
+                    ).context("MERMAN_API_URL isn't set; is this running in the editor's ai session?")?;
+                let url: http::Uri =
+                    format!("{}{}", api_url.trim_end_matches('/'), merman_api::API_PATH)
+                        .parse()
+                        .context_with("MERMAN_API_URL isn't a url", ea!(url = api_url))?;
+                let rt =
+                    tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .context("Error starting async runtime")?;
+                let resp: glove::Resp<merman_api::RespLangFlush> = rt.block_on(async {
+                    let limits =
+                        htwrap::htreq::Limits::default().with_read_body_time(std::time::Duration::from_secs(3600));
+                    let mut conn = htwrap::htreq::connect(limits, &url).await?;
+                    return htwrap::htreq::post_json(
+                        &loga::Log::new_root(loga::WARN),
+                        limits,
+                        &mut conn,
+                        &url,
+                        &Default::default(),
+                        merman_api::ReqLangFlush {}.to_enum(),
+                    ).await;
+                })?;
+                let resp = match resp {
+                    glove::Resp::Ok(r) => r,
+                    glove::Resp::Err(e) => return Err(
+                        loga::err_with("The editor refused the request", ea!(err = e)),
+                    ),
+                };
+                let mut out = serde_json::Map::new();
+                let mut failed = false;
+                for server in resp.servers {
+                    let compiled = match server.result {
+                        Ok(compiled) => compiled,
+                        Err(e) => {
+                            failed = true;
+                            out.insert(server.server, serde_json::json!({
+                                "error": e
+                            }));
+                            continue;
+                        },
+                    };
+                    let mut units = vec![];
+                    for unit in compiled {
+                        let mut errors = vec![];
+                        for error in unit.errors {
+                            failed = true;
+                            errors.push(serde_json::json!({
+                                "location": location_ref(&error.location),
+                                "message": error.message,
+                                "related": error.related.iter().map(|r| serde_json::json!({
+                                    "location": location_ref(&r.location),
+                                    "description": r.description
+                                })).collect::< Vec < _ >>()
+                            }));
+                        }
+                        units.push(serde_json::json!({
+                            "source": location_ref(&merman_langserver::Location {
+                                source: unit.source,
+                                expr: None,
+                            }),
+                            "import_state": unit.import_state,
+                            "errors": errors
+                        }));
+                    }
+                    out.insert(server.server, Value::Array(units));
+                }
+                println!("{}", serde_json::to_string_pretty(&Value::Object(out)).unwrap());
+                if failed {
+                    std::process::exit(1);
+                }
+                return Ok(());
             },
         }
     })() {

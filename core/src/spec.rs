@@ -318,6 +318,39 @@ pub struct SpecGroup {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
+pub struct SpecMark {
+    #[serde(default = "default_mark_color")]
+    pub color: String,
+    #[serde(default = "default_mark_length")]
+    pub length: f64,
+    #[serde(default = "default_mark_thickness")]
+    pub thickness: f64,
+}
+
+fn default_mark_color() -> String {
+    return "#ff5555".to_string();
+}
+
+fn default_mark_length() -> f64 {
+    return 8.;
+}
+
+fn default_mark_thickness() -> f64 {
+    return 2.;
+}
+
+impl Default for SpecMark {
+    fn default() -> Self {
+        return SpecMark {
+            color: default_mark_color(),
+            length: default_mark_length(),
+            thickness: default_mark_thickness(),
+        };
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct SpecObbox {
     #[serde(default)]
     pub fill: bool,
@@ -542,6 +575,8 @@ pub struct SpecTheme {
     pub background: String,
     pub cursor: SpecObbox,
     pub details_background: String,
+    #[serde(default)]
+    pub error_mark: SpecMark,
     pub font_family: String,
     pub font_size: f64,
     pub hover: SpecObbox,
@@ -573,6 +608,7 @@ impl Default for SpecTheme {
             background: "#2b2b2b".to_string(),
             cursor: obbox("#ffffff"),
             details_background: "#19191980".to_string(),
+            error_mark: SpecMark::default(),
             font_family: "monospace".to_string(),
             font_size: 4.,
             hover: obbox("#888888"),

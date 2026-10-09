@@ -3,6 +3,7 @@ pub mod code;
 pub mod conflict;
 pub mod error;
 pub mod filesystem;
+pub mod lang;
 pub mod list;
 pub mod models;
 pub mod sessions;
@@ -23,6 +24,10 @@ use {
         },
     },
     gloo_utils::document,
+    merman_langserver::{
+        CompileError,
+        Source,
+    },
     rooting::El,
     std::rc::Rc,
     wasm_bindgen::JsCast,
@@ -41,6 +46,7 @@ pub trait Panel {
     fn panel_focusable(&self) -> bool;
     fn panel_focused(&self, focused: bool);
     fn panel_key(&self, e: &KeyboardEvent) -> PanelResult;
+    fn panel_lang_errors(&self, path: &str, errors: &[CompileError]);
     fn panel_mouse(&self, e: &MouseEvent) -> PanelResult;
     fn panel_parent(&self) -> Option<String>;
     fn panel_path(&self) -> String;
@@ -190,6 +196,7 @@ pub fn panel_theme_apply(theme: &SpecTheme) {
         ),
         ("--merman-font-family", theme.font_family.clone()),
         ("--merman-font-size", format!("{}mm", theme.font_size)),
+        ("--merman-error-mark-color", theme.error_mark.color.clone()),
         ("--merman-hover-color", theme.hover.line_color.clone()),
         ("--merman-icon-color", theme.icon_color.clone()),
         ("--merman-text-color", theme.text_color.clone()),
@@ -229,6 +236,8 @@ pub struct PanelHost(pub Rc<dyn Fn(Rc<dyn Panel>, PanelResult)>);
 pub enum PanelResult {
     Detail(Rc<dyn Panel>),
     Ignored,
+    Jump(String, Option<String>),
+    JumpRemote(String, Source, Option<String>),
     Open(Rc<dyn Panel>),
     Replace(Rc<dyn Panel>),
     Selected,

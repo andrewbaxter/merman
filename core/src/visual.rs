@@ -707,11 +707,13 @@ impl Context {
                     self.parent_notify_first_brick_created(p.visual, brick);
                 }
             },
-            VisualKind::Atom(_) => {
+            VisualKind::Atom(a) => {
+                let atom = a.atom;
                 if let Some(sel) = self.visual_selectable_index(p.visual, child) {
                     self.atom_selectable_brick_created(p.visual, sel, brick, true);
                 }
                 if p.index == 0 {
+                    self.mark_atom_brick_created(atom, brick);
                     self.parent_notify_first_brick_created(p.visual, brick);
                 }
             },

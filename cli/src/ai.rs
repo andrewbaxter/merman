@@ -1,5 +1,11 @@
 use {
-    crate::events::Events,
+    crate::{
+        events::Events,
+        langserver::{
+            LangServers,
+            langservers_pause,
+        },
+    },
     loga::{
         ResultContext,
         ea,
@@ -47,9 +53,11 @@ use {
 };
 
 pub struct Ai {
+    pub api_url: String,
     pub configs: Vec<PathBuf>,
     pub dir: PathBuf,
     pub events: Arc<Events>,
+    pub langservers: Arc<LangServers>,
     pub logs: PathBuf,
     pub state: Mutex<AiState>,
 }
@@ -183,6 +191,7 @@ pub fn ai_spawn(ai: &Arc<Ai>, id: String, resume: bool) -> Result<AiSession, log
         .arg("PATH")
         .arg(std::env::join_paths(&path_dirs).context("Error building the sandbox PATH")?);
     cmd.arg("--setenv").arg("TERM").arg("dumb");
+    cmd.arg("--setenv").arg("MERMAN_API_URL").arg(&ai.api_url);
     cmd.args(
         [
             "--",
@@ -218,7 +227,9 @@ pub fn ai_spawn(ai: &Arc<Ai>, id: String, resume: bool) -> Result<AiSession, log
             `merman-tool set FILE REF` replaces the JSON at REF with the JSON on stdin (a slice takes an array \
             or string to splice in, so `[i:i]` inserts); `merman-tool delete FILE REF` removes it. Edits are \
             checked against the syntax before the file is written. Give new elements an id of -1 and it is \
-            assigned; ids copied from elsewhere in the file are reassigned too.",
+            assigned; ids copied from elsewhere in the file are reassigned too. The editor's language servers \
+            don't compile on their own while you run: after editing, run `merman-tool compile` to compile \
+            everything that changed and see the errors (each with FILE#REF locations).",
         ],
     );
     cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
@@ -338,6 +349,8 @@ pub fn ai_spawn(ai: &Arc<Ai>, id: String, resume: bool) -> Result<AiSession, log
             };
             _ = ai_message(&log, &ai.events, AiRole::System, text.clone());
             ai_status_set(&mut state, &ai.events, AiStatus::Off);
+            drop(state);
+            langservers_pause(&ai.langservers, false).await;
             ai_notify(&ai, AiStatus::Off, "Claude exited", text);
         }
     });

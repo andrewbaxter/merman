@@ -39,14 +39,22 @@ use {
         ReqSync,
         ReqUndo,
     },
+    merman_langserver::CompileError,
+    crate::lang::lang_source_key,
     merman_core::{
+        back::back_locate,
         context::{
             Context,
             ContextConfig,
+            MarkId,
             Vector,
         },
+        cursor::Located,
         direction::DirectionConvert,
-        document::Document,
+        document::{
+            AtomId,
+            Document,
+        },
         edit::EditBatch,
         environment::Environment,
         keys::{
@@ -95,6 +103,20 @@ use {
 fn after_context(state: &Rc<RefCell<State>>) {
     {
         let mut s = state.borrow_mut();
+        let State { context, details_atom, details_errors, errors_by_atom, .. } = &mut *s;
+        if let Some(ctx) = context.as_mut() {
+            let atom = ctx.cursor_atom();
+            if atom != *details_atom {
+                *details_atom = atom;
+                let errors = atom.and_then(|a| errors_by_atom.get(&a)).cloned().unwrap_or_default();
+                let changed = *details_errors.borrow() != errors;
+                *details_errors.borrow_mut() = errors;
+                if changed && ctx.details.is_some() {
+                    ctx.details_close();
+                    ctx.details_open();
+                }
+            }
+        }
         'sync: {
             let convert = s.convert();
             let Some(context) = s.context.as_mut() else {
@@ -475,6 +497,11 @@ impl CodePanel {
                 choices: edit
                     .as_ref()
                     .map(|_| (Rc::new(ChoicesPanel::choices_new(keys.clone(), syntax.clone())), false)),
+                details_atom: None,
+                details_errors: Rc::new(RefCell::new(vec![])),
+                errors: vec![],
+                errors_by_atom: HashMap::new(),
+                marks: vec![],
                 edit: edit.map(|e| EditState {
                     busy: false,
                     conflict: None,
@@ -714,6 +741,19 @@ impl Panel for CodePanel {
         return;
     }
 
+    fn panel_lang_errors(&self, path: &str, errors: &[CompileError]) {
+        {
+            let mut s = self.0.borrow_mut();
+            if path != s.path {
+                return;
+            }
+            s.errors = errors.to_vec();
+            s.marks_apply();
+        }
+        after_context(&self.0);
+        return;
+    }
+
     fn panel_key(&self, e: &KeyboardEvent) -> PanelResult {
         let state = &self.0;
         let convert = state.borrow().convert();
@@ -882,14 +922,19 @@ fn select_initial(ctx: &mut Context, select: &mut Option<String>) {
 struct State {
     choices: Option<(Rc<ChoicesPanel>, bool)>,
     context: Option<Context>,
+    details_atom: Option<AtomId>,
+    details_errors: Rc<RefCell<Vec<String>>>,
     document: Option<Document>,
     edit: Option<EditState>,
+    errors: Vec<CompileError>,
+    errors_by_atom: HashMap<AtomId, Vec<String>>,
     focused: bool,
     host: El,
     host_size: Option<(f64, f64)>,
     hover_point: Option<Vector>,
     hover_raf: Option<AnimationFrame>,
     keys: Keymap,
+    marks: Vec<MarkId>,
     measure: El,
     origin: (f64, f64),
     panel: El,
@@ -905,6 +950,44 @@ struct State {
 impl State {
     fn convert(&self) -> DirectionConvert {
         return self.syntax.spec_root.convert;
+    }
+
+    fn marks_apply(&mut self) {
+        let Some(ctx) = self.context.as_mut() else {
+            return;
+        };
+        for mark in self.marks.drain(..) {
+            ctx.mark_destroy(mark);
+        }
+        self.errors_by_atom.clear();
+        for error in &self.errors {
+            let atom = match error.location.expr {
+                Some(expr) => {
+                    let Some(target) = back_locate(&ctx.syntax, &ctx.document, &Reference {
+                        id: Some(expr),
+                        path: vec![],
+                        range: None,
+                    }) else {
+                        continue;
+                    };
+                    match target.located {
+                        Located::Atom(atom) => atom,
+                        Located::Field(atom, _) => atom,
+                    }
+                },
+                None => ctx.document.root,
+            };
+            let mut message = error.message.clone();
+            for related in &error.related {
+                message.push_str(
+                    &format!("\n{}: {}", related.description, lang_source_key(&related.location.source)),
+                );
+            }
+            self.errors_by_atom.entry(atom).or_default().push(message);
+            self.marks.push(ctx.mark_new(atom, ctx.stylist.style_mark()));
+        }
+        self.details_atom = None;
+        return;
     }
 
     fn lay_out(&mut self) {
@@ -923,19 +1006,30 @@ impl State {
         };
         let (inset_x, inset_y) =
             convert.direction_unconvert(self.syntax.spec_root.pad.converse_start.round(), 0., 0., 0.);
+        let details_errors = self.details_errors.clone();
         let display = DisplayWeb {
             convert: convert,
             details: Rc::new(move || {
-                return toolbar_new(
-                    &[("ai", "\u{e0ca}", "Ask Claude about the cursor's location")],
-                ).attr(
-                    "style",
-                    &format!(
-                        "position: relative; left: max(0px, calc({}px - var(--merman-spacing-details))); top: {}px",
-                        inset_x,
-                        inset_y
-                    ),
-                );
+                let details =
+                    el("div")
+                        .push(toolbar_new(&[("ai", "\u{e0ca}", "Ask Claude about the cursor's location")]))
+                        .attr(
+                            "style",
+                            &format!(
+                                "position: relative; left: max(0px, calc({}px - var(--merman-spacing-details))); top: {}px",
+                                inset_x,
+                                inset_y
+                            ),
+                        );
+                let errors = details_errors.borrow();
+                if !errors.is_empty() {
+                    let list = el("div").classes(&["merman_details_errors"]);
+                    for error in errors.iter() {
+                        list.ref_push(el("div").classes(&["merman_error"]).text(error));
+                    }
+                    details.ref_push(list);
+                }
+                return details;
             }),
             root: self.shift.clone(),
             background: self.panel.clone(),
@@ -958,6 +1052,7 @@ impl State {
             }
         }
         self.context = Some(ctx);
+        self.marks_apply();
     }
 }
 

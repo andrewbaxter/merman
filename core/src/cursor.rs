@@ -758,7 +758,19 @@ impl Context {
         self.range_nudge(RangeLoc::Cursor(id));
     }
 
+    pub fn cursor_atom(&self) -> Option<AtomId> {
+        return match self.cursor_located()?.0 {
+            Located::Atom(atom) => Some(atom),
+            Located::Field(atom, _) => Some(atom),
+        };
+    }
+
     pub fn cursor_reference(&self) -> Option<Reference> {
+        let (located, range) = self.cursor_located()?;
+        return Some(back_reference(&self.syntax, &self.document, &located, range));
+    }
+
+    fn cursor_located(&self) -> Option<(Located, Option<(usize, usize)>)> {
         let (located, range) = match self.cursor_get(self.cursor?) {
             Cursor::Atom(c) => {
                 let va = self.visual_atom(c.visual);
@@ -782,7 +794,7 @@ impl Context {
                 (Located::Field(atom, field), Some((b.min(e), b.max(e))))
             },
         };
-        return Some(back_reference(&self.syntax, &self.document, &located, range));
+        return Some((located, range));
     }
 
     pub fn cursor_select_reference(&mut self, reference: &Reference) -> bool {

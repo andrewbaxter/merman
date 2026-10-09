@@ -1,0 +1,350 @@
+{
+  "v1": {
+    "bindings": {
+      "Announce": {
+        "tagged_union": {
+          "variants": {
+            "compiled": {
+              "description": "One compile unit of a source finished, or was loaded from the cache.",
+              "maskoid": {
+                "ref": "Compiled"
+              }
+            },
+            "dirty": {
+              "description": "The file (or something it depends on) changed; its previous results are void.",
+              "maskoid": {
+                "record": {
+                  "fields": {
+                    "path": {
+                      "maskoid": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "removed": {
+              "description": "The file was deleted.",
+              "maskoid": {
+                "record": {
+                  "fields": {
+                    "path": {
+                      "maskoid": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "settled": {
+              "description": "Nothing is pending for the source any more.",
+              "maskoid": {
+                "record": {
+                  "fields": {
+                    "path": {
+                      "maskoid": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "ClientMessage": {
+        "record": {
+          "fields": {
+            "id": {
+              "maskoid": "int"
+            },
+            "req": {
+              "maskoid": {
+                "ref": "Request"
+              }
+            }
+          }
+        }
+      },
+      "CompileError": {
+        "record": {
+          "fields": {
+            "location": {
+              "maskoid": {
+                "ref": "Location"
+              }
+            },
+            "message": {
+              "maskoid": "string"
+            },
+            "related": {
+              "maskoid": {
+                "list": {
+                  "ref": "Related"
+                }
+              }
+            }
+          }
+        }
+      },
+      "Compiled": {
+        "record": {
+          "description": "One compile of a source. A source is compiled once per import state it is\nimported under, so a file can have several.",
+          "fields": {
+            "ended_ms": {
+              "maskoid": "int"
+            },
+            "errors": {
+              "maskoid": {
+                "list": {
+                  "ref": "CompileError"
+                }
+              }
+            },
+            "import_state": {
+              "maskoid": "int"
+            },
+            "logs": {
+              "maskoid": {
+                "list": {
+                  "ref": "Log"
+                }
+              }
+            },
+            "source": {
+              "maskoid": {
+                "ref": "Source"
+              }
+            },
+            "started_ms": {
+              "maskoid": "int"
+            }
+          }
+        }
+      },
+      "FileState": {
+        "record": {
+          "fields": {
+            "compiles": {
+              "maskoid": {
+                "list": {
+                  "ref": "Compiled"
+                }
+              }
+            },
+            "dirty": {
+              "maskoid": "bool"
+            }
+          }
+        }
+      },
+      "Location": {
+        "record": {
+          "fields": {
+            "expr": {
+              "description": "The `id` of the expression in the module's JSON; none for the module as a whole.",
+              "maskoid": {
+                "option": "int"
+              }
+            },
+            "source": {
+              "maskoid": {
+                "ref": "Source"
+              }
+            }
+          }
+        }
+      },
+      "Log": {
+        "record": {
+          "fields": {
+            "at_ms": {
+              "maskoid": "int"
+            },
+            "message": {
+              "maskoid": "string"
+            }
+          }
+        }
+      },
+      "Related": {
+        "record": {
+          "fields": {
+            "description": {
+              "maskoid": "string"
+            },
+            "location": {
+              "maskoid": {
+                "ref": "Location"
+              }
+            }
+          }
+        }
+      },
+      "Request": {
+        "tagged_union": {
+          "variants": {
+            "file_state": {
+              "description": "The cached state of one file: whether it is being compiled and the results of\nevery compile of it the server knows.",
+              "maskoid": {
+                "record": {
+                  "fields": {
+                    "path": {
+                      "maskoid": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "flush": {
+              "description": "Compile everything pending now, even while paused, and reply once every\naffected source has settled.",
+              "maskoid": "null"
+            },
+            "pause": {
+              "description": "While paused the server still announces `Dirty` for changed files but doesn't\ncompile them until unpaused or flushed.",
+              "maskoid": {
+                "record": {
+                  "fields": {
+                    "paused": {
+                      "maskoid": "bool"
+                    }
+                  }
+                }
+              }
+            },
+            "source_read": {
+              "description": "The text of a module the editor can't read itself (a remote source).",
+              "maskoid": {
+                "record": {
+                  "fields": {
+                    "source": {
+                      "maskoid": {
+                        "ref": "Source"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "Response": {
+        "tagged_union": {
+          "variants": {
+            "failed": {
+              "maskoid": {
+                "record": {
+                  "fields": {
+                    "message": {
+                      "maskoid": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "file_state": {
+              "maskoid": {
+                "ref": "FileState"
+              }
+            },
+            "flush": {
+              "description": "Every compile unit compiled by the flush.",
+              "maskoid": {
+                "record": {
+                  "fields": {
+                    "compiled": {
+                      "maskoid": {
+                        "list": {
+                          "ref": "Compiled"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "pause": {
+              "maskoid": "null"
+            },
+            "source_read": {
+              "maskoid": {
+                "record": {
+                  "fields": {
+                    "text": {
+                      "maskoid": {
+                        "option": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "ServerMessage": {
+        "tagged_union": {
+          "variants": {
+            "ev": {
+              "maskoid": {
+                "record": {
+                  "fields": {
+                    "ev": {
+                      "maskoid": {
+                        "ref": "Announce"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "res": {
+              "maskoid": {
+                "record": {
+                  "fields": {
+                    "id": {
+                      "maskoid": "int"
+                    },
+                    "res": {
+                      "maskoid": {
+                        "ref": "Response"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "Source": {
+        "tagged_union": {
+          "variants": {
+            "local": {
+              "maskoid": {
+                "record": {
+                  "fields": {
+                    "path": {
+                      "maskoid": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "remote": {
+              "description": "The server's own name for a non-file source, usable in `SourceRead`.",
+              "maskoid": {
+                "record": {
+                  "fields": {
+                    "spec": {
+                      "maskoid": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "default": "ServerMessage"
+  }
+}

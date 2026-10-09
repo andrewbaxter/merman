@@ -95,6 +95,20 @@ body {
 .merman_status_back { margin-bottom: var(--merman-spacing-status_back_gap); }
 .merman_status_off { opacity: 0.5; }
 .merman_status_off:hover { opacity: 0.3; }
+/* The focused file's language server icons: a turning "compiling" icon while a
+   server has it dirty, and the logs icon with the count of errors in its corner. */
+.merman_status_spin { animation: merman_spin 2s linear infinite; cursor: default; }
+@keyframes merman_spin { to { transform: rotate(360deg); } }
+.merman_status_badge_holder { position: relative; }
+.merman_status_badge {
+  position: absolute; right: 0; bottom: 0;
+  font-family: var(--merman-font-family); font-size: 0.45em; line-height: 1;
+  padding: 0.15em 0.3em; border-radius: 1em;
+  background: var(--merman-error-mark-color); color: var(--merman-background);
+}
+
+/* The errors at the cursor's atom, under the details toolbar. */
+.merman_details_errors { white-space: pre-wrap; max-width: 60em; }
 
 .merman_ai { height: 100%; display: flex; flex-direction: column; padding: 0 var(--merman-spacing-panel) var(--merman-spacing-panel); box-sizing: border-box; }
 .merman_ai > .merman_toolbar { flex: none; flex-wrap: wrap; padding: var(--merman-spacing-ai_toolbar) 0; margin-bottom: var(--merman-spacing-ai_toolbar); border-bottom: 1px solid var(--merman-hover-color); }

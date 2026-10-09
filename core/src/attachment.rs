@@ -5,6 +5,7 @@ use crate::{
         CaretId,
         Context,
         DrawingId,
+        MarkId,
         TextBorderId,
         Vector,
     },
@@ -13,7 +14,11 @@ use crate::{
         DrawCommand,
         obbox_commands,
     },
-    spec::SpecObbox,
+    document::AtomId,
+    spec::{
+        SpecMark,
+        SpecObbox,
+    },
 };
 
 fn aeq(a: f64, b: f64, t: f64) -> bool {
@@ -26,6 +31,7 @@ pub enum AttachmentRef {
     BorderLast(BorderId),
     Caret(CaretId),
     Cornerstone,
+    Mark(MarkId),
     TextBorderFirst(TextBorderId),
     TextBorderLast(TextBorderId),
 }
@@ -57,6 +63,16 @@ pub struct Caret {
 pub struct Drawing {
     pub layer: DrawingLayer,
     pub node: DisplayNodeId,
+}
+
+pub struct Mark {
+    pub atom: AtomId,
+    pub brick: Option<BrickId>,
+    pub drawing: DrawingId,
+    start_converse: f64,
+    start_transverse: f64,
+    style: SpecMark,
+    transverse_span: f64,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -159,6 +175,12 @@ impl Context {
                     caret.offset = None;
                 }
             },
+            AttachmentRef::Mark(m) => {
+                if let Some(mark) = self.marks[m].as_mut() {
+                    mark.brick = None;
+                }
+                self.mark_place(m);
+            },
             AttachmentRef::Cornerstone => { },
         }
     }
@@ -183,6 +205,10 @@ impl Context {
             AttachmentRef::Caret(c) => {
                 self.carets[c].as_mut().unwrap().start_converse = converse;
                 self.caret_place(c);
+            },
+            AttachmentRef::Mark(m) => {
+                self.marks[m].as_mut().unwrap().start_converse = converse;
+                self.mark_place(m);
             },
             AttachmentRef::Cornerstone => { },
         }
@@ -209,6 +235,10 @@ impl Context {
             AttachmentRef::Caret(c) => {
                 self.carets[c].as_mut().unwrap().start_transverse = transverse;
                 self.caret_place(c);
+            },
+            AttachmentRef::Mark(m) => {
+                self.marks[m].as_mut().unwrap().start_transverse = transverse;
+                self.mark_place(m);
             },
             AttachmentRef::Cornerstone => {
                 let old = self.scroll_start;
@@ -241,6 +271,10 @@ impl Context {
             AttachmentRef::Caret(c) => {
                 self.carets[c].as_mut().unwrap().transverse_ascent = ascent;
                 self.caret_place(c);
+            },
+            AttachmentRef::Mark(m) => {
+                self.marks[m].as_mut().unwrap().transverse_span = ascent + descent;
+                self.mark_place(m);
             },
             AttachmentRef::Cornerstone => {
                 self.scroll_end = self.scroll_start + ascent + descent;
@@ -429,6 +463,99 @@ impl Context {
         }
         self.carets[c].as_mut().unwrap().index = index;
         self.caret_place(c);
+    }
+
+    pub fn mark_atom_brick_created(&mut self, atom: AtomId, brick: BrickId) {
+        let Some(marks) = self.atom_marks.get(&atom) else {
+            return;
+        };
+        for m in marks.clone() {
+            self.mark_set_brick(m, Some(brick));
+        }
+    }
+
+    pub fn mark_atom(&self, m: MarkId) -> AtomId {
+        return self.marks[m].as_ref().unwrap().atom;
+    }
+
+    pub fn mark_destroy(&mut self, m: MarkId) {
+        let Some(mark) = self.marks[m].take() else {
+            return;
+        };
+        if let Some(marks) = self.atom_marks.get_mut(&mark.atom) {
+            marks.retain(|other| *other != m);
+            if marks.is_empty() {
+                self.atom_marks.remove(&mark.atom);
+            }
+        }
+        if let Some(b) = mark.brick {
+            self.brick_remove_attachment(b, AttachmentRef::Mark(m));
+        }
+        self.drawing_remove(mark.drawing);
+    }
+
+    pub fn mark_new(&mut self, atom: AtomId, style: SpecMark) -> MarkId {
+        let drawing = self.drawing_new(DrawingLayer::Overlay);
+        let id = self.marks.len();
+        self.marks.push(Some(Mark {
+            atom: atom,
+            brick: None,
+            drawing: drawing,
+            start_converse: 0.,
+            start_transverse: 0.,
+            style: style,
+            transverse_span: 0.,
+        }));
+        self.atom_marks.entry(atom).or_default().push(id);
+        let brick = self.atom_visual[atom].and_then(|v| self.visual_get_first_brick(v));
+        self.mark_set_brick(id, brick);
+        return id;
+    }
+
+    fn mark_place(&mut self, m: MarkId) {
+        let mark = self.marks[m].as_ref().unwrap();
+        let node = self.drawings[mark.drawing].as_ref().unwrap().node;
+        self.display.drawing_clear(node);
+        if mark.brick.is_none() {
+            return;
+        }
+        let (start_converse, start_transverse, transverse_span, style) =
+            (mark.start_converse, mark.start_transverse, mark.transverse_span, mark.style.clone());
+        let size = Vector::new(style.length, style.thickness);
+        let position =
+            Vector::new(start_converse.round(), (start_transverse + transverse_span - style.thickness).round());
+        self.display.drawing_resize(node, size);
+        self.display.node_set_position(node, position.converse, position.transverse, false);
+        let middle = style.thickness / 2.;
+        self
+            .display
+            .drawing_draw(
+                node,
+                &[
+                    DrawCommand::SetLineThickness(style.thickness),
+                    DrawCommand::SetLineCapFlat,
+                    DrawCommand::SetLineColor(style.color),
+                    DrawCommand::BeginStrokePath,
+                    DrawCommand::MoveTo(Vector::new(0., middle)),
+                    DrawCommand::LineTo(Vector::new(style.length, middle)),
+                    DrawCommand::ClosePath,
+                ],
+            );
+    }
+
+    fn mark_set_brick(&mut self, m: MarkId, brick: Option<BrickId>) {
+        let old = self.marks[m].as_ref().unwrap().brick;
+        if old == brick {
+            return;
+        }
+        if let Some(o) = old {
+            self.brick_remove_attachment(o, AttachmentRef::Mark(m));
+        }
+        self.marks[m].as_mut().unwrap().brick = brick;
+        match brick {
+            Some(b) => self.brick_add_attachment(b, AttachmentRef::Mark(m)),
+            None => self.mark_place(m),
+        }
     }
 
     fn drawing_layer_group(&self, layer: DrawingLayer) -> DisplayNodeId {

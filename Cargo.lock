@@ -1528,6 +1528,24 @@ dependencies = [
 
 [[package]]
 name = "genemichaels-lib"
+version = "0.8.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d3d10021ff98fe09898fbb2f8aa17b55b14a16b0cc60a3e6fe1e33aa5890f63"
+dependencies = [
+ "cargo-manifest 0.19.1",
+ "derive_more 2.1.1",
+ "loga 0.5.5",
+ "markdown",
+ "proc-macro2",
+ "quote",
+ "regex",
+ "serde",
+ "serde_json",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "genemichaels-lib"
 version = "0.11.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "329a4d848485585d6c2c3f024ffbe88d2286d3a9506de4703c7c494e44925a38"
@@ -2681,6 +2699,7 @@ dependencies = [
  "directories",
  "foyer",
  "futures",
+ "glove",
  "good-ormning",
  "http",
  "http-body-util",
@@ -2691,6 +2710,7 @@ dependencies = [
  "loga 0.5.5",
  "merman_api",
  "merman_core",
+ "merman_langserver",
  "notify",
  "notify-rust",
  "open",
@@ -2710,6 +2730,7 @@ name = "merman_api"
 version = "0.1.0"
 dependencies = [
  "glove",
+ "merman_langserver",
  "schemars",
  "serde",
  "serde_json",
@@ -2722,6 +2743,17 @@ dependencies = [
  "serde",
  "serde_json",
  "unicode-segmentation",
+]
+
+[[package]]
+name = "merman_langserver"
+version = "0.1.0"
+dependencies = [
+ "schemars",
+ "schemask_core",
+ "schemask_derive",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -2739,6 +2771,7 @@ dependencies = [
  "js-sys",
  "merman_api",
  "merman_core",
+ "merman_langserver",
  "pulldown-cmark",
  "rooting",
  "serde_json",
@@ -3814,6 +3847,30 @@ dependencies = [
  "quote",
  "serde_derive_internals",
  "syn 3.0.5",
+]
+
+[[package]]
+name = "schemask_core"
+version = "0.1.5"
+dependencies = [
+ "genemichaels-lib 0.8.6",
+ "heck 0.5.0",
+ "proc-macro2",
+ "quote",
+ "schemask_derive",
+ "serde",
+ "serde_json",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "schemask_derive"
+version = "0.1.5"
+dependencies = [
+ "proc-macro-crate 3.5.0",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]

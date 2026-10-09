@@ -72,6 +72,8 @@ impl Panel for FilesystemPanel {
         return;
     }
 
+    fn panel_lang_errors(&self, _path: &str, _errors: &[merman_langserver::CompileError]) { }
+
     fn panel_focusable(&self) -> bool {
         return true;
     }

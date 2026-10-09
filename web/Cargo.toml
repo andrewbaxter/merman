@@ -9,6 +9,7 @@ crate-type = ["cdylib"]
 [dependencies]
 merman_core = { path = "../core" }
 merman_api = { path = "../api" }
+merman_langserver = { path = "../langserver" }
 glove = "0.5"
 serde_json = { version = "1", features = ["arbitrary_precision", "preserve_order", "unbounded_depth"] }
 wasm-bindgen = "=0.2.121"

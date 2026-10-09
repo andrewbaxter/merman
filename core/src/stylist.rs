@@ -1,6 +1,9 @@
 use {
     crate::{
-        spec::SpecObbox,
+        spec::{
+            SpecMark,
+            SpecObbox,
+        },
         syntax::{
             Style,
             StyleId,
@@ -12,6 +15,7 @@ use {
 
 pub trait Stylist {
     fn style_empty(&self, style: StyleId) -> Style;
+    fn style_mark(&self) -> SpecMark;
     fn style_obbox(&self, type_: ObboxType) -> SpecObbox;
     fn style_text(&self, style: StyleId) -> Style;
 }
@@ -29,6 +33,10 @@ pub struct StylistDirect {
 impl Stylist for StylistDirect {
     fn style_empty(&self, style: StyleId) -> Style {
         return self.syntax.syntax_style(style).clone();
+    }
+
+    fn style_mark(&self) -> SpecMark {
+        return self.syntax.spec_root.error_mark.clone();
     }
 
     fn style_obbox(&self, type_: ObboxType) -> SpecObbox {
