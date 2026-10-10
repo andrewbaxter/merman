@@ -38,21 +38,34 @@ pub enum Request {
     /// Compile everything pending now, even while paused, and reply once every
     /// affected source has settled.
     Flush,
-    /// The metadata of every type an expression evaluated to, from each compile that
-    /// evaluated it.
+    /// The names of the fields of every type an expression evaluated to, from each
+    /// compile that evaluated it. Answered from the cache, without compiling.
+    ExprFields {
+        source: Source,
+        expr: i64,
+    },
+    /// The names bound in scope at an expression's enclosing statement, from each compile
+    /// of its source. Answered from the cache, without compiling.
+    ScopeNames {
+        source: Source,
+        expr: i64,
+    },
+    /// The metadata of the type an expression evaluated to, or of the type of a field
+    /// reached from it by following `path`. The module is compiled again as a root for
+    /// this, so it costs a compile and runs any compile-time effects the module has;
+    /// imports come from the cache.
     ExprMeta {
         source: Source,
         expr: i64,
+        path: Vec<String>,
     },
-    /// The named scope entries visible to an expression, from each compile of its source:
-    /// what was bound before its enclosing statement and not unbound since.
-    ScopeMeta {
+    /// The metadata of the innermost binding of `name` in scope at an expression, or of
+    /// the type of a field reached from it by following `path`. Compiles like `ExprMeta`.
+    ScopeEntryMeta {
         source: Source,
         expr: i64,
-    },
-    /// Metadata records by id, for following a field's reference to its type.
-    Meta {
-        ids: Vec<i64>,
+        name: String,
+        path: Vec<String>,
     },
 }
 
@@ -80,14 +93,19 @@ pub enum Response {
     Flush {
         compiled: Vec<Compiled>,
     },
+    ExprFields {
+        fields: Vec<ExprFields>,
+    },
+    ScopeNames {
+        scopes: Vec<ScopeNames>,
+    },
+    /// One record per evaluation of the expression that reached a distinct type; empty
+    /// when the compile never evaluated it or the path doesn't resolve.
     ExprMeta {
-        metas: Vec<ExprMeta>,
+        metas: Vec<Meta>,
     },
-    ScopeMeta {
-        scopes: Vec<ScopeMeta>,
-    },
-    /// Records in the order asked, leaving out ids that don't exist.
-    Meta {
+    /// As `ExprMeta`, for the named binding.
+    ScopeEntryMeta {
         metas: Vec<Meta>,
     },
     Failed {
@@ -166,29 +184,22 @@ pub struct Location {
     pub expr: Option<i64>,
 }
 
-/// The type an expression evaluated to in one compile of a source.
+/// The field names of a type an expression evaluated to in one compile of a source.
 #[derive(Serialize, Deserialize, JsonSchema, Maskoidy, Clone, Debug)]
 #[serde(deny_unknown_fields)]
-pub struct ExprMeta {
+pub struct ExprFields {
     pub source: Source,
     pub import_state: i64,
-    pub meta: Meta,
+    pub names: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Maskoidy, Clone, Debug)]
 #[serde(deny_unknown_fields)]
-pub struct ScopeMeta {
+pub struct ScopeNames {
     pub source: Source,
     pub import_state: i64,
     /// Innermost last; a name bound twice appears twice.
-    pub entries: Vec<ScopeEntry>,
-}
-
-#[derive(Serialize, Deserialize, JsonSchema, Maskoidy, Clone, Debug)]
-#[serde(deny_unknown_fields)]
-pub struct ScopeEntry {
-    pub name: String,
-    pub meta: Option<Meta>,
+    pub names: Vec<String>,
 }
 
 /// A type's metadata: an id for the kind of type, a data object the type chose, and the
@@ -196,7 +207,6 @@ pub struct ScopeEntry {
 #[derive(Serialize, Deserialize, JsonSchema, Maskoidy, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct Meta {
-    pub id: i64,
     pub kind: String,
     pub data: serde_json::Value,
     pub fields: Vec<MetaField>,
@@ -207,8 +217,8 @@ pub struct Meta {
 pub struct MetaField {
     pub name: String,
     pub data: serde_json::Value,
-    /// The id of the field's type's metadata, when the type has one.
-    pub meta: Option<i64>,
+    /// Whether the field has a type whose metadata a `path` can reach.
+    pub has_meta: bool,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Maskoidy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]

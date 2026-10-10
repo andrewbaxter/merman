@@ -119,16 +119,16 @@
           }
         }
       },
-      "ExprMeta": {
+      "ExprFields": {
         "record": {
-          "description": "The type an expression evaluated to in one compile of a source.",
+          "description": "The field names of a type an expression evaluated to in one compile of a source.",
           "fields": {
             "import_state": {
               "maskoid": "int"
             },
-            "meta": {
+            "names": {
               "maskoid": {
-                "ref": "Meta"
+                "list": "string"
               }
             },
             "source": {
@@ -199,9 +199,6 @@
                 }
               }
             },
-            "id": {
-              "maskoid": "int"
-            },
             "kind": {
               "maskoid": "string"
             }
@@ -214,11 +211,9 @@
             "data": {
               "maskoid": "any"
             },
-            "meta": {
-              "description": "The id of the field's type's metadata, when the type has one.",
-              "maskoid": {
-                "option": "int"
-              }
+            "has_meta": {
+              "description": "Whether the field has a type whose metadata a `path` can reach.",
+              "maskoid": "bool"
             },
             "name": {
               "maskoid": "string"
@@ -243,13 +238,35 @@
       "Request": {
         "tagged_union": {
           "variants": {
-            "expr_meta": {
-              "description": "The metadata of every type an expression evaluated to, from each compile that\nevaluated it.",
+            "expr_fields": {
+              "description": "The names of the fields of every type an expression evaluated to, from each\ncompile that evaluated it. Answered from the cache, without compiling.",
               "maskoid": {
                 "record": {
                   "fields": {
                     "expr": {
                       "maskoid": "int"
+                    },
+                    "source": {
+                      "maskoid": {
+                        "ref": "Source"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "expr_meta": {
+              "description": "The metadata of the type an expression evaluated to, or of the type of a field\nreached from it by following `path`. The module is compiled again as a root for\nthis, so it costs a compile and runs any compile-time effects the module has;\nimports come from the cache.",
+              "maskoid": {
+                "record": {
+                  "fields": {
+                    "expr": {
+                      "maskoid": "int"
+                    },
+                    "path": {
+                      "maskoid": {
+                        "list": "string"
+                      }
                     },
                     "source": {
                       "maskoid": {
@@ -276,20 +293,6 @@
               "description": "Compile everything pending now, even while paused, and reply once every\naffected source has settled.",
               "maskoid": "null"
             },
-            "meta": {
-              "description": "Metadata records by id, for following a field's reference to its type.",
-              "maskoid": {
-                "record": {
-                  "fields": {
-                    "ids": {
-                      "maskoid": {
-                        "list": "int"
-                      }
-                    }
-                  }
-                }
-              }
-            },
             "pause": {
               "description": "While paused the server still announces `Dirty` for changed files but doesn't\ncompile them until unpaused or flushed.",
               "maskoid": {
@@ -302,8 +305,33 @@
                 }
               }
             },
-            "scope_meta": {
-              "description": "The named scope entries visible to an expression, from each compile of its source:\nwhat was bound before its enclosing statement and not unbound since.",
+            "scope_entry_meta": {
+              "description": "The metadata of the innermost binding of `name` in scope at an expression, or of\nthe type of a field reached from it by following `path`. Compiles like `ExprMeta`.",
+              "maskoid": {
+                "record": {
+                  "fields": {
+                    "expr": {
+                      "maskoid": "int"
+                    },
+                    "name": {
+                      "maskoid": "string"
+                    },
+                    "path": {
+                      "maskoid": {
+                        "list": "string"
+                      }
+                    },
+                    "source": {
+                      "maskoid": {
+                        "ref": "Source"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "scope_names": {
+              "description": "The names bound in scope at an expression's enclosing statement, from each compile\nof its source. Answered from the cache, without compiling.",
               "maskoid": {
                 "record": {
                   "fields": {
@@ -339,14 +367,30 @@
       "Response": {
         "tagged_union": {
           "variants": {
+            "expr_fields": {
+              "maskoid": {
+                "record": {
+                  "fields": {
+                    "fields": {
+                      "maskoid": {
+                        "list": {
+                          "ref": "ExprFields"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
             "expr_meta": {
+              "description": "One record per evaluation of the expression that reached a distinct type; empty\nwhen the compile never evaluated it or the path doesn't resolve.",
               "maskoid": {
                 "record": {
                   "fields": {
                     "metas": {
                       "maskoid": {
                         "list": {
-                          "ref": "ExprMeta"
+                          "ref": "Meta"
                         }
                       }
                     }
@@ -386,8 +430,11 @@
                 }
               }
             },
-            "meta": {
-              "description": "Records in the order asked, leaving out ids that don't exist.",
+            "pause": {
+              "maskoid": "null"
+            },
+            "scope_entry_meta": {
+              "description": "As `ExprMeta`, for the named binding.",
               "maskoid": {
                 "record": {
                   "fields": {
@@ -402,17 +449,14 @@
                 }
               }
             },
-            "pause": {
-              "maskoid": "null"
-            },
-            "scope_meta": {
+            "scope_names": {
               "maskoid": {
                 "record": {
                   "fields": {
                     "scopes": {
                       "maskoid": {
                         "list": {
-                          "ref": "ScopeMeta"
+                          "ref": "ScopeNames"
                         }
                       }
                     }
@@ -436,35 +480,17 @@
           }
         }
       },
-      "ScopeEntry": {
+      "ScopeNames": {
         "record": {
           "fields": {
-            "meta": {
-              "maskoid": {
-                "option": {
-                  "ref": "Meta"
-                }
-              }
-            },
-            "name": {
-              "maskoid": "string"
-            }
-          }
-        }
-      },
-      "ScopeMeta": {
-        "record": {
-          "fields": {
-            "entries": {
-              "description": "Innermost last; a name bound twice appears twice.",
-              "maskoid": {
-                "list": {
-                  "ref": "ScopeEntry"
-                }
-              }
-            },
             "import_state": {
               "maskoid": "int"
+            },
+            "names": {
+              "description": "Innermost last; a name bound twice appears twice.",
+              "maskoid": {
+                "list": "string"
+              }
             },
             "source": {
               "maskoid": {
