@@ -119,8 +119,29 @@
           }
         }
       },
+      "ExprMeta": {
+        "record": {
+          "description": "The type an expression evaluated to in one compile of a source.",
+          "fields": {
+            "import_state": {
+              "maskoid": "int"
+            },
+            "meta": {
+              "maskoid": {
+                "ref": "Meta"
+              }
+            },
+            "source": {
+              "maskoid": {
+                "ref": "Source"
+              }
+            }
+          }
+        }
+      },
       "FileState": {
         "record": {
+          "description": "The cached state of one file: whether it is being compiled and the results of\nevery compile of it the server knows.",
           "fields": {
             "compiles": {
               "maskoid": {
@@ -164,6 +185,47 @@
           }
         }
       },
+      "Meta": {
+        "record": {
+          "description": "A type's metadata: an id for the kind of type, a data object the type chose, and the\nfields a value of the type has.",
+          "fields": {
+            "data": {
+              "maskoid": "any"
+            },
+            "fields": {
+              "maskoid": {
+                "list": {
+                  "ref": "MetaField"
+                }
+              }
+            },
+            "id": {
+              "maskoid": "int"
+            },
+            "kind": {
+              "maskoid": "string"
+            }
+          }
+        }
+      },
+      "MetaField": {
+        "record": {
+          "fields": {
+            "data": {
+              "maskoid": "any"
+            },
+            "meta": {
+              "description": "The id of the field's type's metadata, when the type has one.",
+              "maskoid": {
+                "option": "int"
+              }
+            },
+            "name": {
+              "maskoid": "string"
+            }
+          }
+        }
+      },
       "Related": {
         "record": {
           "fields": {
@@ -181,6 +243,23 @@
       "Request": {
         "tagged_union": {
           "variants": {
+            "expr_meta": {
+              "description": "The metadata of every type an expression evaluated to, from each compile that\nevaluated it.",
+              "maskoid": {
+                "record": {
+                  "fields": {
+                    "expr": {
+                      "maskoid": "int"
+                    },
+                    "source": {
+                      "maskoid": {
+                        "ref": "Source"
+                      }
+                    }
+                  }
+                }
+              }
+            },
             "file_state": {
               "description": "The cached state of one file: whether it is being compiled and the results of\nevery compile of it the server knows.",
               "maskoid": {
@@ -197,6 +276,20 @@
               "description": "Compile everything pending now, even while paused, and reply once every\naffected source has settled.",
               "maskoid": "null"
             },
+            "meta": {
+              "description": "Metadata records by id, for following a field's reference to its type.",
+              "maskoid": {
+                "record": {
+                  "fields": {
+                    "ids": {
+                      "maskoid": {
+                        "list": "int"
+                      }
+                    }
+                  }
+                }
+              }
+            },
             "pause": {
               "description": "While paused the server still announces `Dirty` for changed files but doesn't\ncompile them until unpaused or flushed.",
               "maskoid": {
@@ -204,6 +297,23 @@
                   "fields": {
                     "paused": {
                       "maskoid": "bool"
+                    }
+                  }
+                }
+              }
+            },
+            "scope_meta": {
+              "description": "The named scope entries visible to an expression, from each compile of its source:\nwhat was bound before its enclosing statement and not unbound since.",
+              "maskoid": {
+                "record": {
+                  "fields": {
+                    "expr": {
+                      "maskoid": "int"
+                    },
+                    "source": {
+                      "maskoid": {
+                        "ref": "Source"
+                      }
                     }
                   }
                 }
@@ -229,6 +339,21 @@
       "Response": {
         "tagged_union": {
           "variants": {
+            "expr_meta": {
+              "maskoid": {
+                "record": {
+                  "fields": {
+                    "metas": {
+                      "maskoid": {
+                        "list": {
+                          "ref": "ExprMeta"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
             "failed": {
               "maskoid": {
                 "record": {
@@ -261,8 +386,39 @@
                 }
               }
             },
+            "meta": {
+              "description": "Records in the order asked, leaving out ids that don't exist.",
+              "maskoid": {
+                "record": {
+                  "fields": {
+                    "metas": {
+                      "maskoid": {
+                        "list": {
+                          "ref": "Meta"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
             "pause": {
               "maskoid": "null"
+            },
+            "scope_meta": {
+              "maskoid": {
+                "record": {
+                  "fields": {
+                    "scopes": {
+                      "maskoid": {
+                        "list": {
+                          "ref": "ScopeMeta"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
             },
             "source_read": {
               "maskoid": {
@@ -275,6 +431,44 @@
                     }
                   }
                 }
+              }
+            }
+          }
+        }
+      },
+      "ScopeEntry": {
+        "record": {
+          "fields": {
+            "meta": {
+              "maskoid": {
+                "option": {
+                  "ref": "Meta"
+                }
+              }
+            },
+            "name": {
+              "maskoid": "string"
+            }
+          }
+        }
+      },
+      "ScopeMeta": {
+        "record": {
+          "fields": {
+            "entries": {
+              "description": "Innermost last; a name bound twice appears twice.",
+              "maskoid": {
+                "list": {
+                  "ref": "ScopeEntry"
+                }
+              }
+            },
+            "import_state": {
+              "maskoid": "int"
+            },
+            "source": {
+              "maskoid": {
+                "ref": "Source"
               }
             }
           }

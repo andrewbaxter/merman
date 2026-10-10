@@ -2,7 +2,10 @@ use {
     merman_langserver::{
         Announce,
         Compiled,
+        ExprMeta,
         FileState,
+        Meta,
+        ScopeMeta,
         Source,
     },
     schemars::JsonSchema,
@@ -30,6 +33,9 @@ glove::reqresp!(pub api {
     LangFileState(ReqLangFileState) => RespLangFileState,
     LangSourceRead(ReqLangSourceRead) => RespLangSourceRead,
     LangFlush(ReqLangFlush) => RespLangFlush,
+    LangExprMeta(ReqLangExprMeta) => RespLangExprMeta,
+    LangScopeMeta(ReqLangScopeMeta) => RespLangScopeMeta,
+    LangMeta(ReqLangMeta) => RespLangMeta,
 });
 
 pub const API_PATH: &str = "/api";
@@ -108,6 +114,14 @@ pub struct LangServerFlush {
 
 #[derive(Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+pub struct ReqLangExprMeta {
+    pub server: String,
+    pub source: Source,
+    pub expr: i64,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ReqLangFileState {
     pub path: String,
 }
@@ -118,9 +132,30 @@ pub struct ReqLangFlush {}
 
 #[derive(Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+pub struct ReqLangMeta {
+    pub server: String,
+    pub ids: Vec<i64>,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReqLangScopeMeta {
+    pub server: String,
+    pub source: Source,
+    pub expr: i64,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ReqLangSourceRead {
     pub server: String,
     pub source: Source,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RespLangExprMeta {
+    pub metas: Vec<ExprMeta>,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema)]
@@ -133,6 +168,18 @@ pub struct RespLangFileState {
 #[serde(deny_unknown_fields)]
 pub struct RespLangFlush {
     pub servers: Vec<LangServerFlush>,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RespLangMeta {
+    pub metas: Vec<Meta>,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RespLangScopeMeta {
+    pub scopes: Vec<ScopeMeta>,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema)]

@@ -285,6 +285,9 @@ pub struct SpecFrontAtom {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct SpecFrontPrimitive {
+    /// Complete the text from the language server's type metadata.
+    #[serde(default)]
+    pub completion: Option<SpecCompletion>,
     pub field: String,
     pub first_alignment: Option<String>,
     pub first_split_alignment: Option<String>,
@@ -296,6 +299,14 @@ pub struct SpecFrontPrimitive {
     #[serde(default)]
     pub split: SpecSplit,
     pub style: Option<String>,
+}
+
+/// Where the completions for a primitive come from.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct SpecCompletion {
+    /// The sibling atom field whose expression's type supplies the field names.
+    pub fields_of: String,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]

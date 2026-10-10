@@ -65,8 +65,11 @@ use {
         LangServerFlush,
         RespAiResume,
         RespAiSend,
+        RespLangExprMeta,
         RespLangFileState,
         RespLangFlush,
+        RespLangMeta,
+        RespLangScopeMeta,
         RespLangSourceRead,
         RespAiSessions,
         RespEdit,
@@ -472,6 +475,48 @@ impl Handler<Body> for HandlerRoot {
                     }.await;
                     match result {
                         Ok(v) => respond(v),
+                        Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
+                    }
+                },
+                ServerReq::LangExprMeta(respond, req) => {
+                    match langserver::langserver_request(
+                        &self.langservers,
+                        &req.server,
+                        merman_langserver::Request::ExprMeta {
+                            source: req.source,
+                            expr: req.expr,
+                        },
+                    ).await {
+                        Ok(merman_langserver::Response::ExprMeta { metas }) => respond(RespLangExprMeta { metas: metas }),
+                        Ok(merman_langserver::Response::Failed { message }) => ServerResp::err(message),
+                        Ok(_) => ServerResp::err("The language server answered with the wrong response".to_string()),
+                        Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
+                    }
+                },
+                ServerReq::LangScopeMeta(respond, req) => {
+                    match langserver::langserver_request(
+                        &self.langservers,
+                        &req.server,
+                        merman_langserver::Request::ScopeMeta {
+                            source: req.source,
+                            expr: req.expr,
+                        },
+                    ).await {
+                        Ok(merman_langserver::Response::ScopeMeta { scopes }) => respond(RespLangScopeMeta { scopes: scopes }),
+                        Ok(merman_langserver::Response::Failed { message }) => ServerResp::err(message),
+                        Ok(_) => ServerResp::err("The language server answered with the wrong response".to_string()),
+                        Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
+                    }
+                },
+                ServerReq::LangMeta(respond, req) => {
+                    match langserver::langserver_request(
+                        &self.langservers,
+                        &req.server,
+                        merman_langserver::Request::Meta { ids: req.ids },
+                    ).await {
+                        Ok(merman_langserver::Response::Meta { metas }) => respond(RespLangMeta { metas: metas }),
+                        Ok(merman_langserver::Response::Failed { message }) => ServerResp::err(message),
+                        Ok(_) => ServerResp::err("The language server answered with the wrong response".to_string()),
                         Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
                     }
                 },

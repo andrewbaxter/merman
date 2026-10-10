@@ -19,6 +19,7 @@ use {
             SpecFrontArray,
             SpecFrontArrayAsAtom,
             SpecFrontAtom,
+            SpecCompletion,
             SpecFrontPrimitive,
             SpecPattern,
             SpecBackArray,
@@ -145,6 +146,7 @@ fn build_type(errors: &mut Errors, styles: &StyleTable, path: &str, t: SpecType,
             },
             SpecFront::Primitive(
                 SpecFrontPrimitive {
+                    completion,
                     field,
                     style,
                     split,
@@ -156,8 +158,12 @@ fn build_type(errors: &mut Errors, styles: &StyleTable, path: &str, t: SpecType,
                 },
             ) => {
                 check_field(errors, &fpath, field, FieldKind::Primitive);
+                if let Some(completion) = completion {
+                    check_field(errors, &fpath, &completion.fields_of, FieldKind::Atom);
+                }
                 let style = styles.lookup(errors, &fpath, style);
                 front.push(Front::Primitive(FrontPrimitive {
+                    completion: completion.clone(),
                     field: field.clone(),
                     invalid_style: match invalid_style {
                         Some(_) => styles.lookup(errors, &fpath, invalid_style),
@@ -451,6 +457,7 @@ pub struct FrontAtom {
 }
 
 pub struct FrontPrimitive {
+    pub completion: Option<SpecCompletion>,
     pub field: String,
     pub first_alignment: Option<String>,
     pub invalid_style: StyleId,
@@ -652,6 +659,7 @@ impl Syntax {
             types.push(build_type(&mut errors, &style_table, &path, t, GapKind::None));
         }
         let gap_text = |style: &Option<String>| SpecFront::Primitive(SpecFrontPrimitive {
+            completion: None,
             field: "gap".to_string(),
             style: style.clone(),
             split: SpecSplit::Never,

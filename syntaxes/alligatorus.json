@@ -413,7 +413,10 @@
         {
           "primitive": {
             "field": "key",
-            "style": "identifier"
+            "style": "identifier",
+            "completion": {
+              "fields_of": "base"
+            }
           }
         },
         {
