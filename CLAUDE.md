@@ -40,15 +40,15 @@ There are two entrypoints in `web`, each with its own page in `cli/static`:
 
 - `demo` (`demo.html`) is the code panel on its own, showing a file baked into
   the page. It's a demo of the widget and is always read only.
-- `editor` (`editor.html`) is the editor proper: a filesystem panel, and beside
-  it a code panel once a file is opened. It's what the webview window shows, and
-  it reads directories and files through the api.
+- `ide` (`ide.html`) is the ide proper: a filesystem panel, and beside it a
+  code panel once a file is opened. It's what the webview window shows, and it
+  reads directories and files through the api.
 
 The panels live in `web/src/panels`. The code panel lays its document out with
 the engine and draws it as svg; the filesystem panel is plain dom, because a
 directory listing has no syntax and there's nothing for the engine to do with
 it. Both take the same actions from the same keymap, and hand back the ones they
-couldn't use so the editor can move focus on them.
+couldn't use so the ide can move focus on them.
 
 The api is defined with `glove` in `api`, but it's served over the same http
 server the pages come from rather than glove's unix socket. The server only
@@ -95,7 +95,7 @@ a function or constant used exactly once has to be inlined into its caller.
 
 Match the surrounding code: explicit `return` at the end of every function,
 functions named after the thing they act on (`cursor_*`, `visual_*`, `wall_*`,
-`keymap_*`, `code_*`, `filesystem_*`, `editor_*`), and config types named
+`keymap_*`, `code_*`, `filesystem_*`, `ide_*`, `editor_*`), and config types named
 `Spec*` with serde `deny_unknown_fields`.
 
 `syntaxes/` holds syntaxes that files are opened with, keyed by extension in
@@ -103,14 +103,14 @@ functions named after the thing they act on (`cursor_*`, `visual_*`, `wall_*`,
 
 ## Extensions
 
-A file whose root export is an instance of a source-defined object named `ide`
-(the ecosystem's `merman-ide.atz`) gets an ide button in the status column and
-an `ide_open` action, which open an ide pane (`web/src/panels/ide.rs`) running
-the wasm in the export's `files` dir. Neither the language server nor the
-protocol knows the marker: the server reports every root export's exporter tag
-and source object name in `Compiled.export`, and hands out bytes from it by a
-path of record fields and dir entries (`ExportRead`). The pane's host functions
-(canvas drawing, buttons, a text line, file reads and writes through the server,
-answered by callback) are the wasm imports under the module name `merman`, and
-their types live in `merman-ide.atz`, so a change to one side is a change to
-the other.
+A file whose root export is an instance of a source-defined object named
+`editor` (the ecosystem's `merman-editor.atz`) gets an editor button in the
+status column and an `editor_open` action, which open an editor pane
+(`web/src/panels/editor.rs`) running the wasm in the export's `files` dir.
+Neither the language server nor the protocol knows the marker: the server
+reports every root export's exporter tag and source object name in
+`Compiled.export`, and hands out bytes from it by a path of record fields and
+dir entries (`ExportRead`). The pane's host functions (canvas drawing, buttons,
+a text line, file reads and writes through the server, answered by callback)
+are the wasm imports under the module name `merman`, and their types live in
+`merman-editor.atz`, so a change to one side is a change to the other.

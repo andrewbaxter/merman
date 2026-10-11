@@ -59,7 +59,7 @@ let
     cp ${./cli/Cargo.toml} $out/cli/Cargo.toml
     cp ${./cli/build.rs} $out/cli/build.rs
     cp ${./cli/static/demo.html} $out/cli/static/demo.html
-    cp ${./cli/static/editor.html} $out/cli/static/editor.html
+    cp ${./cli/static/ide.html} $out/cli/static/ide.html
     cp ${./cli/static/merman.css} $out/cli/static/merman.css
     cp ${./cli/static/MaterialSymbolsOutlined-Light.woff2} $out/cli/static/MaterialSymbolsOutlined-Light.woff2
     cp -r ${./syntaxes} $out/syntaxes

@@ -937,7 +937,7 @@ fn main() {
                 .replace("__MERMAN_KEYS__", &embed_json(&keys_text))
                 .replace("__MERMAN_THEME__", &embed_json(&theme_text))
         } else {
-            include_str!("../static/editor.html").to_string()
+            include_str!("../static/ide.html").to_string()
         };
         let events = Arc::new(events::Events {
             buffer: std::sync::Mutex::new((ai::now_ms(), std::collections::VecDeque::new())),

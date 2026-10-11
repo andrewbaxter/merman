@@ -25,9 +25,9 @@ pub struct LangFile {
     pub compiles: BTreeMap<(String, i64), Compiled>,
 }
 
-/// The compile of a file whose root export is an `ide` instance: the extension
-/// the ide pane runs for that file.
-pub struct LangIde {
+/// The compile of a file whose root export is an `editor` instance: the
+/// extension the editor pane runs for that file.
+pub struct LangEditor {
     pub ended_ms: i64,
     pub import_state: i64,
     pub server: String,
@@ -151,17 +151,17 @@ impl Lang {
         return self.files.borrow().get(path).cloned();
     }
 
-    pub fn lang_ide(&self, path: &str) -> Option<LangIde> {
+    pub fn lang_editor(&self, path: &str) -> Option<LangEditor> {
         let files = self.files.borrow();
         let file = files.get(path)?;
         for ((server, import_state), compiled) in &file.compiles {
             let Some(export) = &compiled.export else {
                 continue;
             };
-            if export.type_name.as_deref() != Some("ide") {
+            if export.type_name.as_deref() != Some("editor") {
                 continue;
             }
-            return Some(LangIde {
+            return Some(LangEditor {
                 ended_ms: compiled.ended_ms,
                 import_state: *import_state,
                 server: server.clone(),

@@ -65,10 +65,10 @@ use {
 const POINTER_DOWN: i32 = 0;
 const POINTER_MOVE: i32 = 1;
 
-/// A pane running the wasm an `ide` export carries: the extension draws on the
+/// A pane running the wasm an `editor` export carries: the extension draws on the
 /// pane's canvas and adds buttons through the host functions, and the pane hands
 /// it the stylus, the buttons and the keys it doesn't use itself.
-pub struct IdePanel(Rc<State>);
+pub struct EditorPanel(Rc<State>);
 
 struct State {
     buttons: El,
@@ -94,20 +94,20 @@ struct Instance {
     memory: js_sys::WebAssembly::Memory,
 }
 
-impl IdePanel {
-    pub fn ide_new(
+impl EditorPanel {
+    pub fn editor_new(
         keys: Keymap,
         lang: Rc<Lang>,
         path: String,
         server: String,
         source: Source,
         import_state: i64,
-    ) -> IdePanel {
+    ) -> EditorPanel {
         let buttons = el("div").classes(&["merman_toolbar"]);
-        let canvas = el("canvas").classes(&["merman_ide_canvas"]);
-        let status = el("div").classes(&["merman_ide_status"]).text("Loading");
+        let canvas = el("canvas").classes(&["merman_editor_canvas"]);
+        let status = el("div").classes(&["merman_editor_status"]).text("Loading");
         let element =
-            el("div").classes(&["merman_ide"]).push(buttons.clone()).push(canvas.clone()).push(status.clone());
+            el("div").classes(&["merman_editor"]).push(buttons.clone()).push(canvas.clone()).push(status.clone());
         let context: CanvasRenderingContext2d =
             canvas
                 .raw()
@@ -142,7 +142,7 @@ impl IdePanel {
                 let Some(state) = state.upgrade() else {
                     return;
                 };
-                ide_resize(&state);
+                editor_resize(&state);
             }
         });
         for (event, kind) in [("pointerdown", POINTER_DOWN), ("pointermove", POINTER_MOVE), ("pointerup", 2)] {
@@ -170,7 +170,7 @@ impl IdePanel {
                         samples.push(e.clone());
                     }
                     for sample in samples {
-                        ide_call(
+                        editor_call(
                             &state,
                             "on_pointer",
                             &[
@@ -187,18 +187,18 @@ impl IdePanel {
                 }
             }));
         }
-        return IdePanel(state);
+        return EditorPanel(state);
     }
 }
 
-fn ide_status(state: &State, text: &str) {
+fn editor_status(state: &State, text: &str) {
     state.status.ref_text(text);
     return;
 }
 
 /// Calls an export the extension chose to provide; a missing one is fine, a throwing
 /// one stops the pane with the error.
-fn ide_call(state: &State, name: &str, args: &[JsValue]) -> Option<JsValue> {
+fn editor_call(state: &State, name: &str, args: &[JsValue]) -> Option<JsValue> {
     let function = {
         let instance = state.instance.borrow();
         let exports = &instance.as_ref()?.exports;
@@ -211,14 +211,14 @@ fn ide_call(state: &State, name: &str, args: &[JsValue]) -> Option<JsValue> {
     match function.apply(&JsValue::NULL, &array) {
         Ok(value) => return Some(value),
         Err(e) => {
-            ide_status(state, &format!("{} failed: {:?}", name, e));
+            editor_status(state, &format!("{} failed: {:?}", name, e));
             *state.instance.borrow_mut() = None;
             return None;
         },
     }
 }
 
-fn ide_memory_read(state: &State, ptr: i32, len: i32) -> Vec<u8> {
+fn editor_memory_read(state: &State, ptr: i32, len: i32) -> Vec<u8> {
     let instance = state.instance.borrow();
     let Some(instance) = instance.as_ref() else {
         return vec![];
@@ -230,12 +230,12 @@ fn ide_memory_read(state: &State, ptr: i32, len: i32) -> Vec<u8> {
     ).to_vec();
 }
 
-fn ide_string(state: &State, ptr: i32, len: i32) -> String {
-    return String::from_utf8_lossy(&ide_memory_read(state, ptr, len)).into_owned();
+fn editor_string(state: &State, ptr: i32, len: i32) -> String {
+    return String::from_utf8_lossy(&editor_memory_read(state, ptr, len)).into_owned();
 }
 
 /// Strokes the current path; the color is 0xRRGGBBAA.
-fn ide_stroke(context: &CanvasRenderingContext2d, width: f64, rgba: i32) {
+fn editor_stroke(context: &CanvasRenderingContext2d, width: f64, rgba: i32) {
     let rgba = rgba as u32;
     context.set_line_width(width);
     context.set_line_cap("round");
@@ -256,11 +256,11 @@ fn ide_stroke(context: &CanvasRenderingContext2d, width: f64, rgba: i32) {
 /// Answers an extension's file request: the bytes go into memory the extension
 /// allocates, then `on_fs` gets the request's id, a status (0 is success) and where
 /// the bytes are.
-fn ide_fs_done(state: &State, req: i32, result: Result<Vec<u8>, String>) {
+fn editor_fs_done(state: &State, req: i32, result: Result<Vec<u8>, String>) {
     let (status, ptr, len) = match result {
         Ok(bytes) => {
             let ptr =
-                ide_call(state, "alloc", &[JsValue::from_f64(bytes.len() as f64)])
+                editor_call(state, "alloc", &[JsValue::from_f64(bytes.len() as f64)])
                     .and_then(|p| p.as_f64())
                     .map(|p| p as i32);
             match (ptr, state.instance.borrow().as_ref()) {
@@ -276,11 +276,11 @@ fn ide_fs_done(state: &State, req: i32, result: Result<Vec<u8>, String>) {
             }
         },
         Err(e) => {
-            ide_status(state, &e);
+            editor_status(state, &e);
             (1, 0, 0)
         },
     };
-    ide_call(
+    editor_call(
         state,
         "on_fs",
         &[JsValue::from_f64(req as f64), JsValue::from_f64(status as f64), JsValue::from_f64(ptr as f64), JsValue::from_f64(
@@ -293,7 +293,7 @@ fn ide_fs_done(state: &State, req: i32, result: Result<Vec<u8>, String>) {
 /// Sizes the canvas's bitmap to the pane at the device's pixel ratio, so the
 /// extension draws in the pane's own coordinates, and tells the extension, since
 /// resizing clears the canvas.
-fn ide_resize(state: &State) {
+fn editor_resize(state: &State) {
     let canvas: HtmlCanvasElement = state.canvas.raw().dyn_into().unwrap();
     let ratio = gloo_utils::window().device_pixel_ratio();
     let width = canvas.client_width() as f64;
@@ -302,13 +302,13 @@ fn ide_resize(state: &State) {
     canvas.set_height((height * ratio) as u32);
     _ = state.context.reset_transform();
     _ = state.context.scale(ratio, ratio);
-    ide_call(state, "on_resize", &[JsValue::from_f64(width), JsValue::from_f64(height)]);
+    editor_call(state, "on_resize", &[JsValue::from_f64(width), JsValue::from_f64(height)]);
     return;
 }
 
-impl Panel for IdePanel {
+impl Panel for EditorPanel {
     fn panel_attach(&self) -> El {
-        return el("div").classes(&["merman_panel", "merman_panel_ide"]).push(self.0.element.clone());
+        return el("div").classes(&["merman_panel", "merman_panel_editor"]).push(self.0.element.clone());
     }
 
     fn panel_changed(&self, _path: &str) -> Option<PanelChange> {
@@ -346,7 +346,7 @@ impl Panel for IdePanel {
                 (stroke.ctrl as i32) | ((stroke.alt as i32) << 1) | ((stroke.shift as i32) << 2) |
                     ((stroke.meta as i32) << 3);
             let handled =
-                ide_call(state, "on_key", &[JsValue::from_f64(code as f64), JsValue::from_f64(mods as f64)])
+                editor_call(state, "on_key", &[JsValue::from_f64(code as f64), JsValue::from_f64(mods as f64)])
                     .and_then(|v| v.as_f64())
                     .is_some_and(|v| v != 0.);
             if handled {
@@ -368,17 +368,17 @@ impl Panel for IdePanel {
         if path != state.path {
             return;
         }
-        let Some(ide) = state.lang.lang_ide(path) else {
+        let Some(export) = state.lang.lang_editor(path) else {
             return;
         };
-        let ended_ms = ide.ended_ms;
+        let ended_ms = export.ended_ms;
         if state.loaded.get() == Some(ended_ms) {
             return;
         }
         state.loaded.set(Some(ended_ms));
         *state.instance.borrow_mut() = None;
         state.buttons.ref_clear();
-        ide_status(state, "Loading");
+        editor_status(state, "Loading");
         let request = ReqLangExportRead {
             import_state: state.import_state,
             path: vec!["files".to_string(), "main.wasm".to_string()],
@@ -430,7 +430,7 @@ impl Panel for IdePanel {
                                 state.context.begin_path();
                                 state.context.move_to(x0, y0);
                                 state.context.line_to(x1, y1);
-                                ide_stroke(&state.context, width, rgba);
+                                editor_stroke(&state.context, width, rgba);
                             }) as Box<dyn FnMut(f64, f64, f64, f64, f64, i32)>);
                             define("canvas_segment", closure.as_ref());
                             closures.push(Box::new(closure));
@@ -460,7 +460,7 @@ impl Panel for IdePanel {
                                         state.context.line_to(point[0], point[1]);
                                     }
                                 }
-                                ide_stroke(&state.context, width, rgba);
+                                editor_stroke(&state.context, width, rgba);
                             }) as Box<dyn FnMut(i32, i32, f64, i32)>);
                             define("canvas_polyline", closure.as_ref());
                             closures.push(Box::new(closure));
@@ -471,13 +471,13 @@ impl Panel for IdePanel {
                                 let Some(state) = state.upgrade() else {
                                     return -1;
                                 };
-                                let label = ide_string(&state, ptr, len);
+                                let label = editor_string(&state, ptr, len);
                                 let id = state.buttons.raw().child_element_count() as i32;
                                 state
                                     .buttons
                                     .ref_push(
                                         el("div")
-                                            .classes(&["merman_toolbar_button", "merman_ide_button"])
+                                            .classes(&["merman_toolbar_button", "merman_editor_button"])
                                             .attr("data-action", &id.to_string())
                                             .attr("title", &label)
                                             .text(&label),
@@ -493,8 +493,8 @@ impl Panel for IdePanel {
                                 let Some(state) = state.upgrade() else {
                                     return;
                                 };
-                                let text = ide_string(&state, ptr, len);
-                                ide_status(&state, &text);
+                                let text = editor_string(&state, ptr, len);
+                                editor_status(&state, &text);
                             }) as Box<dyn FnMut(i32, i32)>);
                             define("text_set", closure.as_ref());
                             closures.push(Box::new(closure));
@@ -505,7 +505,7 @@ impl Panel for IdePanel {
                                 let Some(state) = state.upgrade() else {
                                     return;
                                 };
-                                let path = ide_string(&state, ptr, len);
+                                let path = editor_string(&state, ptr, len);
                                 wasm_bindgen_futures::spawn_local({
                                     let state: Weak<State> = Rc::downgrade(&state);
                                     async move {
@@ -518,7 +518,7 @@ impl Panel for IdePanel {
                                         let Some(state) = state.upgrade() else {
                                             return;
                                         };
-                                        ide_fs_done(&state, req, result);
+                                        editor_fs_done(&state, req, result);
                                     }
                                 });
                             }) as Box<dyn FnMut(i32, i32, i32)>);
@@ -531,8 +531,8 @@ impl Panel for IdePanel {
                                 let Some(state) = state.upgrade() else {
                                     return;
                                 };
-                                let path = ide_string(&state, path_ptr, path_len);
-                                let bytes = ide_memory_read(&state, ptr, len);
+                                let path = editor_string(&state, path_ptr, path_len);
+                                let bytes = editor_memory_read(&state, ptr, len);
                                 wasm_bindgen_futures::spawn_local({
                                     let state: Weak<State> = Rc::downgrade(&state);
                                     async move {
@@ -543,7 +543,7 @@ impl Panel for IdePanel {
                                         let Some(state) = state.upgrade() else {
                                             return;
                                         };
-                                        ide_fs_done(&state, req, result.map(|_| vec![]));
+                                        editor_fs_done(&state, req, result.map(|_| vec![]));
                                     }
                                 });
                             }) as Box<dyn FnMut(i32, i32, i32, i32, i32)>);
@@ -564,7 +564,7 @@ impl Panel for IdePanel {
                                 let Some(state) = state.upgrade() else {
                                     return;
                                 };
-                                web_sys::console::log_1(&JsValue::from_str(&ide_string(&state, ptr, len)));
+                                web_sys::console::log_1(&JsValue::from_str(&editor_string(&state, ptr, len)));
                             }) as Box<dyn FnMut(i32, i32)>);
                             define("log", closure.as_ref());
                             closures.push(Box::new(closure));
@@ -594,7 +594,7 @@ impl Panel for IdePanel {
                 let (exports, memory) = match started {
                     Ok(started) => started,
                     Err(e) => {
-                        ide_status(&state, &e);
+                        editor_status(&state, &e);
                         return;
                     },
                 };
@@ -605,9 +605,9 @@ impl Panel for IdePanel {
                     exports: exports,
                     memory: memory,
                 });
-                ide_status(&state, "");
-                ide_resize(&state);
-                ide_call(&state, "_start", &[]);
+                editor_status(&state, "");
+                editor_resize(&state);
+                editor_call(&state, "_start", &[]);
             }
         });
         return;
@@ -617,7 +617,7 @@ impl Panel for IdePanel {
         let Some(id) = toolbar_action(e).and_then(|a| a.parse::<i32>().ok()) else {
             return PanelResult::Ignored;
         };
-        ide_call(&self.0, "on_button", &[JsValue::from_f64(id as f64)]);
+        editor_call(&self.0, "on_button", &[JsValue::from_f64(id as f64)]);
         return PanelResult::Used;
     }
 

@@ -108,7 +108,7 @@ pub struct Compiled {
 
 /// What the module's root exported, when it compiled and exported something.
 /// The editor recognizes markers by `type_name`: a source-defined object the
-/// module is an instance of, such as `ide`.
+/// module is an instance of, such as `editor`.
 #[derive(Serialize, Deserialize, JsonSchema, Maskoidy, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct Export {
