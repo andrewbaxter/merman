@@ -3,6 +3,7 @@ pub mod code;
 pub mod conflict;
 pub mod error;
 pub mod filesystem;
+pub mod ide;
 pub mod lang;
 pub mod list;
 pub mod models;

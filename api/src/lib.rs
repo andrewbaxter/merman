@@ -29,6 +29,9 @@ glove::reqresp!(pub api {
     Flush(ReqFlush) => RespFlush,
     LangFileState(ReqLangFileState) => RespLangFileState,
     LangSourceRead(ReqLangSourceRead) => RespLangSourceRead,
+    LangExportRead(ReqLangExportRead) => RespLangExportRead,
+    FileRead(ReqFileRead) => RespFileRead,
+    FileWrite(ReqFileWrite) => RespFileWrite,
     LangFlush(ReqLangFlush) => RespLangFlush,
 });
 
@@ -108,6 +111,15 @@ pub struct LangServerFlush {
 
 #[derive(Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+pub struct ReqLangExportRead {
+    pub import_state: i64,
+    pub path: Vec<String>,
+    pub server: String,
+    pub source: Source,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ReqLangFileState {
     pub path: String,
 }
@@ -121,6 +133,12 @@ pub struct ReqLangFlush {}
 pub struct ReqLangSourceRead {
     pub server: String,
     pub source: Source,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RespLangExportRead {
+    pub bytes_base64: String,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema)]
@@ -183,6 +201,19 @@ pub struct ReqEdit {
     pub revision: u64,
     pub select_after: Option<String>,
     pub select_before: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReqFileRead {
+    pub path: String,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReqFileWrite {
+    pub bytes_base64: String,
+    pub path: String,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema)]
@@ -266,6 +297,16 @@ pub struct RespEdit {
     pub accepted: bool,
     pub revision: u64,
 }
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RespFileRead {
+    pub bytes_base64: String,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RespFileWrite {}
 
 #[derive(Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]

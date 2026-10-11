@@ -43,6 +43,7 @@ notify-rust = { version = "4.18.0", default-features = false, features = ["z-wit
 good-ormning = { version = "0.5.16", features = ["sqlite"] }
 rusqlite = "0.37"
 zstd = "0.13"
+base64 = "0.22"
 
 [build-dependencies]
 good-ormning = { version = "0.5.16", features = ["sqlite"] }

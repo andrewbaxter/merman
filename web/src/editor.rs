@@ -17,6 +17,7 @@ use {
             },
             error::ErrorPanel,
             filesystem::FilesystemPanel,
+            ide::IdePanel,
             lang::LangPanel,
             panel_theme_apply,
         },
@@ -109,6 +110,7 @@ struct Editor {
     focus_next: Cell<bool>,
     history_navigating: Cell<bool>,
     history_select: RefCell<Option<(String, String)>>,
+    ide_panel: RefCell<Option<(String, Rc<dyn Panel>)>>,
     keys: Keymap,
     lang: Rc<Lang>,
     lang_panel: RefCell<Option<(String, Rc<dyn Panel>)>>,
@@ -350,6 +352,7 @@ fn editor_status_refresh(editor: &Rc<Editor>) {
     logs.ref_modify_classes(&[("merman_status_off", !editor.lang.lang_running())]);
     logs.ref_on("click", {
         let editor: Weak<Editor> = Rc::downgrade(editor);
+        let path = path.clone();
         move |_| {
             let Some(editor) = editor.upgrade() else {
                 return;
@@ -369,6 +372,55 @@ fn editor_status_refresh(editor: &Rc<Editor>) {
         }
     });
     editor.status_panel.ref_push(logs);
+    if editor.lang.lang_ide(&path).is_some() {
+        let ide =
+            el("span")
+                .classes(&["merman_status_icon"])
+                .attr("title", "Open the file's ide pane")
+                .text("\u{e87b}");
+        ide.ref_on("click", {
+            let editor: Weak<Editor> = Rc::downgrade(editor);
+            move |_| {
+                let Some(editor) = editor.upgrade() else {
+                    return;
+                };
+                editor_ide_open(&editor, editor.focus.get());
+            }
+        });
+        editor.status_panel.ref_push(ide);
+    }
+    return;
+}
+
+/// Opens the pane for the extension the file at `index` exports, or returns to it
+/// if it's already open.
+fn editor_ide_open(editor: &Rc<Editor>, index: usize) {
+    let path = editor.panels.borrow()[index].panel_path();
+    let Some(ide) = editor.lang.lang_ide(&path) else {
+        return;
+    };
+    let existing = editor.ide_panel.borrow().clone();
+    if let Some((shown, panel)) = existing {
+        if shown == path {
+            if let Some(existing) = editor_index(editor, &panel) {
+                editor_focus(editor, existing);
+                return;
+            }
+        }
+    }
+    let panel: Rc<dyn Panel> =
+        Rc::new(
+            IdePanel::ide_new(
+                editor.keys.clone(),
+                editor.lang.clone(),
+                path.clone(),
+                ide.server,
+                ide.source,
+                ide.import_state,
+            ),
+        );
+    *editor.ide_panel.borrow_mut() = Some((path, panel.clone()));
+    editor_open_child(editor, index, panel);
     return;
 }
 
@@ -597,6 +649,7 @@ fn editor_result(editor: &Rc<Editor>, index: usize, result: PanelResult) -> bool
             }
         },
         Action::AiOpen => editor_ai_open(editor, index),
+        Action::IdeOpen => editor_ide_open(editor, index),
         Action::AiOpenReference => {
             let reference = editor.panels.borrow()[index].panel_reference();
             editor_ai_open(editor, index);
@@ -924,6 +977,7 @@ pub fn start_editor() {
             dir: start.dir.clone(),
             ai: ai.clone(),
             lang: lang.clone(),
+            ide_panel: RefCell::new(None),
             lang_panel: RefCell::new(None),
             status_panel: el("div").classes(&["merman_status_panel"]),
             element: el("div").classes(&["merman_panels"]),

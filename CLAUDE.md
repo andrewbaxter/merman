@@ -100,3 +100,17 @@ functions named after the thing they act on (`cursor_*`, `visual_*`, `wall_*`,
 
 `syntaxes/` holds syntaxes that files are opened with, keyed by extension in
 `merman.json`. Nothing that isn't a file format belongs there.
+
+## Extensions
+
+A file whose root export is an instance of a source-defined object named `ide`
+(the ecosystem's `merman-ide.atz`) gets an ide button in the status column and
+an `ide_open` action, which open an ide pane (`web/src/panels/ide.rs`) running
+the wasm in the export's `files` dir. Neither the language server nor the
+protocol knows the marker: the server reports every root export's exporter tag
+and source object name in `Compiled.export`, and hands out bytes from it by a
+path of record fields and dir entries (`ExportRead`). The pane's host functions
+(canvas drawing, buttons, a text line, file reads and writes through the server,
+answered by callback) are the wasm imports under the module name `merman`, and
+their types live in `merman-ide.atz`, so a change to one side is a change to
+the other.

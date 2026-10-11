@@ -5,13 +5,11 @@
         "tagged_union": {
           "variants": {
             "compiled": {
-              "description": "One compile unit of a source finished, or was loaded from the cache.",
               "maskoid": {
                 "ref": "Compiled"
               }
             },
             "dirty": {
-              "description": "The file (or something it depends on) changed; its previous results are void.",
               "maskoid": {
                 "record": {
                   "fields": {
@@ -23,7 +21,6 @@
               }
             },
             "removed": {
-              "description": "The file was deleted.",
               "maskoid": {
                 "record": {
                   "fields": {
@@ -35,7 +32,6 @@
               }
             },
             "settled": {
-              "description": "Nothing is pending for the source any more.",
               "maskoid": {
                 "record": {
                   "fields": {
@@ -86,7 +82,6 @@
       },
       "Compiled": {
         "record": {
-          "description": "One compile of a source. A source is compiled once per import state it is\nimported under, so a file can have several.",
           "fields": {
             "ended_ms": {
               "maskoid": "int"
@@ -95,6 +90,13 @@
               "maskoid": {
                 "list": {
                   "ref": "CompileError"
+                }
+              }
+            },
+            "export": {
+              "maskoid": {
+                "option": {
+                  "ref": "Export"
                 }
               }
             },
@@ -119,6 +121,31 @@
           }
         }
       },
+      "Export": {
+        "record": {
+          "description": "What the module's root exported, when it compiled and exported something.\nThe editor recognizes markers by `type_name`: a source-defined object the\nmodule is an instance of, such as `ide`.",
+          "fields": {
+            "exporter": {
+              "description": "The artifact exporter's tag, like `record` or `source_object_value_const`.",
+              "maskoid": "string"
+            },
+            "type_name": {
+              "description": "The name of the source-defined object type the export is an instance of.",
+              "maskoid": {
+                "option": "string"
+              }
+            },
+            "type_source": {
+              "description": "The source defining that object type.",
+              "maskoid": {
+                "option": {
+                  "ref": "Source"
+                }
+              }
+            }
+          }
+        }
+      },
       "FileState": {
         "record": {
           "fields": {
@@ -139,7 +166,6 @@
         "record": {
           "fields": {
             "expr": {
-              "description": "The `id` of the expression in the module's JSON; none for the module as a whole.",
               "maskoid": {
                 "option": "int"
               }
@@ -181,8 +207,29 @@
       "Request": {
         "tagged_union": {
           "variants": {
+            "export_read": {
+              "description": "The bytes at `path` in a compile's root export: a path of record field\nnames and `dir` entry names, ending at a `dir` entry, a byte array, a\nstring or an `app`.",
+              "maskoid": {
+                "record": {
+                  "fields": {
+                    "import_state": {
+                      "maskoid": "int"
+                    },
+                    "path": {
+                      "maskoid": {
+                        "list": "string"
+                      }
+                    },
+                    "source": {
+                      "maskoid": {
+                        "ref": "Source"
+                      }
+                    }
+                  }
+                }
+              }
+            },
             "file_state": {
-              "description": "The cached state of one file: whether it is being compiled and the results of\nevery compile of it the server knows.",
               "maskoid": {
                 "record": {
                   "fields": {
@@ -194,11 +241,9 @@
               }
             },
             "flush": {
-              "description": "Compile everything pending now, even while paused, and reply once every\naffected source has settled.",
               "maskoid": "null"
             },
             "pause": {
-              "description": "While paused the server still announces `Dirty` for changed files but doesn't\ncompile them until unpaused or flushed.",
               "maskoid": {
                 "record": {
                   "fields": {
@@ -210,7 +255,6 @@
               }
             },
             "source_read": {
-              "description": "The text of a module the editor can't read itself (a remote source).",
               "maskoid": {
                 "record": {
                   "fields": {
@@ -229,6 +273,17 @@
       "Response": {
         "tagged_union": {
           "variants": {
+            "export_read": {
+              "maskoid": {
+                "record": {
+                  "fields": {
+                    "bytes_base64": {
+                      "maskoid": "string"
+                    }
+                  }
+                }
+              }
+            },
             "failed": {
               "maskoid": {
                 "record": {
@@ -246,7 +301,6 @@
               }
             },
             "flush": {
-              "description": "Every compile unit compiled by the flush.",
               "maskoid": {
                 "record": {
                   "fields": {
@@ -330,7 +384,6 @@
               }
             },
             "remote": {
-              "description": "The server's own name for a non-file source, usable in `SourceRead`.",
               "maskoid": {
                 "record": {
                   "fields": {

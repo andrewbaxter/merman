@@ -4,6 +4,7 @@ mod history;
 mod langserver;
 
 use {
+    base64::Engine,
     aargvark::{
         Aargvark,
         vark,
@@ -65,11 +66,14 @@ use {
         LangServerFlush,
         RespAiResume,
         RespAiSend,
+        RespLangExportRead,
         RespLangFileState,
         RespLangFlush,
         RespLangSourceRead,
         RespAiSessions,
         RespEdit,
+        RespFileRead,
+        RespFileWrite,
         RespFlush,
         RespHistoryStep,
         RespList,
@@ -475,6 +479,29 @@ impl Handler<Body> for HandlerRoot {
                         Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
                     }
                 },
+                ServerReq::LangExportRead(respond, req) => {
+                    let result: Result<RespLangExportRead, loga::Error> = async {
+                        match langserver::langserver_request(
+                            &self.langservers,
+                            &req.server,
+                            merman_langserver::Request::ExportRead {
+                                source: req.source,
+                                import_state: req.import_state,
+                                path: req.path,
+                            },
+                        ).await? {
+                            merman_langserver::Response::ExportRead { bytes_base64 } => return Ok(
+                                RespLangExportRead { bytes_base64: bytes_base64 },
+                            ),
+                            merman_langserver::Response::Failed { message } => return Err(loga::err(message)),
+                            _ => return Err(loga::err("The language server answered with the wrong response")),
+                        }
+                    }.await;
+                    match result {
+                        Ok(v) => respond(v),
+                        Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
+                    }
+                },
                 ServerReq::LangFlush(respond, _) => {
                     let mut servers = vec![];
                     for name in self.langservers.servers.keys() {
@@ -790,6 +817,29 @@ impl Handler<Body> for HandlerRoot {
                         source: source,
                         unwritten: unwritten,
                     });
+                })() {
+                    Ok(v) => respond(v),
+                    Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
+                },
+                ServerReq::FileRead(respond, req) => match (|| -> Result<RespFileRead, loga::Error> {
+                    let path = self.dir_contains(&self.dir.join(&req.path))?;
+                    let bytes =
+                        std::fs::read(&path).context_with("Error reading the file", ea!(path = path.display()))?;
+                    return Ok(RespFileRead { bytes_base64: base64::engine::general_purpose::STANDARD.encode(bytes) });
+                })() {
+                    Ok(v) => respond(v),
+                    Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
+                },
+                ServerReq::FileWrite(respond, req) => match (|| -> Result<RespFileWrite, loga::Error> {
+                    let path = self.dir.join(&req.path);
+                    let parent = self.dir_contains(path.parent().context("The path has no parent directory")?)?;
+                    let path = parent.join(path.file_name().context("The path has no file name")?);
+                    let bytes =
+                        base64::engine::general_purpose::STANDARD
+                            .decode(&req.bytes_base64)
+                            .context("Error decoding the file's base64")?;
+                    std::fs::write(&path, bytes).context_with("Error writing the file", ea!(path = path.display()))?;
+                    return Ok(RespFileWrite {});
                 })() {
                     Ok(v) => respond(v),
                     Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
