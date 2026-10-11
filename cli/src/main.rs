@@ -71,6 +71,11 @@ use {
         RespLangFlush,
         RespLangSourceRead,
         RespAiSessions,
+        RespDocEdit,
+        RespDocOpen,
+        RespDocStep,
+        RespDocSync,
+        RespDocWrite,
         RespEdit,
         RespFileRead,
         RespFileWrite,
@@ -243,6 +248,14 @@ impl HandlerRoot {
                 &syntax_text,
             ).context_with("Error parsing syntax", ea!(syntax = mapping.syntax.display()))?;
         return Ok(spec.compression);
+    }
+
+    /// An editor's document may not exist yet, so its directory is what has to be inside the
+    /// ide's.
+    fn doc_path(&self, path: &str) -> Result<PathBuf, loga::Error> {
+        let path = Path::new(path);
+        let parent = self.dir_contains(path.parent().context("The path has no parent directory")?)?;
+        return Ok(parent.join(path.file_name().context("The path has no file name")?));
     }
 
     fn dir_contains(&self, path: &Path) -> Result<PathBuf, loga::Error> {
@@ -831,15 +844,134 @@ impl Handler<Body> for HandlerRoot {
                     Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
                 },
                 ServerReq::FileWrite(respond, req) => match (|| -> Result<RespFileWrite, loga::Error> {
-                    let path = self.dir.join(&req.path);
-                    let parent = self.dir_contains(path.parent().context("The path has no parent directory")?)?;
-                    let path = parent.join(path.file_name().context("The path has no file name")?);
+                    let path = self.doc_path(&self.dir.join(&req.path).to_string_lossy())?;
                     let bytes =
                         base64::engine::general_purpose::STANDARD
                             .decode(&req.bytes_base64)
                             .context("Error decoding the file's base64")?;
                     std::fs::write(&path, bytes).context_with("Error writing the file", ea!(path = path.display()))?;
                     return Ok(RespFileWrite {});
+                })() {
+                    Ok(v) => respond(v),
+                    Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
+                },
+                ServerReq::DocOpen(respond, req) => match (|| -> Result<RespDocOpen, loga::Error> {
+                    let path = self.doc_path(&req.path)?;
+                    self.events.events_stamp(&path);
+                    let history = &self.history;
+                    let mut db = history.db.lock().unwrap();
+                    let mut docs = history.docs.lock().unwrap();
+                    let state = history.history_doc_state(&mut db, &mut docs, &path)?;
+                    history::history_doc_take_disk(&mut db, state, &path)?;
+                    return Ok(RespDocOpen {
+                        contents_base64: base64::engine::general_purpose::STANDARD.encode(&state.contents),
+                        revision: state.revision,
+                    });
+                })() {
+                    Ok(v) => respond(v),
+                    Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
+                },
+                ServerReq::DocEdit(respond, req) => match (|| -> Result<RespDocEdit, loga::Error> {
+                    let path = self.doc_path(&req.path)?;
+                    let level =
+                        base64::engine::general_purpose::STANDARD
+                            .decode(&req.level_base64)
+                            .context("Error decoding the level's base64")?;
+                    let contents =
+                        base64::engine::general_purpose::STANDARD
+                            .decode(&req.contents_base64)
+                            .context("Error decoding the contents' base64")?;
+                    let history = &self.history;
+                    let revision = {
+                        let mut db = history.db.lock().unwrap();
+                        let mut docs = history.docs.lock().unwrap();
+                        let state = history.history_doc_state(&mut db, &mut docs, &path)?;
+                        if state.revision != req.revision {
+                            return Ok(RespDocEdit {
+                                accepted: false,
+                                revision: state.revision,
+                            });
+                        }
+                        history::history_doc_level_push(&mut db, state, &req.editor, &level, contents)?;
+                        state.revision
+                    };
+                    history.history_doc_schedule_write(&path);
+                    return Ok(RespDocEdit {
+                        accepted: true,
+                        revision: revision,
+                    });
+                })() {
+                    Ok(v) => respond(v),
+                    Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
+                },
+                ServerReq::DocStep(respond, req) => match (|| -> Result<RespDocStep, loga::Error> {
+                    let path = self.doc_path(&req.path)?;
+                    let history = &self.history;
+                    let mut db = history.db.lock().unwrap();
+                    let mut docs = history.docs.lock().unwrap();
+                    let state = history.history_doc_state(&mut db, &mut docs, &path)?;
+                    if state.revision != req.revision {
+                        return Ok(RespDocStep {
+                            level_base64: None,
+                            revision: state.revision,
+                        });
+                    }
+                    let level = history::history_doc_step(&mut db, state, &req.editor, req.redo)?;
+                    return Ok(RespDocStep {
+                        level_base64: level.map(|l| base64::engine::general_purpose::STANDARD.encode(l)),
+                        revision: state.revision,
+                    });
+                })() {
+                    Ok(v) => respond(v),
+                    Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
+                },
+                ServerReq::DocWrite(respond, req) => match (|| -> Result<RespDocWrite, loga::Error> {
+                    let path = self.doc_path(&req.path)?;
+                    let contents =
+                        base64::engine::general_purpose::STANDARD
+                            .decode(&req.contents_base64)
+                            .context("Error decoding the contents' base64")?;
+                    let history = &self.history;
+                    let revision = {
+                        let mut db = history.db.lock().unwrap();
+                        let mut docs = history.docs.lock().unwrap();
+                        let state = history.history_doc_state(&mut db, &mut docs, &path)?;
+                        if state.revision != req.revision {
+                            return Ok(RespDocWrite {
+                                accepted: false,
+                                revision: state.revision,
+                            });
+                        }
+                        state.contents = contents;
+                        state.dirty = true;
+                        state.revision
+                    };
+                    history.history_doc_schedule_write(&path);
+                    return Ok(RespDocWrite {
+                        accepted: true,
+                        revision: revision,
+                    });
+                })() {
+                    Ok(v) => respond(v),
+                    Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
+                },
+                ServerReq::DocSync(respond, req) => match (|| -> Result<RespDocSync, loga::Error> {
+                    let path = self.doc_path(&req.path)?;
+                    let history = &self.history;
+                    let mut db = history.db.lock().unwrap();
+                    let mut docs = history.docs.lock().unwrap();
+                    let state = history.history_doc_state(&mut db, &mut docs, &path)?;
+                    history::history_doc_take_disk(&mut db, state, &path)?;
+                    if state.revision == req.revision {
+                        return Ok(RespDocSync {
+                            contents_base64: None,
+                            revision: state.revision,
+                        });
+                    }
+                    return Ok(RespDocSync {
+                        contents_base64: Some(base64::engine::general_purpose::STANDARD.encode(&state.contents)),
+                        revision: state.revision,
+                    });
                 })() {
                     Ok(v) => respond(v),
                     Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
@@ -1044,6 +1176,7 @@ fn main() {
             ).map_err(|e| loga::err_with(e.to_string(), ea!(path = history_path.display())))?;
         let history = Arc::new(history::History {
             db: std::sync::Mutex::new(db),
+            docs: std::sync::Mutex::new(std::collections::HashMap::new()),
             files: std::sync::Mutex::new(std::collections::HashMap::new()),
         });
         let ai = Arc::new(ai::Ai {

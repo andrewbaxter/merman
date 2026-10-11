@@ -32,6 +32,11 @@ glove::reqresp!(pub api {
     LangExportRead(ReqLangExportRead) => RespLangExportRead,
     FileRead(ReqFileRead) => RespFileRead,
     FileWrite(ReqFileWrite) => RespFileWrite,
+    DocOpen(ReqDocOpen) => RespDocOpen,
+    DocEdit(ReqDocEdit) => RespDocEdit,
+    DocStep(ReqDocStep) => RespDocStep,
+    DocWrite(ReqDocWrite) => RespDocWrite,
+    DocSync(ReqDocSync) => RespDocSync,
     LangFlush(ReqLangFlush) => RespLangFlush,
 });
 
@@ -166,6 +171,88 @@ pub struct ListEntry {
     pub dir: bool,
     pub name: String,
     pub path: String,
+}
+
+/// An editor's document: a file the editor serializes itself, with an undo history of levels
+/// the editor also encodes, tagged with `editor` (the exporting module and the editor's own key)
+/// so only that editor applies them. The file is the primary source; the history is dropped
+/// when the file no longer matches what the history last wrote.
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReqDocOpen {
+    pub editor: String,
+    pub path: String,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReqDocEdit {
+    pub contents_base64: String,
+    pub editor: String,
+    pub level_base64: String,
+    pub path: String,
+    pub revision: u64,
+}
+
+/// Undo (or redo) one level: the level's blob comes back for the editor to apply, and the
+/// editor then sends the resulting contents with `DocWrite`.
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReqDocStep {
+    pub editor: String,
+    pub path: String,
+    pub redo: bool,
+    pub revision: u64,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReqDocSync {
+    pub path: String,
+    pub revision: u64,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReqDocWrite {
+    pub contents_base64: String,
+    pub path: String,
+    pub revision: u64,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RespDocEdit {
+    pub accepted: bool,
+    pub revision: u64,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RespDocOpen {
+    pub contents_base64: String,
+    pub revision: u64,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RespDocStep {
+    pub level_base64: Option<String>,
+    pub revision: u64,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RespDocSync {
+    pub contents_base64: Option<String>,
+    pub revision: u64,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RespDocWrite {
+    pub accepted: bool,
+    pub revision: u64,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema)]
