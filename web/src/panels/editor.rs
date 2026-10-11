@@ -123,7 +123,11 @@ impl EditorPanel {
         let canvas = el("canvas").classes(&["merman_editor_canvas"]);
         let status = el("div").classes(&["merman_editor_status"]).text("Loading");
         let element =
-            el("div").classes(&["merman_editor"]).push(buttons.clone()).push(canvas.clone()).push(status.clone());
+            el("div")
+                .classes(&["merman_editor"])
+                .push(buttons.clone())
+                .push(canvas.clone())
+                .push(status.clone());
         let context: CanvasRenderingContext2d =
             canvas
                 .raw()
@@ -213,8 +217,8 @@ fn editor_status(state: &State, text: &str) {
     return;
 }
 
-/// Calls an export the extension chose to provide; a missing one is fine, a throwing
-/// one stops the pane with the error.
+/// Calls an export the extension chose to provide; a missing one is fine, a
+/// throwing one stops the pane with the error.
 fn editor_call(state: &State, name: &str, args: &[JsValue]) -> Option<JsValue> {
     let function = {
         let instance = state.instance.borrow();
@@ -271,10 +275,10 @@ fn editor_stroke(context: &CanvasRenderingContext2d, width: f64, rgba: i32) {
 }
 
 /// Answers an extension's file request: the bytes go into memory the extension
-/// allocates, then `on_fs` gets the request's id, a status (0 is success) and where
-/// the bytes are.
-/// Puts bytes into memory the extension allocates for them, as file contents, a
-/// document and undo levels arrive; without an `alloc` export nothing can arrive.
+/// allocates, then `on_fs` gets the request's id, a status (0 is success) and
+/// where the bytes are. Puts bytes into memory the extension allocates for them,
+/// as file contents, a document and undo levels arrive; without an `alloc` export
+/// nothing can arrive.
 fn editor_deliver(state: &State, bytes: &[u8]) -> Option<i32> {
     let ptr =
         editor_call(state, "alloc", &[JsValue::from_f64(bytes.len() as f64)])
@@ -359,9 +363,12 @@ fn editor_fs_done(state: &State, req: i32, result: Result<Vec<u8>, String>) {
     editor_call(
         state,
         "on_fs",
-        &[JsValue::from_f64(req as f64), JsValue::from_f64(status as f64), JsValue::from_f64(ptr as f64), JsValue::from_f64(
-            len as f64,
-        )],
+        &[
+            JsValue::from_f64(req as f64),
+            JsValue::from_f64(status as f64),
+            JsValue::from_f64(ptr as f64),
+            JsValue::from_f64(len as f64),
+        ],
     );
     return;
 }
@@ -523,8 +530,8 @@ impl Panel for EditorPanel {
     }
 
     /// A new compile of the file means fetching the export's wasm from the language
-    /// server and starting it with the host functions, as closures kept alive with
-    /// the instance, replacing whatever the pane was running.
+    /// server and starting it with the host functions, as closures kept alive with the
+    /// instance, replacing whatever the pane was running.
     fn panel_lang_errors(&self, path: &str, _errors: &[CompileError]) {
         let state = &self.0;
         if path != state.path {
@@ -586,15 +593,18 @@ impl Panel for EditorPanel {
                         }
                         {
                             let state: Weak<State> = Rc::downgrade(&state);
-                            let closure = Closure::wrap(Box::new(move |x0: f64, y0: f64, x1: f64, y1: f64, width: f64, rgba: i32| {
-                                let Some(state) = state.upgrade() else {
-                                    return;
-                                };
-                                state.context.begin_path();
-                                state.context.move_to(x0, y0);
-                                state.context.line_to(x1, y1);
-                                editor_stroke(&state.context, width, rgba);
-                            }) as Box<dyn FnMut(f64, f64, f64, f64, f64, i32)>);
+                            let closure =
+                                Closure::wrap(
+                                    Box::new(move |x0: f64, y0: f64, x1: f64, y1: f64, width: f64, rgba: i32| {
+                                        let Some(state) = state.upgrade() else {
+                                            return;
+                                        };
+                                        state.context.begin_path();
+                                        state.context.move_to(x0, y0);
+                                        state.context.line_to(x1, y1);
+                                        editor_stroke(&state.context, width, rgba);
+                                    }) as Box<dyn FnMut(f64, f64, f64, f64, f64, i32)>,
+                                );
                             define("canvas_segment", closure.as_ref());
                             closures.push(Box::new(closure));
                         }
@@ -690,26 +700,32 @@ impl Panel for EditorPanel {
                         }
                         {
                             let state: Weak<State> = Rc::downgrade(&state);
-                            let closure = Closure::wrap(Box::new(move |req: i32, path_ptr: i32, path_len: i32, ptr: i32, len: i32| {
-                                let Some(state) = state.upgrade() else {
-                                    return;
-                                };
-                                let path = editor_string(&state, path_ptr, path_len);
-                                let bytes = editor_memory_read(&state, ptr, len);
-                                wasm_bindgen_futures::spawn_local({
-                                    let state: Weak<State> = Rc::downgrade(&state);
-                                    async move {
-                                        let result = client_send(ReqFileWrite {
-                                            bytes_base64: base64::engine::general_purpose::STANDARD.encode(bytes),
-                                            path: path,
-                                        }).await;
+                            let closure =
+                                Closure::wrap(
+                                    Box::new(move |req: i32, path_ptr: i32, path_len: i32, ptr: i32, len: i32| {
                                         let Some(state) = state.upgrade() else {
                                             return;
                                         };
-                                        editor_fs_done(&state, req, result.map(|_| vec![]));
-                                    }
-                                });
-                            }) as Box<dyn FnMut(i32, i32, i32, i32, i32)>);
+                                        let path = editor_string(&state, path_ptr, path_len);
+                                        let bytes = editor_memory_read(&state, ptr, len);
+                                        wasm_bindgen_futures::spawn_local({
+                                            let state: Weak<State> = Rc::downgrade(&state);
+                                            async move {
+                                                let result = client_send(ReqFileWrite {
+                                                    bytes_base64: base64
+                                                    ::engine
+                                                    ::general_purpose
+                                                    ::STANDARD.encode(bytes),
+                                                    path: path,
+                                                }).await;
+                                                let Some(state) = state.upgrade() else {
+                                                    return;
+                                                };
+                                                editor_fs_done(&state, req, result.map(|_| vec![]));
+                                            }
+                                        });
+                                    }) as Box<dyn FnMut(i32, i32, i32, i32, i32)>,
+                                );
                             define("fs_write", closure.as_ref());
                             closures.push(Box::new(closure));
                         }
@@ -749,10 +765,14 @@ impl Panel for EditorPanel {
                                                     revision: response.revision,
                                                 });
                                                 let Ok(bytes) =
-                                                    base64::engine::general_purpose::STANDARD.decode(
-                                                        response.contents_base64,
-                                                    ) else {
-                                                        editor_status(&state, "Error decoding the document's base64");
+                                                    base64
+                                                    ::engine
+                                                    ::general_purpose
+                                                    ::STANDARD.decode(response.contents_base64) else {
+                                                        editor_status(
+                                                            &state,
+                                                            "Error decoding the document's base64",
+                                                        );
                                                         return;
                                                     };
                                                 let Some(ptr) = editor_deliver(&state, &bytes) else {
@@ -761,7 +781,10 @@ impl Panel for EditorPanel {
                                                 editor_call(
                                                     &state,
                                                     "on_doc",
-                                                    &[JsValue::from_f64(ptr as f64), JsValue::from_f64(bytes.len() as f64)],
+                                                    &[
+                                                        JsValue::from_f64(ptr as f64),
+                                                        JsValue::from_f64(bytes.len() as f64),
+                                                    ],
                                                 );
                                             }
                                         });
@@ -778,7 +801,10 @@ impl Panel for EditorPanel {
                                 };
                                 let level = editor_memory_read(&state, ptr, len);
                                 let Some(contents) = editor_doc_contents(&state) else {
-                                    editor_status(&state, "The extension edited a document without doc_ptr and doc_len");
+                                    editor_status(
+                                        &state,
+                                        "The extension edited a document without doc_ptr and doc_len",
+                                    );
                                     return;
                                 };
                                 let Some(request) = state.doc.borrow().as_ref().map(|doc| ReqDocEdit {

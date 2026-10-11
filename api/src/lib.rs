@@ -173,10 +173,11 @@ pub struct ListEntry {
     pub path: String,
 }
 
-/// An editor's document: a file the editor serializes itself, with an undo history of levels
-/// the editor also encodes, tagged with `editor` (the exporting module and the editor's own key)
-/// so only that editor applies them. The file is the primary source; the history is dropped
-/// when the file no longer matches what the history last wrote.
+/// An editor's document: a file the editor serializes itself, with an undo history
+/// of levels the editor also encodes, tagged with `editor` (the exporting module
+/// and the editor's own key) so only that editor applies them. The file is the
+/// primary source; the history is dropped when the file no longer matches what the
+/// history last wrote.
 #[derive(Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ReqDocOpen {
@@ -194,8 +195,8 @@ pub struct ReqDocEdit {
     pub revision: u64,
 }
 
-/// Undo (or redo) one level: the level's blob comes back for the editor to apply, and the
-/// editor then sends the resulting contents with `DocWrite`.
+/// Undo (or redo) one level: the level's blob comes back for the editor to apply,
+/// and the editor then sends the resulting contents with `DocWrite`.
 #[derive(Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ReqDocStep {

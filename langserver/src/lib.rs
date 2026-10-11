@@ -27,9 +27,9 @@ pub enum Request {
     SourceRead {
         source: Source,
     },
-    /// The bytes at `path` in a compile's root export: a path of record field
-    /// names and `dir` entry names, ending at a `dir` entry, a byte array, a
-    /// string or an `app`.
+    /// The bytes at `path` in a compile's root export: a path of record field names
+    /// and `dir` entry names, ending at a `dir` entry, a byte array, a string or an
+    /// `app`.
     ExportRead {
         source: Source,
         import_state: i64,
@@ -106,9 +106,9 @@ pub struct Compiled {
     pub export: Option<Export>,
 }
 
-/// What the module's root exported, when it compiled and exported something.
-/// The editor recognizes markers by `type_name`: a source-defined object the
-/// module is an instance of, such as `editor`.
+/// What the module's root exported, when it compiled and exported something. The
+/// editor recognizes markers by `type_name`: a source-defined object the module is
+/// an instance of, such as `editor`.
 #[derive(Serialize, Deserialize, JsonSchema, Maskoidy, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct Export {

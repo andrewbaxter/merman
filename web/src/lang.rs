@@ -25,8 +25,8 @@ pub struct LangFile {
     pub compiles: BTreeMap<(String, i64), Compiled>,
 }
 
-/// The compile of a file whose root export is an `editor` instance: the
-/// extension the editor pane runs for that file.
+/// The compile of a file whose root export is an `editor` instance: the extension
+/// the editor pane runs for that file.
 pub struct LangEditor {
     pub ended_ms: i64,
     pub import_state: i64,

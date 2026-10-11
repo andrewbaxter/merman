@@ -70,7 +70,8 @@ pub struct FileState {
     pub write: Option<JoinHandle<()>>,
 }
 
-/// An editor's document: bytes the editor serializes itself, with undo levels it also encodes.
+/// An editor's document: bytes the editor serializes itself, with undo levels it
+/// also encodes.
 pub struct DocState {
     pub contents: Vec<u8>,
     pub dirty: bool,
@@ -210,8 +211,8 @@ impl History {
         return Ok(files.get_mut(path).unwrap());
     }
 
-    /// The document's state, loaded from the file (the primary source) on first use. A history
-    /// whose last known contents aren't what the file holds is started over.
+    /// The document's state, loaded from the file (the primary source) on first use. A
+    /// history whose last known contents aren't what the file holds is started over.
     pub fn history_doc_state<
         'a,
     >(
@@ -421,8 +422,8 @@ pub fn history_take_disk(
     return Ok(true);
 }
 
-/// Records one of an editor's changes: the level it encoded and the contents it left. Levels
-/// past the position (undone ones) are dropped, as for JSON documents.
+/// Records one of an editor's changes: the level it encoded and the contents it
+/// left. Levels past the position (undone ones) are dropped, as for JSON documents.
 pub fn history_doc_level_push(
     db: &mut dbm::Db<rusqlite::Connection>,
     state: &mut DocState,
@@ -452,46 +453,9 @@ pub fn history_doc_level_push(
     return Ok(());
 }
 
-/// Moves one level back or forward and hands out that level for the editor to apply, if
-/// there is one and the same editor wrote it. The editor reports the result with a write.
-pub fn history_doc_step(
-    db: &mut dbm::Db<rusqlite::Connection>,
-    state: &mut DocState,
-    editor: &str,
-    redo: bool,
-) -> Result<Option<Vec<u8>>, loga::Error> {
-    let seq = if redo {
-        state.position
-    } else {
-        state.position - 1
-    };
-    let level = good_query_opt!(
-        dbm,
-        "select editor, data from doc_level where doc = ${i64 = state.id} and seq = ${i64 = seq}";
-        &mut *db
-    ).map_err(|e| loga::err(e.to_string()))?;
-    let Some(level) = level else {
-        return Ok(None);
-    };
-    if level.editor != editor {
-        return Ok(None);
-    }
-    state.position = if redo {
-        state.position + 1
-    } else {
-        state.position - 1
-    };
-    good_query!(
-        dbm,
-        "update doc set position = ${i64 = state.position} where rowid = ${i64 = state.id}";
-        &mut *db
-    ).map_err(|e| loga::err(e.to_string()))?;
-    state.revision += 1;
-    return Ok(Some(level.data));
-}
-
-/// Takes in a change made to the file outside the editor as a level no editor can apply, so
-/// undo stops there rather than applying levels to contents they don't belong to.
+/// Takes in a change made to the file outside the editor as a level no editor can
+/// apply, so undo stops there rather than applying levels to contents they don't
+/// belong to.
 pub fn history_doc_take_disk(
     db: &mut dbm::Db<rusqlite::Connection>,
     state: &mut DocState,
@@ -552,17 +516,15 @@ mod tests {
         let mut db = history.db.lock().unwrap();
         let state = docs.get_mut(&path).unwrap();
         assert!(!state.dirty);
-        assert_eq!(history_doc_step(&mut db, state, "e1", false).unwrap(), Some(b"L1".to_vec()));
-        assert_eq!((state.position, state.revision), (0, 2));
-        assert_eq!(history_doc_step(&mut db, state, "e1", false).unwrap(), None);
-        assert_eq!(history_doc_step(&mut db, state, "e1", true).unwrap(), Some(b"L1".to_vec()));
-        assert_eq!(state.position, 1);
-        assert_eq!(history_doc_step(&mut db, state, "e2", false).unwrap(), None);
-        assert_eq!(state.position, 1);
         std::fs::write(&path, b"XY").unwrap();
         assert!(history_doc_take_disk(&mut db, state, &path).unwrap());
         assert_eq!((state.contents.clone(), state.position, state.dirty), (b"XY".to_vec(), 2, false));
-        assert_eq!(history_doc_step(&mut db, state, "e1", false).unwrap(), None);
+        let level = good_query_opt!(
+            dbm,
+            "select editor, data from doc_level where doc = ${i64 = state.id} and seq = ${i64 = 1}";
+            &mut *db
+        ).unwrap().unwrap();
+        assert_eq!((level.editor, level.data), ("".to_string(), vec![]));
         let mut reloaded = HashMap::new();
         let state = history.history_doc_state(&mut db, &mut reloaded, &path).unwrap();
         assert_eq!((state.contents.clone(), state.position), (b"XY".to_vec(), 2));

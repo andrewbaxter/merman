@@ -250,8 +250,8 @@ impl HandlerRoot {
         return Ok(spec.compression);
     }
 
-    /// An editor's document may not exist yet, so its directory is what has to be inside the
-    /// ide's.
+    /// An editor's document may not exist yet, so its directory is what has to be
+    /// inside the ide's.
     fn doc_path(&self, path: &str) -> Result<PathBuf, loga::Error> {
         let path = Path::new(path);
         let parent = self.dir_contains(path.parent().context("The path has no parent directory")?)?;
@@ -838,7 +838,9 @@ impl Handler<Body> for HandlerRoot {
                     let path = self.dir_contains(&self.dir.join(&req.path))?;
                     let bytes =
                         std::fs::read(&path).context_with("Error reading the file", ea!(path = path.display()))?;
-                    return Ok(RespFileRead { bytes_base64: base64::engine::general_purpose::STANDARD.encode(bytes) });
+                    return Ok(
+                        RespFileRead { bytes_base64: base64::engine::general_purpose::STANDARD.encode(bytes) },
+                    );
                 })() {
                     Ok(v) => respond(v),
                     Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
@@ -916,9 +918,42 @@ impl Handler<Body> for HandlerRoot {
                             revision: state.revision,
                         });
                     }
-                    let level = history::history_doc_step(&mut db, state, &req.editor, req.redo)?;
+
+                    // Move one level back or forward and hand out that level for the editor to apply,
+                    // if there is one and the same editor wrote it. The editor reports the result
+                    // with a write.
+                    let seq = if req.redo {
+                        state.position
+                    } else {
+                        state.position - 1
+                    };
+                    let level = good_query_opt!(
+                        dbm,
+                        "select editor, data from doc_level where doc = ${i64 = state.id} and seq = ${i64 = seq}";
+                        &mut *db
+                    ).map_err(|e| loga::err(e.to_string()))?;
+                    let level = match level {
+                        Some(level) if level.editor == req.editor => level,
+                        _ => {
+                            return Ok(RespDocStep {
+                                level_base64: None,
+                                revision: state.revision,
+                            });
+                        },
+                    };
+                    state.position = if req.redo {
+                        state.position + 1
+                    } else {
+                        state.position - 1
+                    };
+                    good_query!(
+                        dbm,
+                        "update doc set position = ${i64 = state.position} where rowid = ${i64 = state.id}";
+                        &mut *db
+                    ).map_err(|e| loga::err(e.to_string()))?;
+                    state.revision += 1;
                     return Ok(RespDocStep {
-                        level_base64: level.map(|l| base64::engine::general_purpose::STANDARD.encode(l)),
+                        level_base64: Some(base64::engine::general_purpose::STANDARD.encode(level.data)),
                         revision: state.revision,
                     });
                 })() {
@@ -1536,6 +1571,12 @@ fn main() {
                     let paths: Vec<PathBuf> = history.files.lock().unwrap().keys().cloned().collect();
                     for path in paths {
                         if let Err(e) = history.history_write(&path) {
+                            eprintln!("Error writing {}: {}", path.display(), e);
+                        }
+                    }
+                    let paths: Vec<PathBuf> = history.docs.lock().unwrap().keys().cloned().collect();
+                    for path in paths {
+                        if let Err(e) = history.history_doc_write(&path) {
                             eprintln!("Error writing {}: {}", path.display(), e);
                         }
                     }
