@@ -114,3 +114,11 @@ dir entries (`ExportRead`). The pane's host functions (canvas drawing, buttons,
 a text line, file reads and writes through the server, answered by callback)
 are the wasm imports under the module name `merman`, and their types live in
 `merman-editor.atz`, so a change to one side is a change to the other.
+
+An editor's document is a file it serializes itself, next to the module that
+exported it, and the ide keeps it in the undo history as bytes plus one opaque
+level per change, tagged with the editor so only that editor applies them. The
+file is the primary source and the history starts over whenever the file
+stops matching what the history last wrote. Undo hands the level back to the
+extension to apply in either direction, then the pane reports the resulting
+contents, so the server never interprets an editor's format.

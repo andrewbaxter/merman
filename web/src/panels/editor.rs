@@ -13,6 +13,11 @@ use {
     base64::Engine,
     gloo_events::EventListener,
     merman_api::{
+        ReqDocEdit,
+        ReqDocOpen,
+        ReqDocStep,
+        ReqDocSync,
+        ReqDocWrite,
         ReqFileRead,
         ReqFileWrite,
         ReqLangExportRead,
@@ -20,6 +25,7 @@ use {
     merman_core::{
         direction::DirectionConvert,
         keys::{
+            Action,
             KeyName,
             KeyResolve,
             KeyStroke,
@@ -75,6 +81,7 @@ struct State {
     canvas: El,
     closures: RefCell<Vec<Box<dyn Any>>>,
     context: CanvasRenderingContext2d,
+    doc: RefCell<Option<Doc>>,
     element: El,
     import_state: i64,
     instance: RefCell<Option<Instance>>,
@@ -92,6 +99,15 @@ struct State {
 struct Instance {
     exports: js_sys::Object,
     memory: js_sys::WebAssembly::Memory,
+}
+
+/// The document the extension opened: the file it serializes itself, with its undo
+/// history held by the server under the editor's tag (the exporting module and the
+/// key the extension gave).
+struct Doc {
+    editor: String,
+    path: String,
+    revision: u64,
 }
 
 impl EditorPanel {
@@ -123,6 +139,7 @@ impl EditorPanel {
             canvas: canvas.clone(),
             closures: RefCell::new(vec![]),
             context: context,
+            doc: RefCell::new(None),
             element: element,
             import_state: import_state,
             instance: RefCell::new(None),
@@ -256,24 +273,83 @@ fn editor_stroke(context: &CanvasRenderingContext2d, width: f64, rgba: i32) {
 /// Answers an extension's file request: the bytes go into memory the extension
 /// allocates, then `on_fs` gets the request's id, a status (0 is success) and where
 /// the bytes are.
+/// Puts bytes into memory the extension allocates for them, as file contents, a
+/// document and undo levels arrive; without an `alloc` export nothing can arrive.
+fn editor_deliver(state: &State, bytes: &[u8]) -> Option<i32> {
+    let ptr =
+        editor_call(state, "alloc", &[JsValue::from_f64(bytes.len() as f64)])
+            .and_then(|p| p.as_f64())
+            .map(|p| p as i32)?;
+    let instance = state.instance.borrow();
+    let instance = instance.as_ref()?;
+    js_sys::Uint8Array::new_with_byte_offset_and_length(
+        &instance.memory.buffer(),
+        ptr as u32,
+        bytes.len() as u32,
+    ).copy_from(bytes);
+    return Some(ptr);
+}
+
+/// The document as the extension holds it, read from where its `doc_ptr` and
+/// `doc_len` exports say.
+fn editor_doc_contents(state: &State) -> Option<Vec<u8>> {
+    let ptr = editor_call(state, "doc_ptr", &[])?.as_f64()? as i32;
+    let len = editor_call(state, "doc_len", &[])?.as_f64()? as i32;
+    return Some(editor_memory_read(state, ptr, len));
+}
+
+/// Fetches the document from the server when the pane's revision is behind, after
+/// a rejected change or an outside change to the file, and hands it to the
+/// extension through `on_doc`.
+fn editor_doc_sync(state: &Rc<State>, force: bool) {
+    let Some((path, revision)) = state.doc.borrow().as_ref().map(|d| (d.path.clone(), d.revision)) else {
+        return;
+    };
+    wasm_bindgen_futures::spawn_local({
+        let state: Weak<State> = Rc::downgrade(state);
+        async move {
+            let response = client_send(ReqDocSync {
+                path: path,
+                revision: if force {
+                    u64::MAX
+                } else {
+                    revision
+                },
+            }).await;
+            let Some(state) = state.upgrade() else {
+                return;
+            };
+            let response = match response {
+                Ok(response) => response,
+                Err(e) => {
+                    editor_status(&state, &e);
+                    return;
+                },
+            };
+            if let Some(doc) = state.doc.borrow_mut().as_mut() {
+                doc.revision = response.revision;
+            }
+            let Some(contents) = response.contents_base64 else {
+                return;
+            };
+            let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(contents) else {
+                editor_status(&state, "Error decoding the document's base64");
+                return;
+            };
+            let Some(ptr) = editor_deliver(&state, &bytes) else {
+                return;
+            };
+            editor_call(&state, "on_doc", &[JsValue::from_f64(ptr as f64), JsValue::from_f64(bytes.len() as f64)]);
+        }
+    });
+    return;
+}
+
 fn editor_fs_done(state: &State, req: i32, result: Result<Vec<u8>, String>) {
     let (status, ptr, len) = match result {
-        Ok(bytes) => {
-            let ptr =
-                editor_call(state, "alloc", &[JsValue::from_f64(bytes.len() as f64)])
-                    .and_then(|p| p.as_f64())
-                    .map(|p| p as i32);
-            match (ptr, state.instance.borrow().as_ref()) {
-                (Some(ptr), Some(instance)) => {
-                    js_sys::Uint8Array::new_with_byte_offset_and_length(
-                        &instance.memory.buffer(),
-                        ptr as u32,
-                        bytes.len() as u32,
-                    ).copy_from(&bytes);
-                    (0, ptr, bytes.len() as i32)
-                },
-                _ => (2, 0, 0),
-            }
+        Ok(bytes) => match editor_deliver(state, &bytes) {
+            Some(ptr) => (0, ptr, bytes.len() as i32),
+            None => (2, 0, 0),
         },
         Err(e) => {
             editor_status(state, &e);
@@ -311,8 +387,12 @@ impl Panel for EditorPanel {
         return el("div").classes(&["merman_panel", "merman_panel_editor"]).push(self.0.element.clone());
     }
 
-    fn panel_changed(&self, _path: &str) -> Option<PanelChange> {
-        return None;
+    fn panel_changed(&self, path: &str) -> Option<PanelChange> {
+        if self.0.doc.borrow().as_ref().is_none_or(|doc| doc.path != path) {
+            return None;
+        }
+        editor_doc_sync(&self.0, false);
+        return Some(PanelChange::Handled);
     }
 
     fn panel_cursor_reference(&self) -> Option<String> {
@@ -353,11 +433,93 @@ impl Panel for EditorPanel {
                 return PanelResult::Used;
             }
         }
-        match state.keys.keymap_read(&mut state.pending.borrow_mut(), stroke, None, false) {
+        let action = match state.keys.keymap_read(&mut state.pending.borrow_mut(), stroke, None, false) {
             KeyResolve::Unbound | KeyResolve::Type => return PanelResult::Ignored,
             KeyResolve::Pending => return PanelResult::Used,
-            KeyResolve::Action(action) => return PanelResult::Unused(action),
-        }
+            KeyResolve::Action(action) => action,
+        };
+        let redo = match action {
+            Action::Undo => false,
+            Action::Redo => true,
+            action => return PanelResult::Unused(action),
+        };
+        let Some(request) = state.doc.borrow().as_ref().map(|doc| ReqDocStep {
+            editor: doc.editor.clone(),
+            path: doc.path.clone(),
+            redo: redo,
+            revision: doc.revision,
+        }) else {
+            return PanelResult::Unused(action);
+        };
+        wasm_bindgen_futures::spawn_local({
+            let state: Weak<State> = Rc::downgrade(state);
+            async move {
+                let response = client_send(request).await;
+                let Some(state) = state.upgrade() else {
+                    return;
+                };
+                let response = match response {
+                    Ok(response) => response,
+                    Err(e) => {
+                        editor_status(&state, &e);
+                        return;
+                    },
+                };
+                let behind = state.doc.borrow().as_ref().is_some_and(|doc| doc.revision != response.revision);
+                if let Some(doc) = state.doc.borrow_mut().as_mut() {
+                    doc.revision = response.revision;
+                }
+                let Some(level) = response.level_base64 else {
+                    if behind {
+                        editor_doc_sync(&state, true);
+                    }
+                    return;
+                };
+                let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(level) else {
+                    editor_status(&state, "Error decoding the level's base64");
+                    return;
+                };
+                let Some(ptr) = editor_deliver(&state, &bytes) else {
+                    return;
+                };
+                editor_call(
+                    &state,
+                    "on_level",
+                    &[
+                        JsValue::from_f64(ptr as f64),
+                        JsValue::from_f64(bytes.len() as f64),
+                        JsValue::from_f64(redo as i32 as f64),
+                    ],
+                );
+                let Some(contents) = editor_doc_contents(&state) else {
+                    editor_status(&state, "The extension has no doc_ptr and doc_len to report the document from");
+                    return;
+                };
+                let Some(request) = state.doc.borrow().as_ref().map(|doc| ReqDocWrite {
+                    contents_base64: base64::engine::general_purpose::STANDARD.encode(contents),
+                    path: doc.path.clone(),
+                    revision: doc.revision,
+                }) else {
+                    return;
+                };
+                let weak: Weak<State> = Rc::downgrade(&state);
+                drop(state);
+                let response = client_send(request).await;
+                let Some(state) = weak.upgrade() else {
+                    return;
+                };
+                match response {
+                    Ok(response) if response.accepted => {
+                        if let Some(doc) = state.doc.borrow_mut().as_mut() {
+                            doc.revision = response.revision;
+                        }
+                    },
+                    Ok(_) => editor_doc_sync(&state, true),
+                    Err(e) => editor_status(&state, &e),
+                }
+            }
+        });
+        return PanelResult::Used;
     }
 
     /// A new compile of the file means fetching the export's wasm from the language
@@ -377,6 +539,7 @@ impl Panel for EditorPanel {
         }
         state.loaded.set(Some(ended_ms));
         *state.instance.borrow_mut() = None;
+        *state.doc.borrow_mut() = None;
         state.buttons.ref_clear();
         editor_status(state, "Loading");
         let request = ReqLangExportRead {
@@ -548,6 +711,106 @@ impl Panel for EditorPanel {
                                 });
                             }) as Box<dyn FnMut(i32, i32, i32, i32, i32)>);
                             define("fs_write", closure.as_ref());
+                            closures.push(Box::new(closure));
+                        }
+                        {
+                            let state: Weak<State> = Rc::downgrade(&state);
+                            let closure =
+                                Closure::wrap(
+                                    Box::new(move |name_ptr: i32, name_len: i32, key_ptr: i32, key_len: i32| {
+                                        let Some(state) = state.upgrade() else {
+                                            return;
+                                        };
+                                        let name = editor_string(&state, name_ptr, name_len);
+                                        let key = editor_string(&state, key_ptr, key_len);
+                                        let parent = state.path.rsplit_once('/').map(|(p, _)| p).unwrap_or("");
+                                        let request = ReqDocOpen {
+                                            editor: format!("{}#{}", state.path, key),
+                                            path: format!("{}/{}", parent, name),
+                                        };
+                                        wasm_bindgen_futures::spawn_local({
+                                            let state: Weak<State> = Rc::downgrade(&state);
+                                            async move {
+                                                let (editor, path) = (request.editor.clone(), request.path.clone());
+                                                let response = client_send(request).await;
+                                                let Some(state) = state.upgrade() else {
+                                                    return;
+                                                };
+                                                let response = match response {
+                                                    Ok(response) => response,
+                                                    Err(e) => {
+                                                        editor_status(&state, &e);
+                                                        return;
+                                                    },
+                                                };
+                                                *state.doc.borrow_mut() = Some(Doc {
+                                                    editor: editor,
+                                                    path: path,
+                                                    revision: response.revision,
+                                                });
+                                                let Ok(bytes) =
+                                                    base64::engine::general_purpose::STANDARD.decode(
+                                                        response.contents_base64,
+                                                    ) else {
+                                                        editor_status(&state, "Error decoding the document's base64");
+                                                        return;
+                                                    };
+                                                let Some(ptr) = editor_deliver(&state, &bytes) else {
+                                                    return;
+                                                };
+                                                editor_call(
+                                                    &state,
+                                                    "on_doc",
+                                                    &[JsValue::from_f64(ptr as f64), JsValue::from_f64(bytes.len() as f64)],
+                                                );
+                                            }
+                                        });
+                                    }) as Box<dyn FnMut(i32, i32, i32, i32)>,
+                                );
+                            define("doc_open", closure.as_ref());
+                            closures.push(Box::new(closure));
+                        }
+                        {
+                            let state: Weak<State> = Rc::downgrade(&state);
+                            let closure = Closure::wrap(Box::new(move |ptr: i32, len: i32| {
+                                let Some(state) = state.upgrade() else {
+                                    return;
+                                };
+                                let level = editor_memory_read(&state, ptr, len);
+                                let Some(contents) = editor_doc_contents(&state) else {
+                                    editor_status(&state, "The extension edited a document without doc_ptr and doc_len");
+                                    return;
+                                };
+                                let Some(request) = state.doc.borrow().as_ref().map(|doc| ReqDocEdit {
+                                    contents_base64: base64::engine::general_purpose::STANDARD.encode(contents),
+                                    editor: doc.editor.clone(),
+                                    level_base64: base64::engine::general_purpose::STANDARD.encode(level),
+                                    path: doc.path.clone(),
+                                    revision: doc.revision,
+                                }) else {
+                                    editor_status(&state, "The extension edited a document before opening one");
+                                    return;
+                                };
+                                wasm_bindgen_futures::spawn_local({
+                                    let state: Weak<State> = Rc::downgrade(&state);
+                                    async move {
+                                        let response = client_send(request).await;
+                                        let Some(state) = state.upgrade() else {
+                                            return;
+                                        };
+                                        match response {
+                                            Ok(response) if response.accepted => {
+                                                if let Some(doc) = state.doc.borrow_mut().as_mut() {
+                                                    doc.revision = response.revision;
+                                                }
+                                            },
+                                            Ok(_) => editor_doc_sync(&state, true),
+                                            Err(e) => editor_status(&state, &e),
+                                        }
+                                    }
+                                });
+                            }) as Box<dyn FnMut(i32, i32)>);
+                            define("doc_edit", closure.as_ref());
                             closures.push(Box::new(closure));
                         }
                         {
