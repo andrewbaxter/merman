@@ -27,6 +27,11 @@ pub enum Request {
     SourceRead {
         source: Source,
     },
+    ExportRead {
+        source: Source,
+        import_state: i64,
+        path: Vec<String>,
+    },
     Pause {
         paused: bool,
     },
@@ -51,6 +56,9 @@ pub enum Response {
     FileState(FileState),
     SourceRead {
         text: Option<String>,
+    },
+    ExportRead {
+        bytes_base64: String,
     },
     Pause,
     Flush {
@@ -92,6 +100,15 @@ pub struct Compiled {
     pub ended_ms: i64,
     pub logs: Vec<Log>,
     pub errors: Vec<CompileError>,
+    pub export: Option<Export>,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema, Maskoidy, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct Export {
+    pub exporter: String,
+    pub type_name: Option<String>,
+    pub type_source: Option<Source>,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Maskoidy, Clone, Debug)]

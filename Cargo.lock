@@ -2696,6 +2696,7 @@ name = "merman"
 version = "0.1.0"
 dependencies = [
  "aargvark",
+ "base64",
  "directories",
  "foyer",
  "futures",
@@ -2760,6 +2761,7 @@ dependencies = [
 name = "merman_web"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "console_error_panic_hook",
  "ezing",
  "futures",

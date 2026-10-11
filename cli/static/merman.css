@@ -133,3 +133,13 @@ body {
 .merman_ai_system .merman_ai_text { color: var(--merman-style-ai_error-color); }
 .merman_ai_input { flex: none; max-height: 12em; overflow: auto; padding: var(--merman-spacing-ai_input); border: 1px solid var(--merman-hover-color); border-radius: 3px; white-space: pre-wrap; overflow-wrap: anywhere; outline: none; }
 .merman_ai_input:focus { border-color: var(--merman-cursor-color); }
+
+/* The editor pane: an extension's buttons, its canvas filling the rest, and a line of
+   text it sets. The canvas takes the stylus itself, so the browser mustn't pan or
+   zoom on it. */
+.merman_panel_editor { overflow: hidden; }
+.merman_editor { display: flex; flex-direction: column; height: 100%; }
+.merman_editor > .merman_toolbar { flex: none; flex-wrap: wrap; padding: var(--merman-spacing-ai_toolbar) var(--merman-spacing-panel); border-bottom: 1px solid var(--merman-hover-color); }
+.merman_editor_button { font-size: 1em; padding: var(--merman-spacing-row_transverse) var(--merman-spacing-row_converse); border: 1px solid var(--merman-hover-color); border-radius: 0.3em; }
+.merman_editor_canvas { flex: 1 1 0; min-height: 0; width: 100%; display: block; touch-action: none; }
+.merman_editor_status { flex: none; padding: var(--merman-spacing-row_transverse) var(--merman-spacing-panel); opacity: 0.6; white-space: pre-wrap; }

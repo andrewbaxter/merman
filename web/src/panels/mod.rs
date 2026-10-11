@@ -1,6 +1,7 @@
 pub mod choices;
 pub mod code;
 pub mod conflict;
+pub mod editor;
 pub mod error;
 pub mod filesystem;
 pub mod lang;

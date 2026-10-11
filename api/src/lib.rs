@@ -29,6 +29,14 @@ glove::reqresp!(pub api {
     Flush(ReqFlush) => RespFlush,
     LangFileState(ReqLangFileState) => RespLangFileState,
     LangSourceRead(ReqLangSourceRead) => RespLangSourceRead,
+    LangExportRead(ReqLangExportRead) => RespLangExportRead,
+    FileRead(ReqFileRead) => RespFileRead,
+    FileWrite(ReqFileWrite) => RespFileWrite,
+    DocOpen(ReqDocOpen) => RespDocOpen,
+    DocEdit(ReqDocEdit) => RespDocEdit,
+    DocStep(ReqDocStep) => RespDocStep,
+    DocWrite(ReqDocWrite) => RespDocWrite,
+    DocSync(ReqDocSync) => RespDocSync,
     LangFlush(ReqLangFlush) => RespLangFlush,
 });
 
@@ -108,6 +116,15 @@ pub struct LangServerFlush {
 
 #[derive(Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+pub struct ReqLangExportRead {
+    pub import_state: i64,
+    pub path: Vec<String>,
+    pub server: String,
+    pub source: Source,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ReqLangFileState {
     pub path: String,
 }
@@ -121,6 +138,12 @@ pub struct ReqLangFlush {}
 pub struct ReqLangSourceRead {
     pub server: String,
     pub source: Source,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RespLangExportRead {
+    pub bytes_base64: String,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema)]
@@ -148,6 +171,82 @@ pub struct ListEntry {
     pub dir: bool,
     pub name: String,
     pub path: String,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReqDocOpen {
+    pub editor: String,
+    pub path: String,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReqDocEdit {
+    pub contents_base64: String,
+    pub editor: String,
+    pub level_base64: String,
+    pub path: String,
+    pub revision: u64,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReqDocStep {
+    pub editor: String,
+    pub path: String,
+    pub redo: bool,
+    pub revision: u64,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReqDocSync {
+    pub path: String,
+    pub revision: u64,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReqDocWrite {
+    pub contents_base64: String,
+    pub path: String,
+    pub revision: u64,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RespDocEdit {
+    pub accepted: bool,
+    pub revision: u64,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RespDocOpen {
+    pub contents_base64: String,
+    pub revision: u64,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RespDocStep {
+    pub level_base64: Option<String>,
+    pub revision: u64,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RespDocSync {
+    pub contents_base64: Option<String>,
+    pub revision: u64,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RespDocWrite {
+    pub accepted: bool,
+    pub revision: u64,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema)]
@@ -183,6 +282,19 @@ pub struct ReqEdit {
     pub revision: u64,
     pub select_after: Option<String>,
     pub select_before: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReqFileRead {
+    pub path: String,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReqFileWrite {
+    pub bytes_base64: String,
+    pub path: String,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema)]
@@ -266,6 +378,16 @@ pub struct RespEdit {
     pub accepted: bool,
     pub revision: u64,
 }
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RespFileRead {
+    pub bytes_base64: String,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RespFileWrite {}
 
 #[derive(Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]

@@ -1,6 +1,6 @@
 pub mod ai;
 pub mod client;
 pub mod demo;
-pub mod editor;
+pub mod ide;
 pub mod lang;
 pub mod panels;

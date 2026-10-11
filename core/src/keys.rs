@@ -17,7 +17,7 @@ use {
     std::collections::HashMap,
 };
 
-pub const ACTIONS: [(Action, &str); 78] =
+pub const ACTIONS: [(Action, &str); 79] =
     [
         (Action::Undo, "undo"),
         (Action::Redo, "redo"),
@@ -45,6 +45,7 @@ pub const ACTIONS: [(Action, &str); 78] =
         (Action::Copy, "copy"),
         (Action::AiOpen, "ai_open"),
         (Action::AiOpenReference, "ai_open_reference"),
+        (Action::EditorOpen, "editor_open"),
         (Action::Window, "window"),
         (Action::NextElement, "next_element"),
         (Action::PreviousElement, "previous_element"),
@@ -298,6 +299,7 @@ pub enum Action {
     GatherPreviousWord,
     HistoryBack,
     HistoryForward,
+    EditorOpen,
     InsertAfter,
     InsertBefore,
     JoinLines,
@@ -448,6 +450,7 @@ impl Keymap {
                     }]]),
                     (Action::AiOpen, &[&[plain(KeyName::Char('o'))]]),
                     (Action::AiOpenReference, &[&[shift(KeyName::Char('o'))]]),
+                    (Action::EditorOpen, &[&[plain(KeyName::Char('e'))]]),
                     (Action::HistoryBack, &[&[alt(KeyName::Surface)]]),
                     (Action::HistoryForward, &[&[alt(KeyName::Dive)]]),
                     (Action::Undo, &[&[ctrl(KeyName::Char('z'))]]),

@@ -4,6 +4,7 @@ mod history;
 mod langserver;
 
 use {
+    base64::Engine,
     aargvark::{
         Aargvark,
         vark,
@@ -65,11 +66,19 @@ use {
         LangServerFlush,
         RespAiResume,
         RespAiSend,
+        RespLangExportRead,
         RespLangFileState,
         RespLangFlush,
         RespLangSourceRead,
         RespAiSessions,
+        RespDocEdit,
+        RespDocOpen,
+        RespDocStep,
+        RespDocSync,
+        RespDocWrite,
         RespEdit,
+        RespFileRead,
+        RespFileWrite,
         RespFlush,
         RespHistoryStep,
         RespList,
@@ -239,6 +248,12 @@ impl HandlerRoot {
                 &syntax_text,
             ).context_with("Error parsing syntax", ea!(syntax = mapping.syntax.display()))?;
         return Ok(spec.compression);
+    }
+
+    fn doc_path(&self, path: &str) -> Result<PathBuf, loga::Error> {
+        let path = Path::new(path);
+        let parent = self.dir_contains(path.parent().context("The path has no parent directory")?)?;
+        return Ok(parent.join(path.file_name().context("The path has no file name")?));
     }
 
     fn dir_contains(&self, path: &Path) -> Result<PathBuf, loga::Error> {
@@ -466,6 +481,29 @@ impl Handler<Body> for HandlerRoot {
                                 syntax: syntax,
                                 text: text,
                             }),
+                            merman_langserver::Response::Failed { message } => return Err(loga::err(message)),
+                            _ => return Err(loga::err("The language server answered with the wrong response")),
+                        }
+                    }.await;
+                    match result {
+                        Ok(v) => respond(v),
+                        Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
+                    }
+                },
+                ServerReq::LangExportRead(respond, req) => {
+                    let result: Result<RespLangExportRead, loga::Error> = async {
+                        match langserver::langserver_request(
+                            &self.langservers,
+                            &req.server,
+                            merman_langserver::Request::ExportRead {
+                                source: req.source,
+                                import_state: req.import_state,
+                                path: req.path,
+                            },
+                        ).await? {
+                            merman_langserver::Response::ExportRead { bytes_base64 } => return Ok(
+                                RespLangExportRead { bytes_base64: bytes_base64 },
+                            ),
                             merman_langserver::Response::Failed { message } => return Err(loga::err(message)),
                             _ => return Err(loga::err("The language server answered with the wrong response")),
                         }
@@ -794,6 +832,179 @@ impl Handler<Body> for HandlerRoot {
                     Ok(v) => respond(v),
                     Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
                 },
+                ServerReq::FileRead(respond, req) => match (|| -> Result<RespFileRead, loga::Error> {
+                    let path = self.dir_contains(&self.dir.join(&req.path))?;
+                    let bytes =
+                        std::fs::read(&path).context_with("Error reading the file", ea!(path = path.display()))?;
+                    return Ok(
+                        RespFileRead { bytes_base64: base64::engine::general_purpose::STANDARD.encode(bytes) },
+                    );
+                })() {
+                    Ok(v) => respond(v),
+                    Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
+                },
+                ServerReq::FileWrite(respond, req) => match (|| -> Result<RespFileWrite, loga::Error> {
+                    let path = self.doc_path(&self.dir.join(&req.path).to_string_lossy())?;
+                    let bytes =
+                        base64::engine::general_purpose::STANDARD
+                            .decode(&req.bytes_base64)
+                            .context("Error decoding the file's base64")?;
+                    std::fs::write(&path, bytes).context_with("Error writing the file", ea!(path = path.display()))?;
+                    return Ok(RespFileWrite {});
+                })() {
+                    Ok(v) => respond(v),
+                    Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
+                },
+                ServerReq::DocOpen(respond, req) => match (|| -> Result<RespDocOpen, loga::Error> {
+                    let path = self.doc_path(&req.path)?;
+                    self.events.events_stamp(&path);
+                    let history = &self.history;
+                    let mut db = history.db.lock().unwrap();
+                    let mut docs = history.docs.lock().unwrap();
+                    let state = history.history_doc_state(&mut db, &mut docs, &path)?;
+                    history::history_doc_take_disk(&mut db, state, &path)?;
+                    return Ok(RespDocOpen {
+                        contents_base64: base64::engine::general_purpose::STANDARD.encode(&state.contents),
+                        revision: state.revision,
+                    });
+                })() {
+                    Ok(v) => respond(v),
+                    Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
+                },
+                ServerReq::DocEdit(respond, req) => match (|| -> Result<RespDocEdit, loga::Error> {
+                    let path = self.doc_path(&req.path)?;
+                    let level =
+                        base64::engine::general_purpose::STANDARD
+                            .decode(&req.level_base64)
+                            .context("Error decoding the level's base64")?;
+                    let contents =
+                        base64::engine::general_purpose::STANDARD
+                            .decode(&req.contents_base64)
+                            .context("Error decoding the contents' base64")?;
+                    let history = &self.history;
+                    let revision = {
+                        let mut db = history.db.lock().unwrap();
+                        let mut docs = history.docs.lock().unwrap();
+                        let state = history.history_doc_state(&mut db, &mut docs, &path)?;
+                        if state.revision != req.revision {
+                            return Ok(RespDocEdit {
+                                accepted: false,
+                                revision: state.revision,
+                            });
+                        }
+                        history::history_doc_level_push(&mut db, state, &req.editor, &level, contents)?;
+                        state.revision
+                    };
+                    history.history_doc_schedule_write(&path);
+                    return Ok(RespDocEdit {
+                        accepted: true,
+                        revision: revision,
+                    });
+                })() {
+                    Ok(v) => respond(v),
+                    Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
+                },
+                ServerReq::DocStep(respond, req) => match (|| -> Result<RespDocStep, loga::Error> {
+                    let path = self.doc_path(&req.path)?;
+                    let history = &self.history;
+                    let mut db = history.db.lock().unwrap();
+                    let mut docs = history.docs.lock().unwrap();
+                    let state = history.history_doc_state(&mut db, &mut docs, &path)?;
+                    if state.revision != req.revision {
+                        return Ok(RespDocStep {
+                            level_base64: None,
+                            revision: state.revision,
+                        });
+                    }
+                    let seq = if req.redo {
+                        state.position
+                    } else {
+                        state.position - 1
+                    };
+                    let level = good_query_opt!(
+                        dbm,
+                        "select editor, data from doc_level where doc = ${i64 = state.id} and seq = ${i64 = seq}";
+                        &mut *db
+                    ).map_err(|e| loga::err(e.to_string()))?;
+                    let level = match level {
+                        Some(level) if level.editor == req.editor => level,
+                        _ => {
+                            return Ok(RespDocStep {
+                                level_base64: None,
+                                revision: state.revision,
+                            });
+                        },
+                    };
+                    state.position = if req.redo {
+                        state.position + 1
+                    } else {
+                        state.position - 1
+                    };
+                    good_query!(
+                        dbm,
+                        "update doc set position = ${i64 = state.position} where rowid = ${i64 = state.id}";
+                        &mut *db
+                    ).map_err(|e| loga::err(e.to_string()))?;
+                    state.revision += 1;
+                    return Ok(RespDocStep {
+                        level_base64: Some(base64::engine::general_purpose::STANDARD.encode(level.data)),
+                        revision: state.revision,
+                    });
+                })() {
+                    Ok(v) => respond(v),
+                    Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
+                },
+                ServerReq::DocWrite(respond, req) => match (|| -> Result<RespDocWrite, loga::Error> {
+                    let path = self.doc_path(&req.path)?;
+                    let contents =
+                        base64::engine::general_purpose::STANDARD
+                            .decode(&req.contents_base64)
+                            .context("Error decoding the contents' base64")?;
+                    let history = &self.history;
+                    let revision = {
+                        let mut db = history.db.lock().unwrap();
+                        let mut docs = history.docs.lock().unwrap();
+                        let state = history.history_doc_state(&mut db, &mut docs, &path)?;
+                        if state.revision != req.revision {
+                            return Ok(RespDocWrite {
+                                accepted: false,
+                                revision: state.revision,
+                            });
+                        }
+                        state.contents = contents;
+                        state.dirty = true;
+                        state.revision
+                    };
+                    history.history_doc_schedule_write(&path);
+                    return Ok(RespDocWrite {
+                        accepted: true,
+                        revision: revision,
+                    });
+                })() {
+                    Ok(v) => respond(v),
+                    Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
+                },
+                ServerReq::DocSync(respond, req) => match (|| -> Result<RespDocSync, loga::Error> {
+                    let path = self.doc_path(&req.path)?;
+                    let history = &self.history;
+                    let mut db = history.db.lock().unwrap();
+                    let mut docs = history.docs.lock().unwrap();
+                    let state = history.history_doc_state(&mut db, &mut docs, &path)?;
+                    history::history_doc_take_disk(&mut db, state, &path)?;
+                    if state.revision == req.revision {
+                        return Ok(RespDocSync {
+                            contents_base64: None,
+                            revision: state.revision,
+                        });
+                    }
+                    return Ok(RespDocSync {
+                        contents_base64: Some(base64::engine::general_purpose::STANDARD.encode(&state.contents)),
+                        revision: state.revision,
+                    });
+                })() {
+                    Ok(v) => respond(v),
+                    Err(e) => ServerResp::err(serde_json::to_string_pretty(&e).unwrap()),
+                },
                 ServerReq::Flush(respond, req) => match self
                     .dir_contains(Path::new(&req.path))
                     .and_then(|path| self.history.history_write(&path)) {
@@ -887,7 +1098,7 @@ fn main() {
                 .replace("__MERMAN_KEYS__", &embed_json(&keys_text))
                 .replace("__MERMAN_THEME__", &embed_json(&theme_text))
         } else {
-            include_str!("../static/editor.html").to_string()
+            include_str!("../static/ide.html").to_string()
         };
         let events = Arc::new(events::Events {
             buffer: std::sync::Mutex::new((ai::now_ms(), std::collections::VecDeque::new())),
@@ -994,6 +1205,7 @@ fn main() {
             ).map_err(|e| loga::err_with(e.to_string(), ea!(path = history_path.display())))?;
         let history = Arc::new(history::History {
             db: std::sync::Mutex::new(db),
+            docs: std::sync::Mutex::new(std::collections::HashMap::new()),
             files: std::sync::Mutex::new(std::collections::HashMap::new()),
         });
         let ai = Arc::new(ai::Ai {
@@ -1353,6 +1565,12 @@ fn main() {
                     let paths: Vec<PathBuf> = history.files.lock().unwrap().keys().cloned().collect();
                     for path in paths {
                         if let Err(e) = history.history_write(&path) {
+                            eprintln!("Error writing {}: {}", path.display(), e);
+                        }
+                    }
+                    let paths: Vec<PathBuf> = history.docs.lock().unwrap().keys().cloned().collect();
+                    for path in paths {
+                        if let Err(e) = history.history_doc_write(&path) {
                             eprintln!("Error writing {}: {}", path.display(), e);
                         }
                     }

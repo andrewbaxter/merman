@@ -25,6 +25,13 @@ pub struct LangFile {
     pub compiles: BTreeMap<(String, i64), Compiled>,
 }
 
+pub struct LangEditor {
+    pub ended_ms: i64,
+    pub import_state: i64,
+    pub server: String,
+    pub source: Source,
+}
+
 pub struct Lang {
     pub changed: RefCell<Option<Rc<dyn Fn(&str)>>>,
     files: RefCell<HashMap<String, LangFile>>,
@@ -140,6 +147,26 @@ impl Lang {
 
     pub fn lang_file(&self, path: &str) -> Option<LangFile> {
         return self.files.borrow().get(path).cloned();
+    }
+
+    pub fn lang_editor(&self, path: &str) -> Option<LangEditor> {
+        let files = self.files.borrow();
+        let file = files.get(path)?;
+        for ((server, import_state), compiled) in &file.compiles {
+            let Some(export) = &compiled.export else {
+                continue;
+            };
+            if export.type_name.as_deref() != Some("editor") {
+                continue;
+            }
+            return Some(LangEditor {
+                ended_ms: compiled.ended_ms,
+                import_state: *import_state,
+                server: server.clone(),
+                source: compiled.source.clone(),
+            });
+        }
+        return None;
     }
 
     pub fn lang_errors(&self, path: &str) -> Vec<CompileError> {
