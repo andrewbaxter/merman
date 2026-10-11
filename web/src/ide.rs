@@ -389,8 +389,6 @@ fn ide_status_refresh(ide: &Rc<Ide>) {
     return;
 }
 
-/// Opens the editor the file at `index` exports, or returns to it if it's already
-/// open.
 fn ide_editor_open(ide: &Rc<Ide>, index: usize) {
     let path = ide.panels.borrow()[index].panel_path();
     let Some(export) = ide.lang.lang_editor(&path) else {

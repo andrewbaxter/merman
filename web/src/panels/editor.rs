@@ -67,13 +67,9 @@ use {
     },
 };
 
-/// Pointer event kinds as the extension's `on_pointer` takes them; up is 2.
 const POINTER_DOWN: i32 = 0;
 const POINTER_MOVE: i32 = 1;
 
-/// A pane running the wasm an `editor` export carries: the extension draws on the
-/// pane's canvas and adds buttons through the host functions, and the pane hands
-/// it the stylus, the buttons and the keys it doesn't use itself.
 pub struct EditorPanel(Rc<State>);
 
 struct State {
@@ -101,9 +97,6 @@ struct Instance {
     memory: js_sys::WebAssembly::Memory,
 }
 
-/// The document the extension opened: the file it serializes itself, with its undo
-/// history held by the server under the editor's tag (the exporting module and the
-/// key the extension gave).
 struct Doc {
     editor: String,
     path: String,
@@ -217,8 +210,6 @@ fn editor_status(state: &State, text: &str) {
     return;
 }
 
-/// Calls an export the extension chose to provide; a missing one is fine, a
-/// throwing one stops the pane with the error.
 fn editor_call(state: &State, name: &str, args: &[JsValue]) -> Option<JsValue> {
     let function = {
         let instance = state.instance.borrow();
@@ -255,7 +246,6 @@ fn editor_string(state: &State, ptr: i32, len: i32) -> String {
     return String::from_utf8_lossy(&editor_memory_read(state, ptr, len)).into_owned();
 }
 
-/// Strokes the current path; the color is 0xRRGGBBAA.
 fn editor_stroke(context: &CanvasRenderingContext2d, width: f64, rgba: i32) {
     let rgba = rgba as u32;
     context.set_line_width(width);
@@ -274,11 +264,6 @@ fn editor_stroke(context: &CanvasRenderingContext2d, width: f64, rgba: i32) {
     return;
 }
 
-/// Answers an extension's file request: the bytes go into memory the extension
-/// allocates, then `on_fs` gets the request's id, a status (0 is success) and
-/// where the bytes are. Puts bytes into memory the extension allocates for them,
-/// as file contents, a document and undo levels arrive; without an `alloc` export
-/// nothing can arrive.
 fn editor_deliver(state: &State, bytes: &[u8]) -> Option<i32> {
     let ptr =
         editor_call(state, "alloc", &[JsValue::from_f64(bytes.len() as f64)])
@@ -294,17 +279,12 @@ fn editor_deliver(state: &State, bytes: &[u8]) -> Option<i32> {
     return Some(ptr);
 }
 
-/// The document as the extension holds it, read from where its `doc_ptr` and
-/// `doc_len` exports say.
 fn editor_doc_contents(state: &State) -> Option<Vec<u8>> {
     let ptr = editor_call(state, "doc_ptr", &[])?.as_f64()? as i32;
     let len = editor_call(state, "doc_len", &[])?.as_f64()? as i32;
     return Some(editor_memory_read(state, ptr, len));
 }
 
-/// Fetches the document from the server when the pane's revision is behind, after
-/// a rejected change or an outside change to the file, and hands it to the
-/// extension through `on_doc`.
 fn editor_doc_sync(state: &Rc<State>, force: bool) {
     let Some((path, revision)) = state.doc.borrow().as_ref().map(|d| (d.path.clone(), d.revision)) else {
         return;
@@ -373,9 +353,6 @@ fn editor_fs_done(state: &State, req: i32, result: Result<Vec<u8>, String>) {
     return;
 }
 
-/// Sizes the canvas's bitmap to the pane at the device's pixel ratio, so the
-/// extension draws in the pane's own coordinates, and tells the extension, since
-/// resizing clears the canvas.
 fn editor_resize(state: &State) {
     let canvas: HtmlCanvasElement = state.canvas.raw().dyn_into().unwrap();
     let ratio = gloo_utils::window().device_pixel_ratio();
@@ -529,9 +506,6 @@ impl Panel for EditorPanel {
         return PanelResult::Used;
     }
 
-    /// A new compile of the file means fetching the export's wasm from the language
-    /// server and starting it with the host functions, as closures kept alive with the
-    /// instance, replacing whatever the pane was running.
     fn panel_lang_errors(&self, path: &str, _errors: &[CompileError]) {
         let state = &self.0;
         if path != state.path {

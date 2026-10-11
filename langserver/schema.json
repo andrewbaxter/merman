@@ -123,20 +123,16 @@
       },
       "Export": {
         "record": {
-          "description": "What the module's root exported, when it compiled and exported something. The\neditor recognizes markers by `type_name`: a source-defined object the module is\nan instance of, such as `editor`.",
           "fields": {
             "exporter": {
-              "description": "The artifact exporter's tag, like `record` or `source_object_value_const`.",
               "maskoid": "string"
             },
             "type_name": {
-              "description": "The name of the source-defined object type the export is an instance of.",
               "maskoid": {
                 "option": "string"
               }
             },
             "type_source": {
-              "description": "The source defining that object type.",
               "maskoid": {
                 "option": {
                   "ref": "Source"
@@ -208,7 +204,6 @@
         "tagged_union": {
           "variants": {
             "export_read": {
-              "description": "The bytes at `path` in a compile's root export: a path of record field names\nand `dir` entry names, ending at a `dir` entry, a byte array, a string or an\n`app`.",
               "maskoid": {
                 "record": {
                   "fields": {

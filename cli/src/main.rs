@@ -250,8 +250,6 @@ impl HandlerRoot {
         return Ok(spec.compression);
     }
 
-    /// An editor's document may not exist yet, so its directory is what has to be
-    /// inside the ide's.
     fn doc_path(&self, path: &str) -> Result<PathBuf, loga::Error> {
         let path = Path::new(path);
         let parent = self.dir_contains(path.parent().context("The path has no parent directory")?)?;
@@ -918,10 +916,6 @@ impl Handler<Body> for HandlerRoot {
                             revision: state.revision,
                         });
                     }
-
-                    // Move one level back or forward and hand out that level for the editor to apply,
-                    // if there is one and the same editor wrote it. The editor reports the result
-                    // with a write.
                     let seq = if req.redo {
                         state.position
                     } else {

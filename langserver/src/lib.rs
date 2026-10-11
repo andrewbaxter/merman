@@ -27,9 +27,6 @@ pub enum Request {
     SourceRead {
         source: Source,
     },
-    /// The bytes at `path` in a compile's root export: a path of record field names
-    /// and `dir` entry names, ending at a `dir` entry, a byte array, a string or an
-    /// `app`.
     ExportRead {
         source: Source,
         import_state: i64,
@@ -106,17 +103,11 @@ pub struct Compiled {
     pub export: Option<Export>,
 }
 
-/// What the module's root exported, when it compiled and exported something. The
-/// editor recognizes markers by `type_name`: a source-defined object the module is
-/// an instance of, such as `editor`.
 #[derive(Serialize, Deserialize, JsonSchema, Maskoidy, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct Export {
-    /// The artifact exporter's tag, like `record` or `source_object_value_const`.
     pub exporter: String,
-    /// The name of the source-defined object type the export is an instance of.
     pub type_name: Option<String>,
-    /// The source defining that object type.
     pub type_source: Option<Source>,
 }
 

@@ -10,7 +10,6 @@ use good_ormning::sqlite::{
     },
 };
 
-/// The tables of the JSON document history, in every version.
 fn history(version: &VersionHandle) {
     let file = version.table("file");
     file.rowid_field(None);
@@ -34,9 +33,6 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     let v0 = Version::new();
     history(&v0);
-
-    // Version 1 adds the editors' documents: a file held as bytes whose undo levels
-    // are blobs only the editor that wrote them (tagged by `editor`) can apply.
     let v1 = Version::new();
     history(&v1);
     let doc = v1.table("doc");

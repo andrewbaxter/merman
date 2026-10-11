@@ -70,8 +70,6 @@ pub struct FileState {
     pub write: Option<JoinHandle<()>>,
 }
 
-/// An editor's document: bytes the editor serializes itself, with undo levels it
-/// also encodes.
 pub struct DocState {
     pub contents: Vec<u8>,
     pub dirty: bool,
@@ -211,8 +209,6 @@ impl History {
         return Ok(files.get_mut(path).unwrap());
     }
 
-    /// The document's state, loaded from the file (the primary source) on first use. A
-    /// history whose last known contents aren't what the file holds is started over.
     pub fn history_doc_state<
         'a,
     >(
@@ -422,8 +418,6 @@ pub fn history_take_disk(
     return Ok(true);
 }
 
-/// Records one of an editor's changes: the level it encoded and the contents it
-/// left. Levels past the position (undone ones) are dropped, as for JSON documents.
 pub fn history_doc_level_push(
     db: &mut dbm::Db<rusqlite::Connection>,
     state: &mut DocState,
@@ -453,9 +447,6 @@ pub fn history_doc_level_push(
     return Ok(());
 }
 
-/// Takes in a change made to the file outside the editor as a level no editor can
-/// apply, so undo stops there rather than applying levels to contents they don't
-/// belong to.
 pub fn history_doc_take_disk(
     db: &mut dbm::Db<rusqlite::Connection>,
     state: &mut DocState,

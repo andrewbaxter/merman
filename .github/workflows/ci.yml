@@ -15,6 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: cachix/install-nix-action@v31
 
@@ -42,10 +44,15 @@ jobs:
       # The shell is started from a temp dir because its setup hooks leave empty
       # directories in the working directory. The linter rewrites what it can fix
       # instead of reporting it, so any diff it leaves behind is a failure too.
+      # A pull request is linted against the branch it targets, so a comment
+      # added anywhere on the branch is rejected; a push has no target and is
+      # linted against its own commit, as a local run is.
       - name: Lint
+        env:
+          AGAINST: ${{ github.base_ref && format('origin/{0}', github.base_ref) || 'HEAD' }}
         run: |
           cd "$(mktemp -d)"
-          nix-shell "$GITHUB_WORKSPACE/default.nix" --run "cd '$GITHUB_WORKSPACE' && rust-ai-lint"
+          nix-shell "$GITHUB_WORKSPACE/default.nix" --run "cd '$GITHUB_WORKSPACE' && rust-ai-lint --against '$AGAINST'"
           cd "$GITHUB_WORKSPACE"
           git diff --exit-code
 
